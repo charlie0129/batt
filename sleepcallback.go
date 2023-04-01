@@ -25,12 +25,14 @@ func canSystemSleepCallback() {
 	*/
 	logrus.Traceln("received kIOMessageCanSystemSleep notification")
 
+	checkMaintainedChargingStatus()
+
 	if maintainedChargingInProgress {
-		logrus.Debugln("system idle is about to kick in, but maintained charging is in progress, deny idle sleep")
+		logrus.Debugln("idle sleep is about to kick in, but maintained charging is in progress, deny idle sleep")
 		C.CancelPowerChange()
 		return
 	} else {
-		logrus.Debugln("system idle is about to kick in, no maintained charging is in progress, nothing to do")
+		logrus.Debugln("idle sleep is about to kick in, no maintained charging is in progress, allow idle sleep")
 		C.AllowPowerChange()
 		return
 	}
@@ -47,8 +49,10 @@ func systemWillSleepCallback() {
 	*/
 	logrus.Traceln("received kIOMessageSystemWillSleep notification")
 
+	checkMaintainedChargingStatus()
+
 	if maintainedChargingInProgress {
-		logrus.Info("system is going to sleep, but maintained charging is in progress, disabling charging before sleep")
+		logrus.Info("system is going to sleep, but maintained charging is in progress, disabling charging just before sleep")
 		err := smcConn.DisableCharging()
 		if err != nil {
 			logrus.Errorf("DisableCharging failed: %w", err)

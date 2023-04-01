@@ -16,6 +16,30 @@ func mainLoop() bool {
 	return maintainLoop()
 }
 
+func checkMaintainedChargingStatus() {
+	if !config.Maintain {
+		maintainedChargingInProgress = false
+	}
+
+	isChargingEnabled, err := smcConn.IsChargingEnabled()
+	if err != nil {
+		logrus.Errorf("IsChargingEnabled failed: %w", err)
+		return
+	}
+
+	isPluggedIn, err := smcConn.IsPluggedIn()
+	if err != nil {
+		logrus.Errorf("IsPluggedIn failed: %w", err)
+		return
+	}
+
+	if isChargingEnabled && isPluggedIn {
+		maintainedChargingInProgress = true
+	} else {
+		maintainedChargingInProgress = false
+	}
+}
+
 func maintainLoop() bool {
 	limit := config.Limit
 	maintain := config.Maintain
@@ -44,11 +68,7 @@ func maintainLoop() bool {
 		return false
 	}
 
-	if isChargingEnabled && isPluggedIn {
-		maintainedChargingInProgress = true
-	} else {
-		maintainedChargingInProgress = false
-	}
+	checkMaintainedChargingStatus()
 
 	logrus.Debugf("batteryCharge=%d, limit=%d, chargingEnabled=%t, isPluggedIn=%t, maintainedChargingInProgress=%t",
 		batteryCharge,
