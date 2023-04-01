@@ -1,2 +1,2 @@
 all:
-	go build -o bin/main .
+	go build -o batt .
