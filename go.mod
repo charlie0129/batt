@@ -3,7 +3,7 @@ module github.com/charlie0129/batt
 go 1.19
 
 require (
-	github.com/charlie0129/gosmc v0.0.0-20230401165612-cc5d87817a08
+	github.com/charlie0129/gosmc v0.0.0-20230402083751-dcdbb506fd02
 	github.com/gin-gonic/gin v1.9.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.1

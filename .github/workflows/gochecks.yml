@@ -1,0 +1,59 @@
+name: Go Checks
+
+on:
+  push:
+    branches:
+      - master
+      - release-*
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - master
+      - release-*
+  workflow_dispatch: { }
+
+env:
+  GOLANGCI_VERSION: 'v1.52.2'
+
+jobs:
+  detect-noop:
+    name: Detect No-op Changes
+    runs-on: ubuntu-latest
+    outputs:
+      noop: ${{ steps.noop.outputs.should_skip }}
+    steps:
+      - name: Detect No-op Changes
+        id: noop
+        uses: fkirc/skip-duplicate-actions@v4.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          paths_ignore: '["**.md", "**.mdx", "**.png", "**.jpg", "**.svg"]'
+          do_not_skip: '["workflow_dispatch", "schedule", "push"]'
+          concurrent_skipping: false
+
+  checks:
+    name: Check Go Code
+    runs-on: macos-12
+    needs: detect-noop
+    if: needs.detect-noop.outputs.noop != 'true'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: ${{ env.GOLANGCI_VERSION }}
+
+  test-build:
+    name: Test Container Build
+    runs-on: macos-12
+    needs: detect-noop
+    if: needs.detect-noop.outputs.noop != 'true'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Test Build
+        run: make all-package
