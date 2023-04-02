@@ -7,6 +7,8 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/path/to/batt</string>
+		<string>daemon</string>
+		<string>-l=debug</string>
 	</array>
 	<key>StandardOutPath</key>
 	<string>/tmp/batt.log</string>

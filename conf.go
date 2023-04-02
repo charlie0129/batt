@@ -13,19 +13,19 @@ type Config struct {
 	// batt will keep the battery charge around this limit. Note that if your
 	// current battery charge is higher than the limit, it will simply stop
 	// charging.
-	Limit                  int  `json:"limit"`
-	LoopIntervalSeconds    int  `json:"loopIntervalSeconds"`
-	PreventIdleSleep       bool `json:"preventIdleSleep"`
-	DisableCharingPreSleep bool `json:"disableCharingPreSleep"`
+	Limit                   int  `json:"limit"`
+	LoopIntervalSeconds     int  `json:"loopIntervalSeconds"`
+	PreventIdleSleep        bool `json:"preventIdleSleep"`
+	DisableChargingPreSleep bool `json:"disableChargingPreSleep"`
 }
 
 var (
 	configPath    = "/etc/batt.json"
 	defaultConfig = Config{
-		Limit:                  60,
-		LoopIntervalSeconds:    60,
-		PreventIdleSleep:       true,
-		DisableCharingPreSleep: true,
+		Limit:                   60,
+		LoopIntervalSeconds:     60,
+		PreventIdleSleep:        true,
+		DisableChargingPreSleep: true,
 	}
 )
 

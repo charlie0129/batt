@@ -25,6 +25,12 @@ func canSystemSleepCallback() {
 	*/
 	logrus.Traceln("received kIOMessageCanSystemSleep notification")
 
+	if !config.PreventIdleSleep {
+		logrus.Debugln("system is going to sleep, but PreventIdleSleep is disabled, nothing to do")
+		C.AllowPowerChange()
+		return
+	}
+
 	checkMaintainedChargingStatus()
 
 	if maintainedChargingInProgress {
@@ -48,6 +54,12 @@ func systemWillSleepCallback() {
 	   kIOReturnSuccess, however the system WILL still go to sleep.
 	*/
 	logrus.Traceln("received kIOMessageSystemWillSleep notification")
+
+	if !config.DisableChargingPreSleep {
+		logrus.Debugln("system is going to sleep, but DisableChargingPreSleep is disabled, nothing to do")
+		C.AllowPowerChange()
+		return
+	}
 
 	checkMaintainedChargingStatus()
 
