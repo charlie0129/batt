@@ -71,7 +71,7 @@ func installDaemon() error {
 }
 
 func uninstallDaemon() error {
-	logrus.Infof("stopping launch daemon")
+	logrus.Infof("stopping batt daemon")
 
 	// run launchctl unload /Library/LaunchDaemons/cc.chlc.batt.plist
 	err := exec.Command(

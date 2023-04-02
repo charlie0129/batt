@@ -2,7 +2,17 @@
 
 `batt` is a tool to control battery charging on Apple Silicon MacBooks.
 
-## Why do I need this?
+## Motivation
+
+I created this tool simply because I am not satisfied existing tools 😐.
+
+I have written and using similar utils (to limit charging) on Intel MacBooks for years. Just since recently, I got hands on a M1 MacBook Air (yes, it is 2023, 2 years later since it is introduced 😅 and I just got one). The old BCLM way to limit charging doesn't work anymore. I was looking for a tool to limit charging on M1 MacBooks.
+
+I have tried some alternatives, both closed source and open source, but I kept none of them. Some alternatives' licensing options are just too limited 🤔 and are closed source. It doesn't seem a good option for me. Some open source alternatives just don't handle edge cases well and I encountered issues sometimes.
+
+I want a simple tool that does one thing and does it well -- limit charging. It seems I don't have any options but to develop by myself. So I spent a weekend developing this tool, so here we are! `batt` is here!
+
+## Why do you need this?
 
 [This article](https://batteryuniversity.com/article/bu-808-how-to-prolong-lithium-based-batteries) might be helpful. TL;DR: keep your battery cool, keep it at 80% or lower when plugged in, and discharge it as shallowly as feasible.
 
@@ -16,9 +26,9 @@
 
 **It is light-weight.** As a command-line tool, it is light-weight by design. No electron GUIs hogging your system resources. However, a native GUI that sits in the menubar is a good addition.
 
-## But macOS have similar features
+## But macOS have similar features built-in
 
-macOS have optimized battery charging. It will try to find out your charging and working schedule and prohibits charging above 80% for a couple of hours overnight. However, if you have an unregular schedule, this will simply not work. 
+Yes, macOS have optimized battery charging. It will try to find out your charging and working schedule and prohibits charging above 80% for a couple of hours overnight. However, if you have an un-regular schedule, this will simply not work. Also, you lose predictability (which value a lot) about your computer's behavior. By letting macOS decide for you, you cannot control when to charge or when not to charge.
 
 `batt` can make sure your computer does exactly what you want. You can set a maximum charge level, and it will stop charging when the battery reaches that level. Therefore, it is recommended to disable macOS's optimized charging when using `batt`.
 
@@ -26,14 +36,14 @@ macOS have optimized battery charging. It will try to find out your charging and
 
 > Currently, it is command-line only. Some knowledge of the command-line is recommended. A native GUI is possible but not planned.
 
-1. Get the binary. You can download from GitHub releases or build it yourself. See [Building](#building) for more details.
+1. Get the binary. You can download from GitHub releases or build it yourself. See [Building](#Building) for more details.
 2. Put the binary somewhere safe. You don't want to move it after installation. It is recommended to save it in your `$PATH`. For example, `/usr/local/bin`.
-3. Run `batt` to see if it works (shows help messages)
-4. Install daemon. This is required to make `batt` work. Run `sudo batt install` to install the daemon. You can run `sudo batt uninstall` to uninstall the daemon if you want.
+3. Run `batt` in terminal to see if it works. If it works, it will show help messages.
+4. Install daemon. This component is what actually controls charging. Run `sudo batt install` to install the daemon. To uninstall, run `sudo batt uninstall`.
 5. Test if it works by running `sudo ./batt status`. If you see some JSON config, you are good to go! 
-6. Now, time to get started. Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`. For example, `batt help limit`.
-
-> As said before, it is recommended to disable macOS's optimized charging when using `batt`. To do so, open System Preferences, go to Battery, and uncheck "Optimize battery charging".
+6. `batt` is now running! By default `batt` will set a charge limit to 60%.
+7. Time to customize it a little. Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`. For example, to set the charge limit to 80%, run `sudo batt limit 80`. To disable the limit, run `sudo batt limit 100`.
+8. As said before, it is recommended to disable macOS's optimized charging when using `batt`. To do so, open System Preferences, go to Battery, and uncheck "Optimize battery charging".
 
 ## Usage
 
@@ -41,7 +51,7 @@ macOS have optimized battery charging. It will try to find out your charging and
 
 Make sure your computer doesn't charge beyond what you said.
 
-Setting the limit to 10-99 will enable the battery charge limit. However, setting the limit to 100 will disable the battery charge limit.
+Setting the limit to 10-99 will enable the battery charge limit, limiting the maximum charge to _somewhere around_ your setting. However, setting the limit to 100 will disable the battery charge limit. If you want to charge your MacBook to 100% or revert any changes, you can simply set the limit to 100%.
 
 By default, `batt` will set a 60% charge limit.
 
@@ -67,13 +77,13 @@ To prevent this, you can set `batt` to prevent idle sleep. This will prevent you
 
 However, this does not prevent manual sleep. For example, if you manually put your computer to sleep or close the lid, `batt` will not prevent your computer from sleeping. This is a limitation of macOS. To prevent such cases, see disable-charging-pre-sleep.
 
-To enable this feature, run `sudo batt idle-sleep enable`. To disable, run `sudo batt idle-sleep disable`.
+To enable this feature, run `sudo batt prevent-idle-sleep enable`. To disable, run `sudo batt prevent-idle-sleep disable`.
 
 ### Disabling charging before sleep
 
 Set whether to disable charging before sleep during a charging session.
 
-Due to macOS limitations, `batt` will pause when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, the battery charge limit will no longer function and the battery will charge to 100%. If you want the battery to stay below the charge limit, this behavior is probably not what you want. This option, together with idle-sleep, will prevent this from happening. idle-sleep can prevent idle sleep to keep the battery charge limit active. However, this does not prevent manual sleep. For example, if you manually put your computer to sleep or close the lid, batt will not prevent your computer from sleeping. This is a limitation of macOS.
+Due to macOS limitations, `batt` will pause when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, the battery charge limit will no longer function and the battery will charge to 100%. If you want the battery to stay below the charge limit, this behavior is probably not what you want. This option, together with prevent-idle-sleep, will prevent this from happening. prevent-idle-sleep can prevent idle sleep to keep the battery charge limit active. However, this does not prevent manual sleep. For example, if you manually put your computer to sleep or close the lid, batt will not prevent your computer from sleeping. This is a limitation of macOS.
 
 To prevent such cases, you can use disable-charging-pre-sleep. This will disable charging just before your computer goes to sleep, preventing it from charging beyond the predefined limit. Once it wakes up, `batt` can take over and continue to do the rest work. This will only disable charging before sleep, when 1) charging is active 2) battery charge limit is enabled.
 
@@ -87,13 +97,23 @@ Logs are directed to `/tmp/batt.log`. If something goes wrong, you can check the
 
 Simply running `make` should build the binary into `./bin/batt`. You can then move it to your `$PATH`.
 
-Of course, Go and other tool chain is required. You can solve dependencies by reading error messages. It shoud be fairly straightforward because it is a simple Go project.
+Of course, Go and other tool chain is required. You can solve dependencies by reading error messages. It doesn't have complicated dependencies, so it should be fairly straightforward.
+
+## Architecture
+
+You can think of `batt` like `docker`. It has a daemon that runs in the background, and a client that communicates with the daemon. They communicate through unix domain socket as a way of IPC. The daemon does the actual heavy-lifting, and is responsible for controlling battery charging. The client is responsible for sending users' requirements to the daemon.
+
+For example, when you run `sudo batt limit 80`, the client will send the requirement to the daemon, and the daemon will do its job to keep the charge limit to 80%.
 
 ## FAQ
 
 ### Why is it Apple Silicon only?
 
-Simply because you don't need this on Intel. On Intel, you can control battery charging in a much easier way, simply setting the `BCLM` key in Apple SMC to the limit you need. There are many tools available. For example, you can use [smc-command](https://github.com/hholtmann/smcFanControl/tree/master/smc-command) to set SMC keys. However, on Apple Silicon, there is no such key. Therefore, we have to use a more complicated way to achieve the same goal, hence `batt`.
+Simply because you don't need this on Intel :p. 
+
+On Intel MacBooks, you can control battery charging in a much, much easier way, simply setting the `BCLM` key in Apple SMC to the limit you need, and you are all done. There are many tools available. For example, you can use [smc-command](https://github.com/hholtmann/smcFanControl/tree/master/smc-command) to set SMC keys. 
+
+However, on Apple Silicon, the way how charging is controlled changed. There is no such key. Therefore, we have to use a much more complicated way to achieve the same goal, and handle more edge cases, hence `batt`.
 
 ### Why does it require root privilege?
 
@@ -102,3 +122,7 @@ It writes to SMC to control battery charging. This does changes to your hardware
 It is also possible to run it without `sudo`. But I decided not to, because I want to make sure only you, the superuser, can control your computer, and to prevent accidental misuse.
 
 If you are concerned about security, you can check the source code [here](https://github.com/charlie0129/batt) to make sure it does not do anything funny.
+
+### Why is it written in Go?
+
+Since it is a hobby project, I want to balance effort and the final outcome. Go seems a good choice for me. However, Go don't have any library to r/w SMC, so I have to write it myself (opensourced here: [charlie0129/gosmc](https://github.com/charlie0129/gosmc)). Thankfully this didn't slow down development too much.
