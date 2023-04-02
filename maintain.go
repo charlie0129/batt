@@ -17,7 +17,8 @@ func mainLoop() bool {
 }
 
 func checkMaintainedChargingStatus() {
-	if !config.Maintain {
+	maintain := config.Limit < 100
+	if maintain {
 		maintainedChargingInProgress = false
 	}
 
@@ -42,7 +43,7 @@ func checkMaintainedChargingStatus() {
 
 func maintainLoop() bool {
 	limit := config.Limit
-	maintain := config.Maintain
+	maintain := limit < 100
 
 	if !maintain {
 		logrus.Debugf("maintain disabled")

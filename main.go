@@ -31,8 +31,6 @@ func setupRoutes() *gin.Engine {
 	router.Use(ginlogrus.Logger(logrus.StandardLogger()), gin.Recovery())
 	router.GET("/limit", getLimit)
 	router.PUT("/limit", setLimit)
-	router.POST("/maintain", enableMaintain)
-	router.DELETE("/maintain", disableMaintain)
 
 	return router
 }

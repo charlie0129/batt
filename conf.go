@@ -9,20 +9,27 @@ import (
 )
 
 type Config struct {
-	Limit               int  `json:"limit"`
-	Maintain            bool `json:"maintain"`
-	LoopIntervalSeconds int  `json:"loopIntervalSeconds"`
+	// Limit is the battery charge limit in percentage, when Maintain is enabled.
+	// batt will keep the battery charge around this limit. Note that if your
+	// current battery charge is higher than the limit, it will simply stop
+	// charging.
+	Limit                  int  `json:"limit"`
+	LoopIntervalSeconds    int  `json:"loopIntervalSeconds"`
+	PreventIdleSleep       bool `json:"preventIdleSleep"`
+	DisableCharingPreSleep bool `json:"disableCharingPreSleep"`
 }
 
 var (
-	config        Config
 	configPath    = "/etc/batt.json"
 	defaultConfig = Config{
-		Limit:               60,
-		Maintain:            true,
-		LoopIntervalSeconds: 60,
+		Limit:                  60,
+		LoopIntervalSeconds:    60,
+		PreventIdleSleep:       true,
+		DisableCharingPreSleep: true,
 	}
 )
+
+var config Config = defaultConfig
 
 func saveConfig() error {
 	b, err := json.MarshalIndent(config, "", "  ")
