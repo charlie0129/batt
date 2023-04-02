@@ -26,8 +26,8 @@ BIN             := batt
 # Setup make variables
 include makefiles/consts.mk
 
-lint:
-	bash build/lint.sh
-
 # Setup common targets
 include makefiles/targets.mk
+
+lint:
+	bash build/lint.sh

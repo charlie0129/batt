@@ -113,7 +113,7 @@ You must run this command as root.`,
 // NewLimitCommand .
 func NewLimitCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "limit",
+		Use:   "limit [percentage]",
 		Short: "Set the battery charge limit",
 		Long: `Set the battery charge limit.
 This is a percentage from 10 to 100.
@@ -202,9 +202,9 @@ func NewSetDisableChargingPreSleepCommand() *cobra.Command {
 		Short: "Set whether to disable charging before sleep during a charging session",
 		Long: `Set whether to disable charging before sleep during a charging session.
 
-Due to macOS limitations, batt will pause when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, the battery charge limit will no longer function and the battery will charge to 100%. If you want the battery to stay below the charge limit, this behavior is probably not what you want. This option, together with idle-sleep, will prevent this from happening.
+Due to macOS limitations, batt will pause when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, the battery charge limit will no longer function and the battery will charge to 100%. If you want the battery to stay below the charge limit, this behavior is probably not what you want. This option, together with idle-sleep, will prevent this from happening. idle-sleep can prevent idle sleep to keep the battery charge limit active. However, this does not prevent manual sleep. For example, if you manually put your computer to sleep or close the lid, batt will not prevent your computer from sleeping. This is a limitation of macOS. 
 
-idle-sleep can prevented idle sleep to keep the battery charge limit active. However, this does not prevent manual sleep. For example, if you manually put your computer to sleep or close the lid, batt will not prevent your computer from sleeping. This is a limitation of macOS. To prevent such cases, you can set batt to disable charging before sleep. This will disable charging just before your computer goes to sleep. Once it wakes up, batt can take over and do the rest work. This will only disable charging before sleep, when 1) charging is active 2) battery charge limit is enabled.`,
+To prevent such cases, you can use disable-charging-pre-sleep. This will disable charging just before your computer goes to sleep, preventing it from charging beyond the predefined limit. Once it wakes up, batt can take over and continue to do the rest work. This will only disable charging before sleep, when 1) charging is active 2) battery charge limit is enabled.`,
 	}
 
 	cmd.AddCommand(
