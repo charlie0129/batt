@@ -9,6 +9,8 @@ github.com/charlie0129/gosmc v0.0.0-20230401165612-cc5d87817a08 h1:kCokmWuBcyN6x
 github.com/charlie0129/gosmc v0.0.0-20230401165612-cc5d87817a08/go.mod h1:R5W0w4VE842ziiT76KVicD26UzkM7Qs5kimJ6JVXo3E=
 github.com/charlie0129/gosmc v0.0.0-20230402083751-dcdbb506fd02 h1:ZVyn6Asn2I379TaJFHxGWoPAEnuThO66kPtfUUO3Q1E=
 github.com/charlie0129/gosmc v0.0.0-20230402083751-dcdbb506fd02/go.mod h1:R5W0w4VE842ziiT76KVicD26UzkM7Qs5kimJ6JVXo3E=
+github.com/charlie0129/gosmc v0.0.0-20230402130512-682b77dd9a4a h1:wungWp5K1u9cBIBC+1SA+pk2MPlV1Ak+rK6OHYJ3TMk=
+github.com/charlie0129/gosmc v0.0.0-20230402130512-682b77dd9a4a/go.mod h1:R5W0w4VE842ziiT76KVicD26UzkM7Qs5kimJ6JVXo3E=
 github.com/chenzhuoyu/base64x v0.0.0-20211019084208-fb5309c8db06/go.mod h1:DH46F32mSOjUmXrMHnKwZdA8wcEefY7UVqBKYGjpdQY=
 github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 h1:qSGYFH7+jGhDF8vLC+iwCD4WpbV1EBDSzWkJODFLams=
 github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311/go.mod h1:b583jCggY9gE99b6G5LEC39OIiVsWj+R97kbl5odCEk=

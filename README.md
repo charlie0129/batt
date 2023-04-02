@@ -4,13 +4,13 @@
 
 ## Motivation
 
-I created this tool simply because I am not satisfied existing tools 😐.
+I created this tool simply because I am not satisfied with existing tools 😐.
 
 I have written and using similar utils (to limit charging) on Intel MacBooks for years. Just since recently, I got hands on a M1 MacBook Air (yes, it is 2023, 2 years later since it is introduced 😅 and I just got one). The old BCLM way to limit charging doesn't work anymore. I was looking for a tool to limit charging on M1 MacBooks.
 
-I have tried some alternatives, both closed source and open source, but I kept none of them. Some alternatives' licensing options are just too limited 🤔 and are closed source. It doesn't seem a good option for me. Some open source alternatives just don't handle edge cases well and I encountered issues sometimes.
+I have tried some alternatives, both closed source and open source, but I kept none of them. Some paid alternatives' licensing options are just too limited 🤔, a bit bloated, require periodic Internet connection (hmm?) and are closed source. It doesn't seem a good option for me. Some open source alternatives just don't handle edge cases well and I encountered issues sometimes especially when sleeping (as of Apr 2023).
 
-I want a simple tool that does one thing and does it well -- limit charging. It seems I don't have any options but to develop by myself. So I spent a weekend developing this tool, so here we are! `batt` is here!
+I want a _simple_ tool that does just one thing, and **does it well** -- limiting charging, just like the [Unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy). It seems I don't have any options but to develop by myself. So I spent a weekend developing this tool, so here we are! `batt` is here!
 
 ## Why do you need this?
 
@@ -18,29 +18,29 @@ I want a simple tool that does one thing and does it well -- limit charging. It 
 
 `batt` does exactly that. It can be used to set a maximum charge level. For example, you can set it to 80% and it will stop charging when the battery reaches 80%.
 
-## How is it different than XXX?
+## How is it different from XXX?
 
 **It is free and opensource**. It even comes with some features (like idle sleep preventions and pre-sleep stop charging) that are only available in paid counterparts. It comes with no ads, no tracking, no telemetry, no analytics, no bullshit. It is open source, so you can read the code and verify that it does what it says it does.
 
-**It is simple.** It only does charge limiting and does it well. For example, when using other free/unpaid tools, your MacBook will sometimes charge to 100% during sleep even if you set the limit to, like, 60%. `batt` will handle such edge cases correctly and behave as intended. Other features is intentionally limited to keep it simple. If you want some additional features, feel free to raise an issue, and we can discuss. 
+**It is simple.** It only does charge limiting and does it well. For example, when using other free/unpaid tools, your MacBook will sometimes charge to 100% during sleep even if you set the limit to, like, 60%. `batt` have taken these edge cases into consideration and will behave as intended. Other features is intentionally limited to keep it simple. If you want some additional features, feel free to raise an issue, then we can discuss about it. 
 
 **It is light-weight.** As a command-line tool, it is light-weight by design. No electron GUIs hogging your system resources. However, a native GUI that sits in the menubar is a good addition.
 
 ## But macOS have similar features built-in
 
-Yes, macOS have optimized battery charging. It will try to find out your charging and working schedule and prohibits charging above 80% for a couple of hours overnight. However, if you have an un-regular schedule, this will simply not work. Also, you lose predictability (which value a lot) about your computer's behavior. By letting macOS decide for you, you cannot control when to charge or when not to charge.
+Yes, macOS have optimized battery charging. It will try to find out your charging and working schedule and prohibits charging above 80% for a couple of hours overnight. However, if you have an un-regular schedule, this will simply not work. Also, you lose predictability (which I value a lot) about your computer's behavior. By letting macOS decide for you, you cannot control when to charge or when not to charge.
 
 `batt` can make sure your computer does exactly what you want. You can set a maximum charge level, and it will stop charging when the battery reaches that level. Therefore, it is recommended to disable macOS's optimized charging when using `batt`.
 
 ## Installation
 
-> Currently, it is command-line only. Some knowledge of the command-line is recommended. A native GUI is possible but not planned.
+> Currently, it is command-line only. Some knowledge of the command-line is recommended. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
 
 1. Get the binary. You can download from GitHub releases or build it yourself. See [Building](#Building) for more details.
 2. Put the binary somewhere safe. You don't want to move it after installation. It is recommended to save it in your `$PATH`. For example, `/usr/local/bin`.
 3. Run `batt` in terminal to see if it works. If it works, it will show help messages.
 4. Install daemon. This component is what actually controls charging. Run `sudo batt install` to install the daemon. To uninstall, run `sudo batt uninstall`.
-5. Test if it works by running `sudo ./batt status`. If you see some JSON config, you are good to go! 
+5. Test if it works by running `sudo batt status`. If you see some JSON config, you are good to go! 
 6. `batt` is now running! By default `batt` will set a charge limit to 60%.
 7. Time to customize it a little. Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`. For example, to set the charge limit to 80%, run `sudo batt limit 80`. To disable the limit, run `sudo batt limit 100`.
 8. As said before, it is recommended to disable macOS's optimized charging when using `batt`. To do so, open System Preferences, go to Battery, and uncheck "Optimize battery charging".

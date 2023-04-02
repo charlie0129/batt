@@ -71,6 +71,8 @@ func installDaemon() error {
 }
 
 func uninstallDaemon() error {
+	// TODO: revert any changes, enable battery charging and enable adapter before uninstalling
+
 	logrus.Infof("stopping batt daemon")
 
 	// run launchctl unload /Library/LaunchDaemons/cc.chlc.batt.plist

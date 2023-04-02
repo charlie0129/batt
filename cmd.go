@@ -79,7 +79,7 @@ func NewInstallCommand() *cobra.Command {
 				return fmt.Errorf("failed to install daemon: %v", err)
 			}
 
-			logrus.Infof("installation succeeded. launchd will use current binary so you need to make sure do not move current binary. Once this binary is moved or deleted, you will need to run batt install again.")
+			logrus.Infof("installation succeeded. launchd use current binary at startup so please make sure you do not move current binary. Once this binary is moved or deleted, you will need to run ``batt install'' again.")
 
 			return nil
 		},
