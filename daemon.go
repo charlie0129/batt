@@ -66,7 +66,13 @@ func runDaemon() {
 	}()
 
 	// Listen to system sleep notifications.
-	go listenNotifications()
+	go func() {
+		err := listenNotifications()
+		if err != nil {
+			logrus.Errorf("failed to listen to system sleep notifications: %v", err)
+			os.Exit(1)
+		}
+	}()
 
 	// Open Apple SMC for read/writing
 	smcConn = smc.New()
@@ -77,6 +83,7 @@ func runDaemon() {
 	go func() {
 		logrus.Infof("main loop starts")
 
+		//nolint:revive // not empty
 		for mainLoop() {
 		}
 
@@ -90,11 +97,24 @@ func runDaemon() {
 	// Wait for a SIGINT or SIGKILL:
 	sig := <-sigc
 	logrus.Infof("Caught signal %s: shutting down.", sig)
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	srv.Shutdown(ctx)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	err = srv.Shutdown(ctx)
+	if err != nil {
+		logrus.Errorf("failed to shutdown http server: %v", err)
+	}
+	cancel()
 	// Stop listening (and unlink the socket if unix type):
-	l.Close()
-	smcConn.Close()
-	saveConfig()
+	err = l.Close()
+	if err != nil {
+		logrus.Errorf("failed to close socket: %v", err)
+	}
+	err = smcConn.Close()
+	if err != nil {
+		logrus.Errorf("failed to close smc connection: %v", err)
+	}
+	err = saveConfig()
+	if err != nil {
+		logrus.Errorf("failed to save config: %v", err)
+	}
 	os.Exit(0)
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Config is the configuration of batt.
 type Config struct {
 	// Limit is the battery charge limit in percentage, when Maintain is enabled.
 	// batt will keep the battery charge around this limit. Note that if your
@@ -23,13 +24,13 @@ var (
 	configPath    = "/etc/batt.json"
 	defaultConfig = Config{
 		Limit:                   60,
-		LoopIntervalSeconds:     60,
+		LoopIntervalSeconds:     30,
 		PreventIdleSleep:        true,
 		DisableChargingPreSleep: true,
 	}
 )
 
-var config Config = defaultConfig
+var config = defaultConfig
 
 func saveConfig() error {
 	b, err := json.MarshalIndent(config, "", "  ")
@@ -44,7 +45,11 @@ func loadConfig() error {
 	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
 		logrus.Warnf("config file %s does not exist, using default config %#v", configPath, defaultConfig)
 		config = defaultConfig
-		saveConfig()
+		err := saveConfig()
+		if err != nil {
+			logrus.Errorf("failed to save config: %v", err)
+			return err
+		}
 	}
 
 	b, err := os.ReadFile(configPath)

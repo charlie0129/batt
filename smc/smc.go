@@ -7,23 +7,29 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Connection is a wrapper of gosmc.Connection.
 type Connection struct {
 	*gosmc.Connection
 }
 
+// New returns a new Connection.
 func New() *Connection {
 	return &Connection{
 		Connection: gosmc.New(),
 	}
 }
 
+// Open opens the connection.
 func (c *Connection) Open() error {
 	return c.Connection.Open()
 }
+
+// Close closes the connection.
 func (c *Connection) Close() error {
 	return c.Connection.Close()
 }
 
+// Read reads a value from SMC.
 func (c *Connection) Read(key string) (gosmc.SMCVal, error) {
 	logrus.Tracef("trying to read %s", key)
 
@@ -37,6 +43,7 @@ func (c *Connection) Read(key string) (gosmc.SMCVal, error) {
 	return v, nil
 }
 
+// Write writes a value to SMC.
 func (c *Connection) Write(key string, value string) error {
 	logrus.Tracef("trying to write %s to %s", value, key)
 
@@ -50,6 +57,7 @@ func (c *Connection) Write(key string, value string) error {
 	return nil
 }
 
+// IsChargingEnabled returns whether charging is enabled.
 func (c *Connection) IsChargingEnabled() (bool, error) {
 	logrus.Tracef("IsChargingEnabled called")
 
@@ -64,6 +72,7 @@ func (c *Connection) IsChargingEnabled() (bool, error) {
 	return ret, nil
 }
 
+// EnableCharging enables charging.
 func (c *Connection) EnableCharging() error {
 	logrus.Tracef("EnableCharging called")
 
@@ -80,6 +89,7 @@ func (c *Connection) EnableCharging() error {
 	return c.EnableAdapter()
 }
 
+// DisableCharging disables charging.
 func (c *Connection) DisableCharging() error {
 	logrus.Tracef("DisableCharging called")
 
@@ -91,6 +101,7 @@ func (c *Connection) DisableCharging() error {
 	return c.Write("CH0C", "02")
 }
 
+// IsAdapterEnabled returns whether the adapter is plugged in.
 func (c *Connection) IsAdapterEnabled() (bool, error) {
 	logrus.Tracef("IsAdapterEnabled called")
 
@@ -105,18 +116,21 @@ func (c *Connection) IsAdapterEnabled() (bool, error) {
 	return ret, nil
 }
 
+// EnableAdapter enables the adapter.
 func (c *Connection) EnableAdapter() error {
 	logrus.Tracef("EnableAdapter called")
 
 	return c.Write("CH0I", "00")
 }
 
+// DisableAdapter disables the adapter.
 func (c *Connection) DisableAdapter() error {
 	logrus.Tracef("DisableAdapter called")
 
 	return c.Write("CH0I", "01")
 }
 
+// GetBatteryCharge returns the battery charge.
 func (c *Connection) GetBatteryCharge() (int, error) {
 	logrus.Tracef("GetBatteryCharge called")
 
@@ -134,6 +148,7 @@ func (c *Connection) GetBatteryCharge() (int, error) {
 	return int(v.Bytes[0]), nil
 }
 
+// IsPluggedIn returns whether the device is plugged in.
 func (c *Connection) IsPluggedIn() (bool, error) {
 	logrus.Tracef("IsPluggedIn called")
 

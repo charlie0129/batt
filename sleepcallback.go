@@ -37,11 +37,10 @@ func canSystemSleepCallback() {
 		logrus.Debugln("idle sleep is about to kick in, but maintained charging is in progress, deny idle sleep")
 		C.CancelPowerChange()
 		return
-	} else {
-		logrus.Debugln("idle sleep is about to kick in, no maintained charging is in progress, allow idle sleep")
-		C.AllowPowerChange()
-		return
 	}
+
+	logrus.Debugln("idle sleep is about to kick in, no maintained charging is in progress, allow idle sleep")
+	C.AllowPowerChange()
 }
 
 //export systemWillSleepCallback
@@ -67,7 +66,7 @@ func systemWillSleepCallback() {
 		logrus.Info("system is going to sleep, but maintained charging is in progress, disabling charging just before sleep")
 		err := smcConn.DisableCharging()
 		if err != nil {
-			logrus.Errorf("DisableCharging failed: %w", err)
+			logrus.Errorf("DisableCharging failed: %v", err)
 			return
 		}
 	} else {

@@ -16,29 +16,29 @@ func setConfig(c *gin.Context) {
 	var cfg Config
 	if err := c.BindJSON(&cfg); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		c.AbortWithError(http.StatusBadRequest, err)
+		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
 	if cfg.LoopIntervalSeconds < 1 {
 		err := fmt.Errorf("loopIntervalSeconds must be grater than 1, got %d", cfg.LoopIntervalSeconds)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		c.AbortWithError(http.StatusBadRequest, err)
+		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
 	if cfg.Limit < 10 || cfg.Limit > 100 {
 		err := fmt.Errorf("limit must be between 10 and 100, got %d", cfg.Limit)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		c.AbortWithError(http.StatusBadRequest, err)
+		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
 	config = cfg
 	if err := saveConfig(); err != nil {
-		logrus.Errorf("saveConfig failed: %w", err)
+		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
-		c.AbortWithError(http.StatusInternalServerError, err)
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
@@ -57,22 +57,22 @@ func setLimit(c *gin.Context) {
 	var l int
 	if err := c.BindJSON(&l); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		c.AbortWithError(http.StatusBadRequest, err)
+		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
 	if l < 10 || l > 100 {
 		err := fmt.Errorf("limit must be between 10 and 100, got %d", l)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		c.AbortWithError(http.StatusBadRequest, err)
+		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
 	config.Limit = l
 	if err := saveConfig(); err != nil {
-		logrus.Errorf("saveConfig failed: %w", err)
+		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
-		c.AbortWithError(http.StatusInternalServerError, err)
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
@@ -99,15 +99,15 @@ func setPreventIdleSleep(c *gin.Context) {
 	var p bool
 	if err := c.BindJSON(&p); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		c.AbortWithError(http.StatusBadRequest, err)
+		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
 	config.PreventIdleSleep = p
 	if err := saveConfig(); err != nil {
-		logrus.Errorf("saveConfig failed: %w", err)
+		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
-		c.AbortWithError(http.StatusInternalServerError, err)
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
@@ -120,15 +120,15 @@ func setDisableChargingPreSleep(c *gin.Context) {
 	var d bool
 	if err := c.BindJSON(&d); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		c.AbortWithError(http.StatusBadRequest, err)
+		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
 	config.DisableChargingPreSleep = d
 	if err := saveConfig(); err != nil {
-		logrus.Errorf("saveConfig failed: %w", err)
+		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
-		c.AbortWithError(http.StatusInternalServerError, err)
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 

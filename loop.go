@@ -24,13 +24,13 @@ func checkMaintainedChargingStatus() {
 
 	isChargingEnabled, err := smcConn.IsChargingEnabled()
 	if err != nil {
-		logrus.Errorf("IsChargingEnabled failed: %w", err)
+		logrus.Errorf("IsChargingEnabled failed: %v", err)
 		return
 	}
 
 	isPluggedIn, err := smcConn.IsPluggedIn()
 	if err != nil {
-		logrus.Errorf("IsPluggedIn failed: %w", err)
+		logrus.Errorf("IsPluggedIn failed: %v", err)
 		return
 	}
 
@@ -53,19 +53,19 @@ func maintainLoop() bool {
 
 	isChargingEnabled, err := smcConn.IsChargingEnabled()
 	if err != nil {
-		logrus.Errorf("IsChargingEnabled failed: %w", err)
+		logrus.Errorf("IsChargingEnabled failed: %v", err)
 		return false
 	}
 
 	batteryCharge, err := smcConn.GetBatteryCharge()
 	if err != nil {
-		logrus.Errorf("GetBatteryCharge failed: %w", err)
+		logrus.Errorf("GetBatteryCharge failed: %v", err)
 		return false
 	}
 
 	isPluggedIn, err := smcConn.IsPluggedIn()
 	if err != nil {
-		logrus.Errorf("IsPluggedIn failed: %w", err)
+		logrus.Errorf("IsPluggedIn failed: %v", err)
 		return false
 	}
 
@@ -84,9 +84,9 @@ func maintainLoop() bool {
 			batteryCharge,
 			limit,
 		)
-		smcConn.EnableCharging()
+		err = smcConn.EnableCharging()
 		if err != nil {
-			logrus.Errorf("EnableCharging failed: %w", err)
+			logrus.Errorf("EnableCharging failed: %v", err)
 			return false
 		}
 		maintainedChargingInProgress = true
@@ -97,9 +97,9 @@ func maintainLoop() bool {
 			batteryCharge,
 			limit,
 		)
-		smcConn.DisableCharging()
+		err = smcConn.DisableCharging()
 		if err != nil {
-			logrus.Errorf("DisableCharging failed: %w", err)
+			logrus.Errorf("DisableCharging failed: %v", err)
 			return false
 		}
 		maintainedChargingInProgress = false

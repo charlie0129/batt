@@ -34,7 +34,7 @@ func installDaemon() error {
 
 	logrus.Infof("current executable path: %s", exePath)
 
-	tmpl := strings.Replace(plistTemplate, "/path/to/batt", exePath, -1)
+	tmpl := strings.ReplaceAll(plistTemplate, "/path/to/batt", exePath)
 
 	logrus.Infof("writing launch daemon to /Library/LaunchDaemons")
 

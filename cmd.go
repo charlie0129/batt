@@ -6,13 +6,15 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/charlie0129/batt/pkg/version"
 )
 
 var (
-	Version  = "UNKNOWN"
 	logLevel = "info"
 )
 
+// NewCommand .
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "batt",
@@ -39,16 +41,18 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
+// NewVersionCommand .
 func NewVersionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Printf("%s\n", Version)
+			cmd.Printf("%s\n", version.Version)
 		},
 	}
 }
 
+// NewDaemonCommand .
 func NewDaemonCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "daemon",
@@ -59,6 +63,7 @@ func NewDaemonCommand() *cobra.Command {
 	}
 }
 
+// NewInstallCommand .
 func NewInstallCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install",
@@ -81,6 +86,7 @@ func NewInstallCommand() *cobra.Command {
 	}
 }
 
+// NewUninstallCommand .
 func NewUninstallCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "uninstall",
@@ -104,6 +110,7 @@ You must run this command as root.`,
 	}
 }
 
+// NewLimitCommand .
 func NewLimitCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "limit",
@@ -132,6 +139,7 @@ Setting the limit to 10-99 will enable the battery charge limit. However, settin
 	}
 }
 
+// NewSetPreventIdleSleepCommand .
 func NewSetPreventIdleSleepCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "idle-sleep",
@@ -187,6 +195,7 @@ However, this does not prevent manual sleep. For example, if you manually put yo
 	return cmd
 }
 
+// NewSetDisableChargingPreSleepCommand .
 func NewSetDisableChargingPreSleepCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "disable-charging-pre-sleep",
@@ -240,6 +249,7 @@ idle-sleep can prevented idle sleep to keep the battery charge limit active. How
 	return cmd
 }
 
+// NewStatusCommand .
 func NewStatusCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",

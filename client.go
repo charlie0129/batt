@@ -76,6 +76,7 @@ func get(path string) (string, error) {
 	return send("GET", path, "")
 }
 
+//nolint:unused
 func post(path string, data string) (string, error) {
 	return send("POST", path, data)
 }
@@ -84,6 +85,7 @@ func put(path string, data string) (string, error) {
 	return send("PUT", path, data)
 }
 
+//nolint:unused
 func del(path string) (string, error) {
 	return send("DELETE", path, "")
 }
