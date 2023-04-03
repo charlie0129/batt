@@ -31,7 +31,7 @@ func canSystemSleepCallback() {
 		return
 	}
 
-	checkMaintainedChargingStatus()
+	maintainLoop()
 
 	if maintainedChargingInProgress {
 		logrus.Debugln("idle sleep is about to kick in, but maintained charging is in progress, deny idle sleep")
@@ -60,7 +60,7 @@ func systemWillSleepCallback() {
 		return
 	}
 
-	checkMaintainedChargingStatus()
+	maintainLoop()
 
 	if maintainedChargingInProgress {
 		logrus.Info("system is going to sleep, but maintained charging is in progress, disabling charging just before sleep")
