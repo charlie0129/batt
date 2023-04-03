@@ -80,7 +80,7 @@ func NewInstallCommand() *cobra.Command {
 				return fmt.Errorf("failed to install daemon: %v", err)
 			}
 
-			logrus.Infof("installation succeeded. launchd use current binary at startup so please make sure you do not move current binary. Once this binary is moved or deleted, you will need to run ``batt install'' again.")
+			logrus.Infof("installation succeeded. launchd will use current binary at startup so please make sure you do not move current binary. Once this binary is moved or deleted, you will need to run ``batt install'' again.")
 
 			return nil
 		},
@@ -334,7 +334,21 @@ func NewStatusCommand() *cobra.Command {
 				return fmt.Errorf("failed to get config: %v", err)
 			}
 
-			cmd.Println(ret)
+			cmd.Println("config: " + ret)
+
+			ret, err = get("/adapter")
+			if err != nil {
+				return fmt.Errorf("failed to get power adapter status: %v", err)
+			}
+
+			cmd.Println("power adapter enabled: " + ret)
+
+			ret, err = get("/charging")
+			if err != nil {
+				return fmt.Errorf("failed to get charging status: %v", err)
+			}
+
+			cmd.Println("charging: " + ret)
 
 			return nil
 		},

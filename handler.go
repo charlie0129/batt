@@ -177,3 +177,15 @@ func getAdapter(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusOK, enabled)
 }
+
+func getCharging(c *gin.Context) {
+	charging, err := smcConn.IsChargingEnabled()
+	if err != nil {
+		logrus.Errorf("getCharging failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, charging)
+}
