@@ -33,6 +33,8 @@ func setupRoutes() *gin.Engine {
 	router.PUT("/limit", setLimit)
 	router.PUT("/prevent-idle-sleep", setPreventIdleSleep)
 	router.PUT("/disable-charging-pre-sleep", setDisableChargingPreSleep)
+	router.PUT("/adapter", setAdapter)
+	router.GET("/adapter", getAdapter)
 
 	return router
 }

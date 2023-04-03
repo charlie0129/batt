@@ -36,6 +36,7 @@ func NewCommand() *cobra.Command {
 		NewSetDisableChargingPreSleepCommand(),
 		NewSetPreventIdleSleepCommand(),
 		NewStatusCommand(),
+		NewAdapterCommand(),
 	)
 
 	return cmd
@@ -240,6 +241,79 @@ To prevent such cases, you can use disable-charging-pre-sleep. This will disable
 				}
 
 				logrus.Infof("successfully disabled disable-charging-pre-sleep")
+
+				return nil
+			},
+		},
+	)
+
+	return cmd
+}
+
+// NewAdapterCommand .
+func NewAdapterCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "adapter",
+		Short: "Enable or disable power adapter",
+		Long: `Enable or disable power adapter, i.e, power input.
+
+When you disable power adapter, power input from the wall will be disabled. This is useful when you are plugged in and you still want to consume battery instead of power input.`,
+	}
+
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "disable",
+			Short: "Disable power adapter",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				ret, err := put("/adapter", "false")
+				if err != nil {
+					return fmt.Errorf("failed to disable power adapter: %v", err)
+				}
+
+				if ret != "" {
+					logrus.Infof("daemon responded: %s", ret)
+				}
+
+				logrus.Infof("successfully disabled power adapter")
+
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "enable",
+			Short: "Enable power adapter",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				ret, err := put("/adapter", "true")
+				if err != nil {
+					return fmt.Errorf("failed to enable power adapter: %v", err)
+				}
+
+				if ret != "" {
+					logrus.Infof("daemon responded: %s", ret)
+				}
+
+				logrus.Infof("successfully enabled power adapter")
+
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "status",
+			Short: "Get the current status of power adapter",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				ret, err := get("/adapter")
+				if err != nil {
+					return fmt.Errorf("failed to get power adapter status: %v", err)
+				}
+
+				switch ret {
+				case "true":
+					logrus.Infof("power adapter is enabled")
+				case "false":
+					logrus.Infof("power adapter is disabled")
+				default:
+					logrus.Errorf("unknown power adapter status")
+				}
 
 				return nil
 			},

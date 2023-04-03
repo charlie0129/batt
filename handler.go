@@ -136,3 +136,44 @@ func setDisableChargingPreSleep(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusCreated, "ok")
 }
+
+func setAdapter(c *gin.Context) {
+	var d bool
+	if err := c.BindJSON(&d); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if d {
+		if err := smcConn.EnableAdapter(); err != nil {
+			logrus.Errorf("enablePowerAdapter failed: %v", err)
+			c.IndentedJSON(http.StatusInternalServerError, err.Error())
+			_ = c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+		logrus.Infof("enabled power adapter")
+	} else {
+		if err := smcConn.DisableAdapter(); err != nil {
+			logrus.Errorf("disablePowerAdapter failed: %v", err)
+			c.IndentedJSON(http.StatusInternalServerError, err.Error())
+			_ = c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+		logrus.Infof("disabled power adapter")
+	}
+
+	c.IndentedJSON(http.StatusCreated, "ok")
+}
+
+func getAdapter(c *gin.Context) {
+	enabled, err := smcConn.IsAdapterEnabled()
+	if err != nil {
+		logrus.Errorf("getAdapter failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, enabled)
+}
