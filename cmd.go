@@ -110,7 +110,7 @@ You must run this command as root.`,
 				return fmt.Errorf("failed to uninstall daemon: %v", err)
 			}
 
-			cmd.Printf("Your config is kept in %s in case you want to use batt again. If you want a complete uninstall, you can remove it manually.\n", configPath)
+			cmd.Printf("Your config is kept in %s, in case you want to use `batt' again. If you want a complete uninstall, you can remove it manually.\n", configPath)
 
 			return nil
 		},

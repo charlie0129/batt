@@ -55,7 +55,7 @@ func installDaemon() error {
 		return fmt.Errorf("failed to chown /Library/LaunchDaemons/cc.chlc.batt.plist: %w", err)
 	}
 
-	logrus.Infof("loading launch daemon")
+	logrus.Infof("starting batt")
 
 	// run launchctl load /Library/LaunchDaemons/cc.chlc.batt.plist
 	err = exec.Command(
@@ -73,7 +73,7 @@ func installDaemon() error {
 func uninstallDaemon() error {
 	// TODO: revert any changes, enable battery charging and enable adapter before uninstalling
 
-	logrus.Infof("stopping batt daemon")
+	logrus.Infof("stopping batt")
 
 	// run launchctl unload /Library/LaunchDaemons/cc.chlc.batt.plist
 	err := exec.Command(
