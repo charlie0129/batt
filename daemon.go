@@ -36,6 +36,7 @@ func setupRoutes() *gin.Engine {
 	router.PUT("/adapter", setAdapter)
 	router.GET("/adapter", getAdapter)
 	router.GET("/charging", getCharging)
+	router.GET("/battery-info", getBatteryInfo)
 
 	return router
 }
@@ -93,24 +94,18 @@ func runDaemon() {
 		logrus.Errorf("main loop exited unexpectedly")
 	}()
 
-	// Handle common process-killing signals so we can gracefully shut down:
+	// Handle common process-killing signals, so we can gracefully shut down:
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
-
-	// Wait for a SIGINT or SIGKILL:
+	// Wait for a SIGINT or SIGTERM:
 	sig := <-sigc
-	logrus.Infof("Caught signal %s: shutting down.", sig)
+	logrus.Infof("caught signal \"%s\": shutting down.", sig)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	err = srv.Shutdown(ctx)
 	if err != nil {
 		logrus.Errorf("failed to shutdown http server: %v", err)
 	}
 	cancel()
-	// Stop listening (and unlink the socket if unix type):
-	err = l.Close()
-	if err != nil {
-		logrus.Errorf("failed to close socket: %v", err)
-	}
 	err = smcConn.Close()
 	if err != nil {
 		logrus.Errorf("failed to close smc connection: %v", err)

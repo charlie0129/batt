@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/charlie0129/gosmc v0.0.0-20230402130512-682b77dd9a4a
+	github.com/distatus/battery v0.10.0
 	github.com/gin-gonic/gin v1.9.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.1
@@ -36,4 +37,5 @@ require (
 	golang.org/x/text v0.7.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	howett.net/plist v0.0.0-20181124034731-591f970eefbb // indirect
 )

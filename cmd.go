@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
+	"github.com/distatus/battery"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -80,7 +82,9 @@ func NewInstallCommand() *cobra.Command {
 				return fmt.Errorf("failed to install daemon: %v", err)
 			}
 
-			logrus.Infof("installation succeeded. launchd will use current binary at startup so please make sure you do not move current binary. Once this binary is moved or deleted, you will need to run ``batt install'' again.")
+			logrus.Infof("installation succeeded")
+
+			cmd.Println("`launchd' will use current binary (path shown in logs) at startup so please make sure you do not move this binary. Once this binary is moved or deleted, you will need to run ``batt install'' again.")
 
 			return nil
 		},
@@ -93,7 +97,7 @@ func NewUninstallCommand() *cobra.Command {
 		Use:   "uninstall",
 		Short: "Uninstall batt daemon from launchd (system-wide)",
 		Long: `Uninstall batt daemon from launchd (system-wide).
-This stops batt from running in the background and automatically starting on boot.
+This stops batt and removes it from launchd.
 
 You must run this command as root.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -105,6 +109,8 @@ You must run this command as root.`,
 				}
 				return fmt.Errorf("failed to uninstall daemon: %v", err)
 			}
+
+			cmd.Printf("Your config is kept in %s in case you want to use batt again. If you want a complete uninstall, you can remove it manually.\n", configPath)
 
 			return nil
 		},
@@ -336,19 +342,60 @@ func NewStatusCommand() *cobra.Command {
 
 			cmd.Println("config: " + ret)
 
+			cmd.Print("\n")
+
+			ret, err = get("/battery-info")
+			if err != nil {
+				return fmt.Errorf("failed to get battery info: %v", err)
+			}
+			var bat battery.Battery
+			err = json.Unmarshal([]byte(ret), &bat)
+			if err != nil {
+				return fmt.Errorf("failed to unmarshal battery info: %v", err)
+			}
+			state := "UNKNOWN"
+			switch bat.State {
+			case battery.Charging:
+				state = "charging"
+			case battery.Discharging:
+				state = "discharging"
+			case battery.Full:
+				state = "full"
+			}
+			cmd.Printf("state: %s\n", state)
+			cmd.Printf("design capacity: %.1f Wh\n", bat.Design/1e3)
+			cmd.Printf("charge rate: %.1f W\n", bat.ChargeRate/1e3)
+			cmd.Printf("design voltage: %.1f V\n", bat.DesignVoltage)
+
+			cmd.Print("\n")
+
 			ret, err = get("/adapter")
 			if err != nil {
 				return fmt.Errorf("failed to get power adapter status: %v", err)
 			}
 
-			cmd.Println("power adapter enabled: " + ret)
+			switch ret {
+			case "true":
+				cmd.Println("power adapter: enabled")
+			case "false":
+				cmd.Println("power adapter: disabled")
+			default:
+				cmd.Println("power adapter: unknown")
+			}
 
 			ret, err = get("/charging")
 			if err != nil {
 				return fmt.Errorf("failed to get charging status: %v", err)
 			}
 
-			cmd.Println("charging: " + ret)
+			switch ret {
+			case "true":
+				cmd.Println("charging: enabled")
+			case "false":
+				cmd.Println("charging: disabled")
+			default:
+				cmd.Println("charging: unknown")
+			}
 
 			return nil
 		},

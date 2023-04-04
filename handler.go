@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/distatus/battery"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
@@ -188,4 +190,28 @@ func getCharging(c *gin.Context) {
 	}
 
 	c.IndentedJSON(http.StatusOK, charging)
+}
+
+func getBatteryInfo(c *gin.Context) {
+	batteries, err := battery.GetAll()
+	if err != nil {
+		logrus.Errorf("getBatteryInfo failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	if len(batteries) == 0 {
+		logrus.Errorf("no batteries found")
+		c.IndentedJSON(http.StatusInternalServerError, "no batteries found")
+		_ = c.AbortWithError(http.StatusInternalServerError, errors.New("no batteries found"))
+		return
+	}
+
+	bat := batteries[0] // All Apple Silicon MacBooks only have one battery. No need to support more.
+	if bat.State == battery.Discharging {
+		bat.ChargeRate = -bat.ChargeRate
+	}
+
+	c.IndentedJSON(http.StatusOK, bat)
 }
