@@ -19,7 +19,7 @@ func send(method string, path string, data string) (string, error) {
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 				conn, err := net.Dial("unix", unixSocketPath)
 				if err != nil {
-					logrus.Errorf("failed to connect to unix socket, do you have adequate permissions? Is the daemon running?")
+					logrus.Errorf("failed to connect to unix socket. 1) Do you have adequate permissions? Please re-run as root. 2) Is the daemon running? Have installed it?")
 					return nil, err
 				}
 				return conn, err

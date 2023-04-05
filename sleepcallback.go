@@ -8,8 +8,13 @@ import "C"
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/sirupsen/logrus"
+)
+
+var (
+	delayNextLoopSeconds = 60
 )
 
 //export canSystemSleepCallback
@@ -64,6 +69,20 @@ func systemWillSleepCallback() {
 
 	if maintainedChargingInProgress {
 		logrus.Info("system is going to sleep, but maintained charging is in progress, disabling charging just before sleep")
+		// Delay next loop to prevent charging to be re-enabled after we disabled it.
+		// macOS will wait 30s before going to sleep, so we delay double that time (60s), just to be sure.
+		// no need to prevent duplicated runs.
+		logrus.Debugf("delaying next loop by %d seconds", delayNextLoopSeconds)
+		skipLoop.Store(true)
+		go func() {
+			<-time.After(time.Duration(delayNextLoopSeconds) * time.Second)
+			if skipLoop.Load() {
+				logrus.Debug("previously stopped loop re-started")
+				skipLoop.Store(false)
+			} else {
+				logrus.Debug("previously stopped loop already re-started")
+			}
+		}()
 		err := smcConn.DisableCharging()
 		if err != nil {
 			logrus.Errorf("DisableCharging failed: %v", err)
