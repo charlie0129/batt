@@ -89,15 +89,19 @@ By default, only root user is allowed to access the batt daemon for security rea
 				return fmt.Errorf("failed to install daemon: %v", err)
 			}
 
-			logrus.Infof("installation succeeded")
 			err = saveConfig()
 			if err != nil {
 				return err
 			}
 
+			logrus.Infof("installation succeeded")
+
 			cmd.Println("`launchd' will use current binary (path shown in logs) at startup so please make sure you do not move this binary. Once this binary is moved or deleted, you will need to run ``batt install'' again.")
 
 			return nil
+		},
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return loadConfig()
 		},
 	}
 
