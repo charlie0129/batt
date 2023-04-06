@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/version"
+	"github.com/charlie0129/batt/smc"
 )
 
 var (
@@ -130,7 +131,31 @@ You must run this command as root.`,
 				return fmt.Errorf("failed to uninstall daemon: %v", err)
 			}
 
-			cmd.Printf("Your config is kept in %s, in case you want to use `batt' again. If you want a complete uninstall, you can remove it manually.\n", configPath)
+			logrus.Infof("resetting charge limits")
+
+			// Open Apple SMC for read/writing
+			smcC := smc.New()
+			if err := smcC.Open(); err != nil {
+				return fmt.Errorf("failed to open SMC: %v", err)
+			}
+
+			err = smcC.EnableCharging()
+			if err != nil {
+				return fmt.Errorf("failed to enable charging: %v", err)
+			}
+
+			err = smcC.EnableAdapter()
+			if err != nil {
+				return fmt.Errorf("failed to enable adapter: %v", err)
+			}
+
+			if err := smcC.Close(); err != nil {
+				return fmt.Errorf("failed to close SMC: %v", err)
+			}
+
+			fmt.Println("successfully uninstalled")
+
+			cmd.Printf("Your config is kept in %s, in case you want to use `batt' again. If you want a complete uninstall, you can remove both config file and batt itself manually.\n", configPath)
 
 			return nil
 		},
