@@ -44,15 +44,15 @@ func (c *Connection) Read(key string) (gosmc.SMCVal, error) {
 }
 
 // Write writes a value to SMC.
-func (c *Connection) Write(key string, value string) error {
-	logrus.Tracef("trying to write %s to %s", value, key)
+func (c *Connection) Write(key string, value []byte) error {
+	logrus.Tracef("trying to write %#v to %s", value, key)
 
 	err := c.Connection.Write(key, value)
 	if err != nil {
 		return err
 	}
 
-	logrus.Tracef("write %s to %s succeed", value, key)
+	logrus.Tracef("write %#v to %s succeed", value, key)
 
 	return nil
 }
@@ -76,12 +76,12 @@ func (c *Connection) IsChargingEnabled() (bool, error) {
 func (c *Connection) EnableCharging() error {
 	logrus.Tracef("EnableCharging called")
 
-	err := c.Write("CH0B", "00")
+	err := c.Write("CH0B", []byte{0x0})
 	if err != nil {
 		return err
 	}
 
-	err = c.Write("CH0C", "00")
+	err = c.Write("CH0C", []byte{0x0})
 	if err != nil {
 		return err
 	}
@@ -93,12 +93,12 @@ func (c *Connection) EnableCharging() error {
 func (c *Connection) DisableCharging() error {
 	logrus.Tracef("DisableCharging called")
 
-	err := c.Write("CH0B", "02")
+	err := c.Write("CH0B", []byte{0x2})
 	if err != nil {
 		return err
 	}
 
-	return c.Write("CH0C", "02")
+	return c.Write("CH0C", []byte{0x2})
 }
 
 // IsAdapterEnabled returns whether the adapter is plugged in.
@@ -120,14 +120,14 @@ func (c *Connection) IsAdapterEnabled() (bool, error) {
 func (c *Connection) EnableAdapter() error {
 	logrus.Tracef("EnableAdapter called")
 
-	return c.Write("CH0I", "00")
+	return c.Write("CH0I", []byte{0x0})
 }
 
 // DisableAdapter disables the adapter.
 func (c *Connection) DisableAdapter() error {
 	logrus.Tracef("DisableAdapter called")
 
-	return c.Write("CH0I", "01")
+	return c.Write("CH0I", []byte{0x1})
 }
 
 // GetBatteryCharge returns the battery charge.
