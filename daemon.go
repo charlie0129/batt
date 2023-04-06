@@ -61,6 +61,15 @@ func runDaemon() {
 		return
 	}
 
+	if config.AllowNonRootAccess {
+		logrus.Infof("non-root access is allowed, chaning permissions of %s to 0777", unixSocketPath)
+		err = os.Chmod(unixSocketPath, 0777)
+		if err != nil {
+			logrus.Fatal(err)
+			return
+		}
+	}
+
 	// Serve HTTP on unix socket
 	go func() {
 		logrus.Infof("http server listening on %s", l.Addr().String())

@@ -6,7 +6,7 @@
 
 I created this tool simply because I am not satisfied with existing tools 😐.
 
-I have written and using similar utils (to limit charging) on Intel MacBooks for years. Just since recently, I got hands on a M1 MacBook Air (yes, it is 2023, 2 years later since it is introduced 😅 and I just got one). The old BCLM way to limit charging doesn't work anymore. I was looking for a tool to limit charging on M1 MacBooks.
+I have written and using similar utils (to limit charging) on Intel MacBooks for years. Just since recently, I got hands on a Apple Silicon MacBook (yes, it is 2023, 2 years later since it is introduced 😅 and I just got one). The old BCLM way to limit charging doesn't work anymore. I was looking for a tool to limit charging on M1 MacBooks.
 
 I have tried some alternatives, both closed source and open source, but I kept none of them. Some paid alternatives' licensing options are just too limited 🤔, a bit bloated, require periodic Internet connection (hmm?) and are closed source. It doesn't seem a good option for me. Some open source alternatives just don't handle edge cases well and I encountered issues sometimes especially when sleeping (as of Apr 2023).
 
@@ -120,6 +120,8 @@ However, on Apple Silicon, the way how charging is controlled changed. There is 
 It writes to SMC to control battery charging. This does changes to your hardware, and is a highly privileged operation. Therefore, it requires root privilege.
 
 It is also possible to run it without `sudo`. But I decided not to, because I want to make sure only you, the superuser, can control your computer, and to prevent accidental misuse.
+
+If you want to use the cli without sudo, e.g. `sudo batt limit 80`, you can install the daemon with `--allow-non-root-access` flag, i.e., `sudo batt install --allow-non-root-access`. This will allow non-root users to access the daemon. However, this is not recommended from a security perspective.
 
 If you are concerned about security, you can check the source code [here](https://github.com/charlie0129/batt) to make sure it does not do anything funny.
 

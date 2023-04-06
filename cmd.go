@@ -68,11 +68,18 @@ func NewDaemonCommand() *cobra.Command {
 
 // NewInstallCommand .
 func NewInstallCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install batt daemon to launchd (system-wide)",
-		Long:  "Install batt daemon to launchd (system-wide). This makes batt run in the background and automatically start on boot. You must run this command as root.",
+		Long: `Install batt daemon to launchd (system-wide).
+This makes batt run in the background and automatically start on boot. You must run this command as root.
+
+By default, only root user is allowed to access the batt daemon for security reasons. As a result, you will need to run batt as root to control the battery charging. If you want to allow non-root users to access the daemon, you can use the --allow-non-root-access flag. However, this is NOT recommended as it introduces security risks.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if config.AllowNonRootAccess {
+				logrus.Warnf("non-root users are allowed to access the batt daemon. This is NOT recommended.")
+			}
+
 			err := installDaemon()
 			if err != nil {
 				// check if current user is root
@@ -83,12 +90,21 @@ func NewInstallCommand() *cobra.Command {
 			}
 
 			logrus.Infof("installation succeeded")
+			err = saveConfig()
+			if err != nil {
+				return err
+			}
 
 			cmd.Println("`launchd' will use current binary (path shown in logs) at startup so please make sure you do not move this binary. Once this binary is moved or deleted, you will need to run ``batt install'' again.")
 
 			return nil
 		},
 	}
+
+	flags := cmd.Flags()
+	flags.BoolVar(&config.AllowNonRootAccess, "allow-non-root-access", false, "Allow non-root users to access batt daemon. NOT recommended.")
+
+	return cmd
 }
 
 // NewUninstallCommand .

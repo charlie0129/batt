@@ -18,6 +18,7 @@ type Config struct {
 	LoopIntervalSeconds     int  `json:"loopIntervalSeconds"`
 	PreventIdleSleep        bool `json:"preventIdleSleep"`
 	DisableChargingPreSleep bool `json:"disableChargingPreSleep"`
+	AllowNonRootAccess      bool `json:"allowNonRootAccess"`
 }
 
 var (
@@ -27,6 +28,7 @@ var (
 		LoopIntervalSeconds:     30,
 		PreventIdleSleep:        true,
 		DisableChargingPreSleep: true,
+		AllowNonRootAccess:      false,
 	}
 )
 
