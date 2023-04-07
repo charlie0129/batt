@@ -39,11 +39,19 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 1. Get the binary. You can download from GitHub releases or build it yourself. See [Building](#Building) for more details.
 2. Put the binary somewhere safe. You don't want to move it after installation. It is recommended to save it in your `$PATH`. For example, `/usr/local/bin`.
 3. Run `batt` in terminal to see if it works. If it works, it will show help messages.
-4. Install daemon. This component is what actually controls charging. Run `sudo batt install` to install the daemon. To uninstall, run `sudo batt uninstall`.
+4. Install daemon. This component is what actually controls charging. Run `sudo batt install` to install the daemon. If you do not want to use `sudo` every time, e.g., when setting charge limits, add the `--allow-non-root-access` flag (but you will sacrifice security for convenience). To uninstall the daemon, run `sudo batt uninstall`.
 5. Test if it works by running `sudo batt status`. If you see some JSON config, you are good to go! 
 6. `batt` is now running! By default `batt` will set a charge limit to 60%.
-7. Time to customize it a little. Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`. For example, to set the charge limit to 80%, run `sudo batt limit 80`. To disable the limit, run `sudo batt limit 100`.
+7. Time to customize it a little. For example, to set the charge limit to 80%, run `sudo batt limit 80`.
 8. As said before, it is recommended to disable macOS's optimized charging when using `batt`. To do so, open System Preferences, go to Battery, and uncheck "Optimize battery charging".
+
+Notes:
+
+- If your current charge is above the limit, your computer will just stop charging. To see any effect, you will need to use your battery until it is below the limit. You can use `sudo batt adapter disable` to force the computer to use battery even if it is plugged in.
+- To disable the charge limit, run `sudo batt limit 100`.
+- Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
+
+> Finally, if you find `batt` helpful, stars ⭐️ are much appreciated!
 
 ## Usage
 
@@ -125,12 +133,12 @@ If you want to use the cli without sudo, e.g. `sudo batt limit 80`, you can inst
 
 If you are concerned about security, you can check the source code [here](https://github.com/charlie0129/batt) to make sure it does not do anything funny.
 
-### Why is it written in Go?
+### Why is it written in Go and C?
 
-Since it is a hobby project, I want to balance effort and the final outcome. Go seems a good choice for me. However, Go don't have any library to r/w SMC, so I have to write it myself (opensourced here: [charlie0129/gosmc](https://github.com/charlie0129/gosmc)). Thankfully this didn't slow down development too much.
+Since it is a hobby project, I want to balance effort and the final outcome. Go seems a good choice for me. However, C is required to register sleep and wake notifications using Apple's IOKit framework. Also, Go don't have any library to r/w SMC, so I have to write it myself ([charlie0129/gosmc](https://github.com/charlie0129/gosmc)). This part is also mainly written in C as it interacts with the hardware and uses OS capabilities. Thankfully, writing a library didn't slow down development too much.
 
 ## Acknowledgements
 
 - [actuallymentor/battery](https://github.com/actuallymentor/battery) for various SMC keys.
-- [hholtmann/smcFanControl](https://github.com/hholtmann/smcFanControl) for its C code to read/write SMC, which I have created Go-bindings as a Go library here [charlie0129/gosmc](https://github.com/charlie0129/gosmc).
+- [hholtmann/smcFanControl](https://github.com/hholtmann/smcFanControl) for its C code to read/write SMC, which inspires [charlie0129/gosmc](https://github.com/charlie0129/gosmc).
 - Apple for its guide to register and unregister sleep and wake notifications.
