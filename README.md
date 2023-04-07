@@ -128,3 +128,9 @@ If you are concerned about security, you can check the source code [here](https:
 ### Why is it written in Go?
 
 Since it is a hobby project, I want to balance effort and the final outcome. Go seems a good choice for me. However, Go don't have any library to r/w SMC, so I have to write it myself (opensourced here: [charlie0129/gosmc](https://github.com/charlie0129/gosmc)). Thankfully this didn't slow down development too much.
+
+## Acknowledgements
+
+- [actuallymentor/battery](https://github.com/actuallymentor/battery) for various SMC keys.
+- [hholtmann/smcFanControl](https://github.com/hholtmann/smcFanControl) for its C code to read/write SMC, which I have created Go-bindings as a Go library here [charlie0129/gosmc](https://github.com/charlie0129/gosmc).
+- Apple for its guide to register and unregister sleep and wake notifications.
