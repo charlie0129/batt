@@ -11,10 +11,10 @@ on:
     branches:
       - master
       - release-*
-  workflow_dispatch: { }
+  workflow_dispatch: {}
 
 env:
-  GOLANGCI_VERSION: 'v1.52.2'
+  GOLANGCI_VERSION: "v1.52.2"
 
 jobs:
   detect-noop:
@@ -32,20 +32,19 @@ jobs:
           do_not_skip: '["workflow_dispatch", "schedule", "push"]'
           concurrent_skipping: false
 
-# Skipped because linting for cgo is not working. TODO: fix it later.
-#  checks:
-#    name: Check Go Code
-#    runs-on: macos-12
-#    needs: detect-noop
-#    if: needs.detect-noop.outputs.noop != 'true'
-#    steps:
-#      - name: Checkout Code
-#        uses: actions/checkout@v3
-#
-#      - name: Lint
-#        uses: golangci/golangci-lint-action@v3
-#        with:
-#          version: ${{ env.GOLANGCI_VERSION }}
+  checks:
+    name: Check Go Code
+    runs-on: macos-latest
+    needs: detect-noop
+    if: needs.detect-noop.outputs.noop != 'true'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: ${{ env.GOLANGCI_VERSION }}
 
   test-build:
     name: Test Build
@@ -56,6 +55,5 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-# Skipped because ci is not working. TODO: fix it later.
-#      - name: Test Build
-#        run: go build .
+      - name: Test Build
+        run: make
