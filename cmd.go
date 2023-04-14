@@ -89,6 +89,10 @@ By default, only root user is allowed to access the batt daemon for security rea
 				return err
 			}
 
+			if config.AllowNonRootAccess && !b {
+				logrus.Warnf("Previously, non-root users were allowed to access the batt daemon. However, this will be disabled at every installation unless you provide the --allow-non-root-access flag.")
+			}
+
 			// Before installation, always reset config.AllowNonRootAccess to flag value
 			// instead of the one in config file.
 			config.AllowNonRootAccess = b
@@ -116,7 +120,9 @@ By default, only root user is allowed to access the batt daemon for security rea
 
 			logrus.Infof("installation succeeded")
 
-			cmd.Println("`launchd' will use current binary (path shown in logs) at startup so please make sure you do not move this binary. Once this binary is moved or deleted, you will need to run ``batt install'' again.")
+			exePath, _ := os.Executable()
+
+			cmd.Printf("`launchd' will use current binary (%s) at startup so please make sure you do not move this binary. Once this binary is moved or deleted, you will need to run ``batt install'' again.\n", exePath)
 
 			return nil
 		},
@@ -266,8 +272,8 @@ However, this does not prevent manual sleep. For example, if you manually put yo
 func NewSetDisableChargingPreSleepCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "disable-charging-pre-sleep",
-		Short: "Set whether to disable charging before sleep during a charging session",
-		Long: `Set whether to disable charging before sleep during a charging session.
+		Short: "Set whether to disable charging before sleep if charge limit is enabled",
+		Long: `Set whether to disable charging before sleep if charge limit is enabled.
 
 Due to macOS limitations, batt will pause when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, the battery charge limit will no longer function and the battery will charge to 100%. If you want the battery to stay below the charge limit, this behavior is probably not what you want. This option, together with prevent-idle-sleep, will prevent this from happening. prevent-idle-sleep can prevent idle sleep to keep the battery charge limit active. However, this does not prevent manual sleep. For example, if you manually put your computer to sleep or close the lid, batt will not prevent your computer from sleeping. This is a limitation of macOS. 
 
@@ -410,7 +416,6 @@ func NewStatusCommand() *cobra.Command {
 			} else {
 				cmd.Printf("charge limit: disabled\n")
 			}
-			cmd.Printf("charge limit: %d%%\n", conf.Limit)
 			cmd.Printf("prevent idle-sleep when charging: %t\n", conf.PreventIdleSleep)
 			cmd.Printf("disable charging before sleep if charge limit is enabled: %t\n", conf.DisableChargingPreSleep)
 			cmd.Printf("allow non-root users to assess the daemon: %t\n", conf.AllowNonRootAccess)

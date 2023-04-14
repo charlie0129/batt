@@ -34,9 +34,12 @@ func maintainLoop() bool {
 		return true
 	}
 
-	logrus.Debugf("waiting for waitgroup before maintain loop")
+	tsBeforeWait := time.Now()
 	wg.Wait()
-	logrus.Debugf("waitgroup done, starting maintain loop")
+	tsAfterWait := time.Now()
+	if tsAfterWait.Sub(tsBeforeWait) > time.Second*1 {
+		logrus.Debugf("this maintain loop waited %d seconds after being initiated, now ready to execute", int(tsAfterWait.Sub(tsBeforeWait).Seconds()))
+	}
 
 	isChargingEnabled, err := smcConn.IsChargingEnabled()
 	if err != nil {

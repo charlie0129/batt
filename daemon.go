@@ -25,8 +25,9 @@ var (
 func setupRoutes() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
-	router := gin.Default()
-	router.Use(ginlogrus.Logger(logrus.StandardLogger()), gin.Recovery())
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(ginlogrus.Logger(logrus.StandardLogger()))
 	router.GET("/config", getConfig)
 	router.PUT("/config", setConfig) // Should not be called by user.
 	router.GET("/limit", getLimit)
