@@ -2,7 +2,6 @@ package main
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -12,7 +11,8 @@ var (
 	maintainedChargingInProgress = false
 	maintainLoopLock             = &sync.Mutex{}
 	maintainTick                 = time.NewTicker(time.Second * time.Duration(config.LoopIntervalSeconds))
-	skipLoop                     = &atomic.Bool{}
+	// mg is used to skip several loops when system woke up or before sleep
+	wg = &sync.WaitGroup{}
 )
 
 func mainLoop() {
@@ -25,11 +25,6 @@ func maintainLoop() bool {
 	maintainLoopLock.Lock()
 	defer maintainLoopLock.Unlock()
 
-	if skipLoop.Load() {
-		logrus.Debugln("maintainLoop skipped")
-		return true
-	}
-
 	limit := config.Limit
 	maintain := limit < 100
 
@@ -38,6 +33,10 @@ func maintainLoop() bool {
 		maintainedChargingInProgress = false
 		return true
 	}
+
+	logrus.Debugf("waiting for waitgroup before maintain loop")
+	wg.Wait()
+	logrus.Debugf("waitgroup done, starting maintain loop")
 
 	isChargingEnabled, err := smcConn.IsChargingEnabled()
 	if err != nil {
