@@ -271,7 +271,7 @@ func NewSetDisableChargingPreSleepCommand() *cobra.Command {
 
 Due to macOS limitations, batt will pause when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, the battery charge limit will no longer function and the battery will charge to 100%. If you want the battery to stay below the charge limit, this behavior is probably not what you want. This option, together with prevent-idle-sleep, will prevent this from happening. prevent-idle-sleep can prevent idle sleep to keep the battery charge limit active. However, this does not prevent manual sleep. For example, if you manually put your computer to sleep or close the lid, batt will not prevent your computer from sleeping. This is a limitation of macOS. 
 
-To prevent such cases, you can use disable-charging-pre-sleep. This will disable charging just before your computer goes to sleep, preventing it from charging beyond the predefined limit. Once it wakes up, batt can take over and continue to do the rest work. This will only disable charging before sleep, when 1) charging is active 2) battery charge limit is enabled.`,
+To prevent such cases, you can use disable-charging-pre-sleep. This will disable charging just before your computer goes to sleep, preventing it from charging beyond the predefined limit. Once it wakes up, batt can take over and continue to do the rest work. It will only disable charging before sleep if battery charge limit is enabled.`,
 	}
 
 	cmd.AddCommand(
@@ -400,7 +400,20 @@ func NewStatusCommand() *cobra.Command {
 				return fmt.Errorf("failed to get config: %v", err)
 			}
 
-			cmd.Println("config: " + ret)
+			conf := Config{}
+			err = json.Unmarshal([]byte(ret), &conf)
+			if err != nil {
+				return fmt.Errorf("failed to unmarshal config: %v", err)
+			}
+			if conf.Limit < 100 {
+				cmd.Printf("charge limit: %d%%\n", conf.Limit)
+			} else {
+				cmd.Printf("charge limit: disabled\n")
+			}
+			cmd.Printf("charge limit: %d%%\n", conf.Limit)
+			cmd.Printf("prevent idle-sleep when charging: %t\n", conf.PreventIdleSleep)
+			cmd.Printf("disable charging before sleep if charge limit is enabled: %t\n", conf.DisableChargingPreSleep)
+			cmd.Printf("allow non-root users to assess the daemon: %t\n", conf.AllowNonRootAccess)
 
 			cmd.Print("\n")
 

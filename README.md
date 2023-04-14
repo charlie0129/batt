@@ -40,7 +40,7 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 2. Put the binary somewhere safe. You don't want to move it after installation. It is recommended to save it in your `$PATH`. For example, `/usr/local/bin`.
 3. Run `batt` in terminal to see if it works. If it works, it will show help messages.
 4. Install daemon. This component is what actually controls charging. Run `sudo batt install` to install the daemon. If you do not want to use `sudo` every time, e.g., when setting charge limits, add the `--allow-non-root-access` flag (but you will sacrifice security for convenience). To uninstall the daemon, run `sudo batt uninstall`.
-5. Test if it works by running `sudo batt status`. If you see some JSON config, you are good to go! 
+5. Test if it works by running `sudo batt status`. If you see some status info, you are good to go! 
 6. `batt` is now running! By default `batt` will set a charge limit to 60%.
 7. Time to customize it a little. For example, to set the charge limit to 80%, run `sudo batt limit 80`.
 8. As said before, it is recommended to disable macOS's optimized charging when using `batt`. To do so, open System Preferences, go to Battery, and uncheck "Optimize battery charging".
@@ -93,7 +93,7 @@ Set whether to disable charging before sleep during a charging session.
 
 Due to macOS limitations, `batt` will pause when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, the battery charge limit will no longer function and the battery will charge to 100%. If you want the battery to stay below the charge limit, this behavior is probably not what you want. This option, together with prevent-idle-sleep, will prevent this from happening. prevent-idle-sleep can prevent idle sleep to keep the battery charge limit active. However, this does not prevent manual sleep. For example, if you manually put your computer to sleep or close the lid, batt will not prevent your computer from sleeping. This is a limitation of macOS.
 
-To prevent such cases, you can use disable-charging-pre-sleep. This will disable charging just before your computer goes to sleep, preventing it from charging beyond the predefined limit. Once it wakes up, `batt` can take over and continue to do the rest work. This will only disable charging before sleep, when 1) charging is active 2) battery charge limit is enabled.
+To prevent such cases, you can use disable-charging-pre-sleep. This will disable charging just before your computer goes to sleep, preventing it from charging beyond the predefined limit. Once it wakes up, `batt` can take over and continue to do the rest work. It will only disable charging before sleep if battery charge limit is enabled.
 
 To enable this feature, run `sudo batt disable-charging-pre-sleep enable`. To disable, run `sudo batt disable-charging-pre-sleep disable`.
 
@@ -136,6 +136,20 @@ If you are concerned about security, you can check the source code [here](https:
 ### Why is it written in Go and C?
 
 Since it is a hobby project, I want to balance effort and the final outcome. Go seems a good choice for me. However, C is required to register sleep and wake notifications using Apple's IOKit framework. Also, Go don't have any library to r/w SMC, so I have to write it myself ([charlie0129/gosmc](https://github.com/charlie0129/gosmc)). This part is also mainly written in C as it interacts with the hardware and uses OS capabilities. Thankfully, writing a library didn't slow down development too much.
+
+### How to uninstall?
+
+1. Run `sudo batt uninstall` to remove the daemon.
+2. See the on-screen instructions to remove the config (optional).
+3. Remove the `batt` binary itself by `sudo rm $(where batt)`.
+
+### How to upgrade?
+
+If a new version is released, you can upgrade it by:
+
+1. Run `sudo batt uninstall` to remove the daemon.
+2. Replace the old `batt` binary with the downloaded new one.
+3. Run `sudo batt install` to install the daemon again. Although most config is preserved, some security related config may be reset during re-installation. For example, if you used `--allow-non-root-access` when installing previously, you will need to use it again.
 
 ## Acknowledgements
 
