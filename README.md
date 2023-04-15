@@ -6,7 +6,7 @@
 
 [This article](https://batteryuniversity.com/article/bu-808-how-to-prolong-lithium-based-batteries) might be helpful. TL;DR: keep your battery at 80% or lower when plugged in, and discharge it as shallowly as feasible.
 
-Previously, before optimized battery charging is introduced, MacBooks are known suffer from battery swelling when kept at 100% all the time, especially the 2015s.
+Previously, before optimized battery charging is introduced, MacBooks are known to suffer from battery swelling when they are kept at 100% all the time, especially the 2015s. Even with optimized battery charging, the effect is not optimal (described [below](#but-macos-have-similar-features-built-in-is-it)).
 
 `batt` can effectively alleviate this problem by limiting the battery charge level. It can be used to set a maximum charge level. For example, you can set it to 80%, and it will stop charging when the battery reaches 80%.
 
@@ -20,7 +20,7 @@ Previously, before optimized battery charging is introduced, MacBooks are known 
 
 ## But macOS have similar features built-in, is it?
 
-Yes, macOS have optimized battery charging. It will try to find out your charging and working schedule and prohibits charging above 80% for a couple of hours overnight. However, if you have an un-regular schedule, this will simply not work. Also, you lose predictability (which I value a lot) about your computer's behavior. By letting macOS decide for you, you cannot control when to charge or when not to charge.
+Yes, macOS have optimized battery charging. It will try to find out your charging and working schedule and prohibits charging above 80% for a couple of hours overnight. However, if you have an un-regular schedule, this will simply not work. Also, you lose predictability (which I value a lot) about your computer's behavior, i.e., by letting macOS decide for you, you, the one who knows your schedule the best, cannot control when to charge or when not to charge.
 
 `batt` can make sure your computer does exactly what you want. You can set a maximum charge level, and it will stop charging when the battery reaches that level. Therefore, it is recommended to disable macOS's optimized charging when using `batt`.
 
@@ -28,7 +28,7 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 > Currently, it is command-line only. Some knowledge of the command-line is required. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
 
-1. Get the binary. You can download it from [GitHub releases](https://github.com/charlie0129/batt/releases), extract the tar archive, and you will get a `batt` binary. If you want the latest features and bug fixes, you can build it yourself (see [Building](#Building) for more details)
+1. Get the binary. You can download it from [GitHub releases](https://github.com/charlie0129/batt/releases), extract the tar archive, and you will get a `batt` binary. If you want the latest features and bug fixes, you can build it yourself (see [Building](#building) for more details)
 2. Put the binary somewhere safe. It will be used by macOS `launchd` later, so you don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`.
 3. Install daemon using `sudo batt install`. This component is what actually controls charging. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. 
 4. In case you have GateKeeper turned on, you will see something like _"batt is can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. To solve this, you can either 1. Go to System Preferences -> Security & Privacy -> Open Anyway; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
@@ -149,14 +149,14 @@ Since it is a hobby project, I want to balance effort and the final outcome. Go 
 ### How to uninstall?
 
 1. Run `sudo batt uninstall` to remove the daemon.
-2. See the on-screen instructions to remove the config (optional).
+2. Remove the config by `sudo rm /etc/batt.json` (optional).
 3. Remove the `batt` binary itself by `sudo rm $(where batt)`.
 
 ### How to upgrade?
 
 If a new version is released, you can upgrade it by:
 
-1. Run `sudo batt uninstall` to remove the daemon.
+1. Run `sudo batt uninstall` to remove the old daemon.
 2. Replace the old `batt` binary with the downloaded new one.
 3. Run `sudo batt install` to install the daemon again. Although most config is preserved, some security related config may be reset during re-installation. For example, if you used `--allow-non-root-access` when installing previously, you will need to use it again.
 
