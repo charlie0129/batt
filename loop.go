@@ -11,23 +11,13 @@ var (
 	maintainedChargingInProgress = false
 	maintainLoopLock             = &sync.Mutex{}
 	// mg is used to skip several loops when system woke up or before sleep
-	wg                = &sync.WaitGroup{}
-	isChargingEnabled bool
+	wg = &sync.WaitGroup{}
 )
 
 func loop() {
 	for {
 		maintainLoop()
-		// delay
-		d := 30 // seconds
-		// charging disabled: means it is above charge limit, so we can wait longer
-		if !isChargingEnabled {
-			d = 120
-		}
-		if config.Limit == 100 {
-			d = 120
-		}
-		time.Sleep(time.Duration(d) * time.Second)
+		time.Sleep(time.Duration(20) * time.Second)
 	}
 }
 
@@ -75,13 +65,7 @@ func maintainLoop() bool {
 		maintainedChargingInProgress = false
 	}
 
-	logrus.Debugf("batteryCharge=%d, limit=%d, chargingEnabled=%t, isPluggedIn=%t, maintainedChargingInProgress=%t",
-		batteryCharge,
-		limit,
-		isChargingEnabled,
-		isPluggedIn,
-		maintainedChargingInProgress,
-	)
+	printStatus(batteryCharge, limit, isChargingEnabled, isPluggedIn, maintainedChargingInProgress)
 
 	if batteryCharge < limit && !isChargingEnabled {
 		logrus.Infof("battery charge (%d) below limit (%d) but charging is disabled, enabling charging",
@@ -110,4 +94,37 @@ func maintainLoop() bool {
 	}
 
 	return true
+}
+
+var (
+	lastBatteryCharge                = -1
+	lastLimit                        = -1
+	lastIsChargingEnabled            = false
+	lastIsPluggedIn                  = false
+	lastMaintainedChargingInProgress = false
+)
+
+func printStatus(batteryCharge int, limit int, isChargingEnabled bool, isPluggedIn bool, maintainedChargingInProgress bool) {
+	if batteryCharge == lastBatteryCharge &&
+		limit == lastLimit &&
+		isChargingEnabled == lastIsChargingEnabled &&
+		isPluggedIn == lastIsPluggedIn &&
+		maintainedChargingInProgress == lastMaintainedChargingInProgress && // All values are the same as last time
+		!logrus.IsLevelEnabled(logrus.TraceLevel) { // Trace level is not enabled. If trace level is enabled, we want to print the status every time.
+		return
+	}
+
+	lastBatteryCharge = batteryCharge
+	lastLimit = limit
+	lastIsChargingEnabled = isChargingEnabled
+	lastIsPluggedIn = isPluggedIn
+	lastMaintainedChargingInProgress = maintainedChargingInProgress
+
+	logrus.Debugf("batteryCharge=%d, limit=%d, chargingEnabled=%t, isPluggedIn=%t, maintainedChargingInProgress=%t",
+		batteryCharge,
+		limit,
+		isChargingEnabled,
+		isPluggedIn,
+		maintainedChargingInProgress,
+	)
 }
