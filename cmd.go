@@ -51,7 +51,7 @@ func NewVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Print version",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Printf("%s\n", version.Version)
+			cmd.Printf("%s %s\n", version.Version, version.GitCommit)
 		},
 	}
 }
@@ -62,6 +62,7 @@ func NewDaemonCommand() *cobra.Command {
 		Use:   "daemon",
 		Short: "Run batt daemon in the foreground",
 		Run: func(cmd *cobra.Command, args []string) {
+			logrus.Infof("batt version %s commit %s", version.Version, version.GitCommit)
 			runDaemon()
 		},
 	}
