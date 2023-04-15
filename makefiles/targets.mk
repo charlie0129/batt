@@ -26,6 +26,7 @@ build: build-dirs
 	    OS="$(OS)"                   \
 	    OUTPUT="$(OUTPUT)"           \
 	    VERSION="$(VERSION)"         \
+	    GIT_COMMIT="$(GIT_COMMIT)"   \
 	    DEBUG="$(DEBUG)"             \
 	    bash build/build.sh $(ENTRY)
 	echo "# BUILD linking $(DIST)/$(BIN_BASENAME) <==> $(OUTPUT) ..."
@@ -95,6 +96,7 @@ variables:
 	echo "BUILD:"
 	echo "  build_output             $(OUTPUT)"
 	echo "  app_version              $(VERSION)"
+	echo "  git_commit               $(GIT_COMMIT)"
 	echo "  debug_build_enabled      $(DEBUG)"
 	echo "  local_go_sdk             $(LOCAL_GO_VERSION)"
 	echo "PLATFORM:"

@@ -32,6 +32,7 @@ DEBUG ?=
 
 # Version string, use git tag by default
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "UNKNOWN")
+GIT_COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo "UNKNOWN")
 
 GOOS        ?=
 GOARCH      ?=

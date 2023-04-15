@@ -26,57 +26,36 @@ if [ -f "bin/golangci-lint" ]; then
   GOLANGCI="bin/golangci-lint"
 fi
 
-function print_download_help() {
-  echo "You can install golangci-lint v${GOLANGCI_VERSION} by running:" 1>&2
-  echo "  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(pwd)/bin v${GOLANGCI_VERSION}" 1>&2
-  echo "By default, it will be installed in ./bin/golangci-lint so that it won't interfere with other versions (if any)." 1>&2
+function print_install_help() {
+  echo "Automatic installation failed, you can install golangci-lint v${GOLANGCI_VERSION} manually by running:"
+  echo "  curl -sSfL \"https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh\" | sh -s -- -b \"$(pwd)/bin\" v${GOLANGCI_VERSION}"
+  echo "It will be installed to \"$(pwd)/bin/golangci-lint\" so that it won't interfere with existing versions (if any)."
+  exit 1
+}
+
+function install_golangci() {
+  echo "Installing golangci-lint v${GOLANGCI_VERSION} ..."
+  echo "It will be installed to \"$(pwd)/bin/golangci-lint\" so that it won't interfere with existing versions (if any)."
+  curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh" |
+    sh -s -- -b "$(pwd)/bin" v${GOLANGCI_VERSION} || print_install_help
 }
 
 if ! ${GOLANGCI} version >/dev/null 2>&1; then
   echo "You don't have golangci-lint installed." 2>&1
-  print_download_help
-  exit 1
+  install_golangci
+  $0 "$@"
+  exit
 fi
 
 CURRENT_GOLANGCI_VERSION="$(${GOLANGCI} version 2>&1)"
 CURRENT_GOLANGCI_VERSION="${CURRENT_GOLANGCI_VERSION#*version }"
 CURRENT_GOLANGCI_VERSION="${CURRENT_GOLANGCI_VERSION% built*}"
 
-function greaterver() {
-  if [[ $1 == $2 ]]; then
-    return 0
-  fi
-  local IFS=.
-  local i ver1=($1) ver2=($2)
-  # fill empty fields in ver1 with zeros
-  for ((i = ${#ver1[@]}; i < ${#ver2[@]}; i++)); do
-    ver1[i]=0
-  done
-  for ((i = 0; i < ${#ver1[@]}; i++)); do
-    if [[ -z ${ver2[i]} ]]; then
-      # fill empty fields in ver2 with zeros
-      ver2[i]=0
-    fi
-    if ((10#${ver1[i]} > 10#${ver2[i]})); then
-      return 0
-    fi
-    if ((10#${ver1[i]} < 10#${ver2[i]})); then
-      return 2
-    fi
-  done
-  return 0
-}
-
-if ! greaterver "${CURRENT_GOLANGCI_VERSION}" "${GOLANGCI_VERSION}"; then
-  echo "golangci-lint version is too low." 1>&2
-  echo "You have v${CURRENT_GOLANGCI_VERSION}, but we need at least v${GOLANGCI_VERSION}" 1>&2
-  print_download_help
-  exit 1
-fi
-
 if [ "${CURRENT_GOLANGCI_VERSION}" != "${GOLANGCI_VERSION}" ]; then
-  echo "Warning: you have golangci-lint v${CURRENT_GOLANGCI_VERSION}, but we want v${GOLANGCI_VERSION}" 1>&2
-  print_download_help
+  echo "You have golangci-lint v${CURRENT_GOLANGCI_VERSION} installed, but we want v${GOLANGCI_VERSION}" 1>&2
+  install_golangci
+  $0 "$@"
+  exit
 fi
 
 echo "# Running golangci-lint v${CURRENT_GOLANGCI_VERSION}..."
