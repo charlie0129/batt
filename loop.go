@@ -10,14 +10,24 @@ import (
 var (
 	maintainedChargingInProgress = false
 	maintainLoopLock             = &sync.Mutex{}
-	maintainTick                 = time.NewTicker(time.Second * time.Duration(config.LoopIntervalSeconds))
 	// mg is used to skip several loops when system woke up or before sleep
-	wg = &sync.WaitGroup{}
+	wg                = &sync.WaitGroup{}
+	isChargingEnabled bool
 )
 
-func mainLoop() {
-	for range maintainTick.C {
+func loop() {
+	for {
 		maintainLoop()
+		// delay
+		d := 30 // seconds
+		// charging disabled: means it is above charge limit, so we can wait longer
+		if !isChargingEnabled {
+			d = 120
+		}
+		if config.Limit == 100 {
+			d = 120
+		}
+		time.Sleep(time.Duration(d) * time.Second)
 	}
 }
 

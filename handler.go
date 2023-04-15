@@ -22,13 +22,6 @@ func setConfig(c *gin.Context) {
 		return
 	}
 
-	if cfg.LoopIntervalSeconds < 1 {
-		err := fmt.Errorf("loopIntervalSeconds must be grater than 1, got %d", cfg.LoopIntervalSeconds)
-		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		_ = c.AbortWithError(http.StatusBadRequest, err)
-		return
-	}
-
 	if cfg.Limit < 10 || cfg.Limit > 100 {
 		err := fmt.Errorf("limit must be between 10 and 100, got %d", cfg.Limit)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())

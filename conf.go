@@ -15,7 +15,6 @@ type Config struct {
 	// current battery charge is higher than the limit, it will simply stop
 	// charging.
 	Limit                   int  `json:"limit"`
-	LoopIntervalSeconds     int  `json:"loopIntervalSeconds"`
 	PreventIdleSleep        bool `json:"preventIdleSleep"`
 	DisableChargingPreSleep bool `json:"disableChargingPreSleep"`
 	AllowNonRootAccess      bool `json:"allowNonRootAccess"`
@@ -25,7 +24,6 @@ var (
 	configPath    = "/etc/batt.json"
 	defaultConfig = Config{
 		Limit:                   60,
-		LoopIntervalSeconds:     30,
 		PreventIdleSleep:        true,
 		DisableChargingPreSleep: true,
 		AllowNonRootAccess:      false,
