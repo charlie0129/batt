@@ -442,9 +442,9 @@ func NewStatusCommand() *cobra.Command {
 				state = "full"
 			}
 			cmd.Printf("state: %s\n", state)
-			cmd.Printf("design capacity: %.1f Wh\n", bat.Design/1e3)
+			cmd.Printf("full capacity: %.1f Wh\n", bat.Design/1e3)
 			cmd.Printf("charge rate: %.1f W\n", bat.ChargeRate/1e3)
-			cmd.Printf("design voltage: %.1f V\n", bat.DesignVoltage)
+			cmd.Printf("voltage: %.1f V\n", bat.DesignVoltage)
 
 			cmd.Print("\n")
 
