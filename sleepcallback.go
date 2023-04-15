@@ -80,7 +80,9 @@ func systemWillSleepCallback() {
 		logrus.Debugf("delaying next loop by %d seconds", delayNextLoopSeconds)
 		wg.Add(1)
 		go func() {
-			<-time.After(time.Duration(delayNextLoopSeconds) * time.Second)
+			// Use sleep instead of time.After because when the computer sleeps, we
+			// actually want the sleep to prolong as well.
+			sleep(delayNextLoopSeconds)
 			wg.Done()
 		}()
 		err := smcConn.DisableCharging()
@@ -104,7 +106,9 @@ func systemWillPowerOnCallback() {
 		logrus.Debugf("system has started the wake up process, delaying next loop by %d seconds", delayNextLoopSeconds)
 		wg.Add(1)
 		go func() {
-			<-time.After(time.Duration(delayNextLoopSeconds) * time.Second)
+			// Use sleep instead of time.After because when the computer sleeps, we
+			// actually want the sleep to prolong as well.
+			sleep(delayNextLoopSeconds)
 			wg.Done()
 		}()
 	}
@@ -119,10 +123,28 @@ func systemHasPoweredOnCallback() {
 		logrus.Debugf("system has finished waking up, delaying next loop by %d seconds", delayNextLoopSeconds)
 		wg.Add(1)
 		go func() {
-			<-time.After(time.Duration(delayNextLoopSeconds) * time.Second)
+			// Use sleep instead of time.After because when the computer sleeps, we
+			// actually want the sleep to prolong as well.
+			sleep(delayNextLoopSeconds)
 			wg.Done()
 		}()
 	}
+}
+
+// Use sleep instead of time.After or time.Sleep because when the computer sleeps, we
+// actually want the sleep to prolong as well.
+func sleep(seconds int) {
+	tl := 250
+	t := time.NewTicker(time.Duration(tl) * time.Millisecond)
+	ticksWanted := seconds * 1000 / tl
+	ticksElapsed := 0
+	for range t.C {
+		ticksElapsed++
+		if ticksElapsed > ticksWanted {
+			break
+		}
+	}
+	t.Stop()
 }
 
 func listenNotifications() error {
