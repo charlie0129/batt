@@ -76,13 +76,14 @@ func systemWillSleepCallback() {
 		logrus.Info("system is going to sleep, charge limit is enabled, disabling charging just before sleep")
 		// Delay next loop to prevent charging to be re-enabled after we disabled it.
 		// macOS will wait 30s before going to sleep, so we delay more than that, just to be sure.
-		// no need to prevent duplicated runs.
-		logrus.Debugf("delaying next loop by %d seconds", delayNextLoopSeconds)
+		// No need to prevent duplicated runs.
+		d := delayNextLoopSeconds + 30
+		logrus.Debugf("delaying next loop by %d seconds", d)
 		wg.Add(1)
 		go func() {
 			// Use sleep instead of time.After because when the computer sleeps, we
 			// actually want the sleep to prolong as well.
-			sleep(delayNextLoopSeconds)
+			sleep(d)
 			wg.Done()
 		}()
 		err := smcConn.DisableCharging()
