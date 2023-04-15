@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	delayNextLoopSeconds = 120
+	preSleepLoopDelaySeconds  = 180
+	postSleepLoopDelaySeconds = 120
 )
 
 //export canSystemSleepCallback
@@ -69,7 +70,7 @@ func systemWillSleepCallback() {
 	// we disable charging just before sleep.
 	// Previously, we only disabled charging if maintained charging was in progress. But we find
 	// out this is not required, because if there is no maintained charging in progress, disabling
-	// charging will cause any problem.
+	// charging will not cause any problem.
 	// By always disabling charging before sleep (if charge limit is enabled), we can prevent
 	// some rare cases.
 	if config.Limit < 100 {
@@ -77,13 +78,12 @@ func systemWillSleepCallback() {
 		// Delay next loop to prevent charging to be re-enabled after we disabled it.
 		// macOS will wait 30s before going to sleep, so we delay more than that, just to be sure.
 		// No need to prevent duplicated runs.
-		d := delayNextLoopSeconds + 30
-		logrus.Debugf("delaying next loop by %d seconds", d)
+		logrus.Debugf("delaying next loop by %d seconds", preSleepLoopDelaySeconds)
 		wg.Add(1)
 		go func() {
 			// Use sleep instead of time.After because when the computer sleeps, we
 			// actually want the sleep to prolong as well.
-			sleep(d)
+			sleep(preSleepLoopDelaySeconds)
 			wg.Done()
 		}()
 		err := smcConn.DisableCharging()
@@ -102,17 +102,6 @@ func systemWillSleepCallback() {
 func systemWillPowerOnCallback() {
 	// System has started the wake up process...
 	logrus.Traceln("received kIOMessageSystemWillPowerOn notification")
-
-	if config.Limit < 100 {
-		logrus.Debugf("system has started the wake up process, delaying next loop by %d seconds", delayNextLoopSeconds)
-		wg.Add(1)
-		go func() {
-			// Use sleep instead of time.After because when the computer sleeps, we
-			// actually want the sleep to prolong as well.
-			sleep(delayNextLoopSeconds)
-			wg.Done()
-		}()
-	}
 }
 
 //export systemHasPoweredOnCallback
@@ -121,12 +110,12 @@ func systemHasPoweredOnCallback() {
 	logrus.Traceln("received kIOMessageSystemHasPoweredOn notification")
 
 	if config.Limit < 100 {
-		logrus.Debugf("system has finished waking up, delaying next loop by %d seconds", delayNextLoopSeconds)
+		logrus.Debugf("system has finished waking up, delaying next loop by %d seconds", postSleepLoopDelaySeconds)
 		wg.Add(1)
 		go func() {
 			// Use sleep instead of time.After because when the computer sleeps, we
 			// actually want the sleep to prolong as well.
-			sleep(delayNextLoopSeconds)
+			sleep(postSleepLoopDelaySeconds)
 			wg.Done()
 		}()
 	}
