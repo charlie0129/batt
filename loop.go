@@ -102,15 +102,20 @@ var (
 	lastIsChargingEnabled            = false
 	lastIsPluggedIn                  = false
 	lastMaintainedChargingInProgress = false
+	lastTriedPrintTime               = time.Now()
 )
 
 func printStatus(batteryCharge int, limit int, isChargingEnabled bool, isPluggedIn bool, maintainedChargingInProgress bool) {
+	lastTriedPrintTime = time.Now()
+
 	if batteryCharge == lastBatteryCharge &&
 		limit == lastLimit &&
 		isChargingEnabled == lastIsChargingEnabled &&
 		isPluggedIn == lastIsPluggedIn &&
 		maintainedChargingInProgress == lastMaintainedChargingInProgress && // All values are the same as last time
+		time.Now().Sub(lastTriedPrintTime) < time.Second*30 && // And it's been less than 30 seconds since last tried print
 		!logrus.IsLevelEnabled(logrus.TraceLevel) { // Trace level is not enabled. If trace level is enabled, we want to print the status every time.
+		// So we don't want to print the status every time.
 		return
 	}
 
