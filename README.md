@@ -170,6 +170,12 @@ If a new version is released, you can upgrade it by:
 2. Replace the old `batt` binary with the downloaded new one.
 3. Run `sudo batt install` to install the daemon again. Although most config is preserved, some security related config may be reset during re-installation. For example, if you used `--allow-non-root-access` when installing previously, you will need to use it again.
 
+### Why is there so many logs?
+
+By default, `batt` daemon will have its log level set to `debug` for easy debugging. The `debug` logs are helpful when reporting problems since it contains useful information. So it is recommended to keep it as `debug`. You may find a lot of logs in `/tmp/batt.log` after you use your Mac for a few days. However, there is no need to worry about this. The logs will be cleaned by macOS on reboot. It will not grow indefinitely.
+
+If you believe you will not encounter any problem in the future and still want to set a higher log level, you can achieve this by editing `/Library/LaunchDaemons/cc.chlc.batt.plist` and then restart the daemon by loading and unloading the LaunchDaemon.
+
 ## Acknowledgements
 
 - [actuallymentor/battery](https://github.com/actuallymentor/battery) for various SMC keys.
