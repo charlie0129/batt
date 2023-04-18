@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	preSleepLoopDelaySeconds  = 180
+	preSleepLoopDelaySeconds  = 300
 	postSleepLoopDelaySeconds = 120
 )
 
@@ -74,11 +74,10 @@ func systemWillSleepCallback() {
 	// By always disabling charging before sleep (if charge limit is enabled), we can prevent
 	// some rare cases.
 	if config.Limit < 100 {
-		logrus.Info("system is going to sleep, charge limit is enabled, disabling charging just before sleep")
+		logrus.Infof("system is going to sleep but charge limit is enabled, disabling charging just before sleep, and delaying next loop by %d seconds", preSleepLoopDelaySeconds)
 		// Delay next loop to prevent charging to be re-enabled after we disabled it.
 		// macOS will wait 30s before going to sleep, so we delay more than that, just to be sure.
 		// No need to prevent duplicated runs.
-		logrus.Debugf("delaying next loop by %d seconds", preSleepLoopDelaySeconds)
 		wg.Add(1)
 		go func() {
 			// Use sleep instead of time.After because when the computer sleeps, we
@@ -100,7 +99,7 @@ func systemWillSleepCallback() {
 
 //export systemWillPowerOnCallback
 func systemWillPowerOnCallback() {
-	// System has started the wake up process...
+	// System has started the wake-up process...
 	logrus.Traceln("received kIOMessageSystemWillPowerOn notification")
 }
 
@@ -124,7 +123,7 @@ func systemHasPoweredOnCallback() {
 // Use sleep instead of time.After or time.Sleep because when the computer sleeps, we
 // actually want the sleep to prolong as well.
 func sleep(seconds int) {
-	tl := 250
+	tl := 250 // ms
 	t := time.NewTicker(time.Duration(tl) * time.Millisecond)
 	ticksWanted := seconds * 1000 / tl
 	ticksElapsed := 0

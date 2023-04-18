@@ -11,13 +11,14 @@ var (
 	maintainedChargingInProgress = false
 	maintainLoopLock             = &sync.Mutex{}
 	// mg is used to skip several loops when system woke up or before sleep
-	wg = &sync.WaitGroup{}
+	wg           = &sync.WaitGroup{}
+	loopInterval = time.Duration(20) * time.Second
 )
 
 func loop() {
 	for {
 		maintainLoop()
-		time.Sleep(time.Duration(20) * time.Second)
+		time.Sleep(loopInterval)
 	}
 }
 
@@ -96,35 +97,7 @@ func maintainLoop() bool {
 	return true
 }
 
-var (
-	lastBatteryCharge                = -1
-	lastLimit                        = -1
-	lastIsChargingEnabled            = false
-	lastIsPluggedIn                  = false
-	lastMaintainedChargingInProgress = false
-	lastTriedPrintTime               = time.Now()
-)
-
 func printStatus(batteryCharge int, limit int, isChargingEnabled bool, isPluggedIn bool, maintainedChargingInProgress bool) {
-	lastTriedPrintTime = time.Now()
-
-	if batteryCharge == lastBatteryCharge &&
-		limit == lastLimit &&
-		isChargingEnabled == lastIsChargingEnabled &&
-		isPluggedIn == lastIsPluggedIn &&
-		maintainedChargingInProgress == lastMaintainedChargingInProgress && // All values are the same as last time
-		time.Since(lastTriedPrintTime) < time.Second*30 && // And it's been less than 30 seconds since last tried print
-		!logrus.IsLevelEnabled(logrus.TraceLevel) { // Trace level is not enabled. If trace level is enabled, we want to print the status every time.
-		// So we don't want to print the status every time.
-		return
-	}
-
-	lastBatteryCharge = batteryCharge
-	lastLimit = limit
-	lastIsChargingEnabled = isChargingEnabled
-	lastIsPluggedIn = isPluggedIn
-	lastMaintainedChargingInProgress = maintainedChargingInProgress
-
 	logrus.Debugf("batteryCharge=%d, limit=%d, chargingEnabled=%t, isPluggedIn=%t, maintainedChargingInProgress=%t",
 		batteryCharge,
 		limit,
