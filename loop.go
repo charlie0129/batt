@@ -26,14 +26,10 @@ func maintainLoop() bool {
 	maintainLoopLock.Lock()
 	defer maintainLoopLock.Unlock()
 
-	limit := config.Limit
-	maintain := limit < 100
-
-	if !maintain {
-		logrus.Debugf("maintain disabled")
-		maintainedChargingInProgress = false
-		return true
-	}
+	upper := config.Limit
+	delta := config.LowerLimitDelta
+	lower := upper - delta
+	maintain := upper < 100
 
 	tsBeforeWait := time.Now()
 	wg.Wait()
@@ -46,6 +42,21 @@ func maintainLoop() bool {
 	if err != nil {
 		logrus.Errorf("IsChargingEnabled failed: %v", err)
 		return false
+	}
+
+	// If maintain is disabled, we don't care about the battery charge, enable charging anyway.
+	if !maintain {
+		logrus.Debug("limit set to 100%, maintain loop disabled")
+		if !isChargingEnabled {
+			logrus.Debug("charging disabled, enabling")
+			err = smcConn.EnableCharging()
+			if err != nil {
+				logrus.Errorf("EnableCharging failed: %v", err)
+				return false
+			}
+		}
+		maintainedChargingInProgress = false
+		return true
 	}
 
 	batteryCharge, err := smcConn.GetBatteryCharge()
@@ -66,12 +77,16 @@ func maintainLoop() bool {
 		maintainedChargingInProgress = false
 	}
 
-	printStatus(batteryCharge, limit, isChargingEnabled, isPluggedIn, maintainedChargingInProgress)
+	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress)
 
-	if batteryCharge < limit && !isChargingEnabled {
-		logrus.Infof("battery charge (%d) below limit (%d) but charging is disabled, enabling charging",
+	// batteryCharge < upper - delta &&
+	// charging is disabled
+	if batteryCharge < lower && !isChargingEnabled {
+		logrus.Infof("battery charge %d%% is below %d%% (%d-%d) but charging is disabled, enabling charging",
 			batteryCharge,
-			limit,
+			lower,
+			upper,
+			delta,
 		)
 		err = smcConn.EnableCharging()
 		if err != nil {
@@ -81,10 +96,12 @@ func maintainLoop() bool {
 		maintainedChargingInProgress = true
 	}
 
-	if batteryCharge > limit && isChargingEnabled {
-		logrus.Infof("battery charge (%d) above limit (%d) but charging is enabled, disabling charging",
+	// batteryCharge >= upper &&
+	// charging is enabled
+	if batteryCharge >= upper && isChargingEnabled {
+		logrus.Infof("battery charge %d%% reached %d%% but charging is enabled, disabling charging",
 			batteryCharge,
-			limit,
+			upper,
 		)
 		err = smcConn.DisableCharging()
 		if err != nil {
@@ -94,13 +111,17 @@ func maintainLoop() bool {
 		maintainedChargingInProgress = false
 	}
 
+	// batteryCharge >= upper - delta && batteryCharge < upper
+	// do nothing, keep as-is
+
 	return true
 }
 
-func printStatus(batteryCharge int, limit int, isChargingEnabled bool, isPluggedIn bool, maintainedChargingInProgress bool) {
-	logrus.Debugf("batteryCharge=%d, limit=%d, chargingEnabled=%t, isPluggedIn=%t, maintainedChargingInProgress=%t",
+func printStatus(batteryCharge int, lower int, upper int, isChargingEnabled bool, isPluggedIn bool, maintainedChargingInProgress bool) {
+	logrus.Debugf("batteryCharge=%d, lower=%d, upper=%d, chargingEnabled=%t, isPluggedIn=%t, maintainedChargingInProgress=%t",
 		batteryCharge,
-		limit,
+		lower,
+		upper,
 		isChargingEnabled,
 		isPluggedIn,
 		maintainedChargingInProgress,

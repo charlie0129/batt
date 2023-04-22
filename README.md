@@ -96,6 +96,14 @@ To prevent such cases, you can use disable-charging-pre-sleep. This will disable
 
 To enable this feature, run `sudo batt disable-charging-pre-sleep enable`. To disable, run `sudo batt disable-charging-pre-sleep disable`.
 
+### Upper and lower charge limit
+
+When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
+
+`batt` have similar features built-in (since `v0.1.0-beta.5`). The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. Same as using 'batt lower-limit-delta 2'. To customize the lower limit, use `batt lower-limit-delta`.
+
+For example, if you want to set the lower limit to be 5% less than the upper limit, run `sudo batt lower-limit-delta 5`. So, if you have your charge (upper) limit set to 60%, the lower limit will be 55%.
+
 ### Check logs
 
 Logs are directed to `/tmp/batt.log`. If something goes wrong, you can check the logs to see what happened. Or raise an issue with the logs attached, so we can debug together.
@@ -159,7 +167,7 @@ Since it is a hobby project, I want to balance effort and the final outcome. Go 
 ### How to uninstall?
 
 1. Run `sudo batt uninstall` to remove the daemon.
-2. Remove the config by `sudo rm /etc/batt.json` (optional).
+2. Remove the config by `sudo rm /etc/batt.json`.
 3. Remove the `batt` binary itself by `sudo rm $(where batt)`.
 
 ### How to upgrade?
@@ -167,14 +175,14 @@ Since it is a hobby project, I want to balance effort and the final outcome. Go 
 If a new version is released, you can upgrade it by:
 
 1. Run `sudo batt uninstall` to remove the old daemon.
-2. Replace the old `batt` binary with the downloaded new one.
-3. Run `sudo batt install` to install the daemon again. Although most config is preserved, some security related config may be reset during re-installation. For example, if you used `--allow-non-root-access` when installing previously, you will need to use it again.
+2. Replace the old `batt` binary with the downloaded new one. `sudo cp ./batt $(where batt)`
+3. Run `sudo batt install` to install the daemon again. Although most config is preserved, some security related config is intentionally reset during re-installation. For example, if you used `--allow-non-root-access` when installing previously, you will need to use it again.
 
 ### Why is there so many logs?
 
 By default, `batt` daemon will have its log level set to `debug` for easy debugging. The `debug` logs are helpful when reporting problems since it contains useful information. So it is recommended to keep it as `debug`. You may find a lot of logs in `/tmp/batt.log` after you use your Mac for a few days. However, there is no need to worry about this. The logs will be cleaned by macOS on reboot. It will not grow indefinitely.
 
-If you believe you will not encounter any problem in the future and still want to set a higher log level, you can achieve this by editing `/Library/LaunchDaemons/cc.chlc.batt.plist` and then restart the daemon by loading and unloading the LaunchDaemon.
+If you `believe you will not encou`nter any problem in the future and still want to set a higher log level, you can achieve this by editing `/Library/LaunchDaemons/cc.chlc.batt.plist` and then restart the daemon by loading and unloading the LaunchDaemon.
 
 ## Acknowledgements
 

@@ -63,6 +63,13 @@ func setLimit(c *gin.Context) {
 		return
 	}
 
+	if l-config.LowerLimitDelta < 10 {
+		err := fmt.Errorf("limit must be at least %d, got %d", 10+config.LowerLimitDelta, l)
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	config.Limit = l
 	if err := saveConfig(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
@@ -76,9 +83,9 @@ func setLimit(c *gin.Context) {
 	var msg string
 	charge, err := smcConn.GetBatteryCharge()
 	if err != nil {
-		msg = fmt.Sprintf("set charging limit to %d", l)
+		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", l, l-config.LowerLimitDelta)
 	} else {
-		msg = fmt.Sprintf("set charging limit to %d, current charge: %d", l, charge)
+		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", l, l-config.LowerLimitDelta, charge)
 		if charge > config.Limit {
 			msg += ", you may need to drain your battery below the limit to see any effect"
 		}
@@ -207,4 +214,40 @@ func getBatteryInfo(c *gin.Context) {
 	}
 
 	c.IndentedJSON(http.StatusOK, bat)
+}
+
+func setLowerLimitDelta(c *gin.Context) {
+	var d int
+	if err := c.BindJSON(&d); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if d < 0 {
+		err := fmt.Errorf("lower limit delta must be positive, got %d", d)
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if config.Limit-d < 10 {
+		err := fmt.Errorf("lower limit delta must be less than limit - 10, got %d", d)
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	config.LowerLimitDelta = d
+	if err := saveConfig(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	ret := fmt.Sprintf("set lower limit delta to %d, current upper/lower limit is %d%%/%d%%", d, config.Limit, config.Limit-config.LowerLimitDelta)
+	logrus.Info(ret)
+
+	c.IndentedJSON(http.StatusCreated, ret)
 }

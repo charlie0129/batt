@@ -18,6 +18,7 @@ type Config struct {
 	PreventIdleSleep        bool `json:"preventIdleSleep"`
 	DisableChargingPreSleep bool `json:"disableChargingPreSleep"`
 	AllowNonRootAccess      bool `json:"allowNonRootAccess"`
+	LowerLimitDelta         int  `json:"lowerLimitDelta"`
 }
 
 var (
@@ -27,6 +28,7 @@ var (
 		PreventIdleSleep:        true,
 		DisableChargingPreSleep: true,
 		AllowNonRootAccess:      false,
+		LowerLimitDelta:         2,
 	}
 )
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/distatus/battery"
 	"github.com/sirupsen/logrus"
@@ -40,6 +41,7 @@ func NewCommand() *cobra.Command {
 		NewSetPreventIdleSleepCommand(),
 		NewStatusCommand(),
 		NewAdapterCommand(),
+		NewLowerLimitDeltaCommand(),
 	)
 
 	return cmd
@@ -414,6 +416,7 @@ func NewStatusCommand() *cobra.Command {
 			}
 			if conf.Limit < 100 {
 				cmd.Printf("charge limit: %d%%\n", conf.Limit)
+				cmd.Printf("lower limit: %d%%\n", conf.Limit-conf.LowerLimitDelta)
 			} else {
 				cmd.Printf("charge limit: disabled\n")
 			}
@@ -479,4 +482,44 @@ func NewStatusCommand() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// NewLowerLimitDeltaCommand .
+func NewLowerLimitDeltaCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "lower-limit-delta",
+		Short: "Set the delta between lower and upper charge limit",
+		Long: `Set the delta between lower and upper charge limit.
+
+When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
+
+batt have similar features. The charge limit you have set (using 'batt limit') will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. Same as using 'batt lower-limit-delta 2'. To customize the lower limit, use 'batt lower-limit-delta'.
+
+For example, if you want to set the lower limit to be 5% less than the upper limit, run 'sudo batt lower-limit-delta 5'. By doing this, if you have your charge (upper) limit set to 60%, the lower limit will be 55%.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return fmt.Errorf("invalid number of arguments")
+			}
+
+			delta, err := strconv.Atoi(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid delta: %v", err)
+			}
+
+			ret, err := put("/lower-limit-delta", strconv.Itoa(delta))
+			if err != nil {
+				return fmt.Errorf("failed to set lower limit delta: %v", err)
+			}
+
+			if ret != "" {
+				logrus.Infof("daemon responded: %s", ret)
+			}
+
+			logrus.Infof("successfully set lower limit delta to %d%%", delta)
+
+			return nil
+		},
+	}
+
+	return cmd
 }
