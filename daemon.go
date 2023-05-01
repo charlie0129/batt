@@ -98,7 +98,7 @@ func runDaemon() {
 	go func() {
 		logrus.Infof("main loop starts")
 
-		loop()
+		infiniteLoop()
 
 		logrus.Errorf("main loop exited unexpectedly")
 	}()

@@ -40,7 +40,7 @@ func setConfig(c *gin.Context) {
 	logrus.Infof("set config: %#v", cfg)
 
 	// Immediate single maintain loop, to avoid waiting for the next loop
-	maintainLoop()
+	maintainLoopForced()
 	c.IndentedJSON(http.StatusCreated, "ok")
 }
 
@@ -92,7 +92,7 @@ func setLimit(c *gin.Context) {
 	}
 
 	// Immediate single maintain loop, to avoid waiting for the next loop
-	maintainLoop()
+	maintainLoopForced()
 
 	c.IndentedJSON(http.StatusCreated, msg)
 }

@@ -15,7 +15,7 @@ var (
 	loopInterval = time.Duration(20) * time.Second
 )
 
-func loop() {
+func infiniteLoop() {
 	for {
 		maintainLoop()
 		time.Sleep(loopInterval)
@@ -26,17 +26,25 @@ func maintainLoop() bool {
 	maintainLoopLock.Lock()
 	defer maintainLoopLock.Unlock()
 
-	upper := config.Limit
-	delta := config.LowerLimitDelta
-	lower := upper - delta
-	maintain := upper < 100
-
 	tsBeforeWait := time.Now()
 	wg.Wait()
 	tsAfterWait := time.Now()
 	if tsAfterWait.Sub(tsBeforeWait) > time.Second*1 {
 		logrus.Debugf("this maintain loop waited %d seconds after being initiated, now ready to execute", int(tsAfterWait.Sub(tsBeforeWait).Seconds()))
 	}
+
+	return maintainLoopInner()
+}
+
+func maintainLoopForced() bool {
+	return maintainLoopInner()
+}
+
+func maintainLoopInner() bool {
+	upper := config.Limit
+	delta := config.LowerLimitDelta
+	lower := upper - delta
+	maintain := upper < 100
 
 	isChargingEnabled, err := smcConn.IsChargingEnabled()
 	if err != nil {
