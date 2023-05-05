@@ -91,6 +91,10 @@ func setLimit(c *gin.Context) {
 		}
 	}
 
+	if l >= 100 {
+		msg = "set charging limit to 100%. batt will not control charging anymore."
+	}
+
 	// Immediate single maintain loop, to avoid waiting for the next loop
 	maintainLoopForced()
 
