@@ -62,6 +62,9 @@ func maintainLoopInner() bool {
 				logrus.Errorf("EnableCharging failed: %v", err)
 				return false
 			}
+			if batteryCharge, err := smcConn.GetBatteryCharge(); err == nil {
+				smcConn.SetMagsafeCharging(batteryCharge < 100)
+			}
 		}
 		maintainedChargingInProgress = false
 		return true
@@ -87,8 +90,6 @@ func maintainLoopInner() bool {
 
 	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress)
 
-	// batteryCharge < upper - delta &&
-	// charging is disabled
 	if batteryCharge < lower && !isChargingEnabled {
 		logrus.Infof("battery charge %d%% is below %d%% (%d-%d) but charging is disabled, enabling charging",
 			batteryCharge,
@@ -101,11 +102,10 @@ func maintainLoopInner() bool {
 			logrus.Errorf("EnableCharging failed: %v", err)
 			return false
 		}
+		isChargingEnabled = true
 		maintainedChargingInProgress = true
 	}
 
-	// batteryCharge >= upper &&
-	// charging is enabled
 	if batteryCharge >= upper && isChargingEnabled {
 		logrus.Infof("battery charge %d%% reached %d%% but charging is enabled, disabling charging",
 			batteryCharge,
@@ -116,13 +116,27 @@ func maintainLoopInner() bool {
 			logrus.Errorf("DisableCharging failed: %v", err)
 			return false
 		}
+		isChargingEnabled = false
 		maintainedChargingInProgress = false
 	}
+
+	updateMagsafeLed(isChargingEnabled)
 
 	// batteryCharge >= upper - delta && batteryCharge < upper
 	// do nothing, keep as-is
 
 	return true
+}
+
+func updateMagsafeLed(isChargingEnabled bool) {
+	ledCharging, err := smcConn.IsMagsafeCharging()
+	if err != nil {
+		logrus.Errorf("IsMagsafeCharging failed: %v", err)
+	}
+	
+	if isChargingEnabled != ledCharging {
+		smcConn.SetMagsafeCharging(isChargingEnabled)
+	}
 }
 
 func printStatus(batteryCharge int, lower int, upper int, isChargingEnabled bool, isPluggedIn bool, maintainedChargingInProgress bool) {
