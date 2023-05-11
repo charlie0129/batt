@@ -79,6 +79,9 @@ if [ -n "${GIT_COMMIT:-}" ]; then
   always_ldflags="${always_ldflags} -X $(go list -m)/pkg/version.GitCommit=${GIT_COMMIT}"
 fi
 
+export CGO_CFLAGS="-O2 -target arm64-apple-macos12"
+export CGO_LDFLAGS="-O2"
+
 go build \
   -gcflags="${gogcflags}" \
   -asmflags="${goasmflags}" \
