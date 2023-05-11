@@ -1,4 +1,4 @@
-name: Go Checks
+name: Buind Test Binary
 
 on:
   push:
@@ -12,9 +12,6 @@ on:
       - master
       - release-*
   workflow_dispatch: {}
-
-env:
-  GOLANGCI_VERSION: "v1.52.2"
 
 jobs:
   detect-noop:
@@ -32,16 +29,20 @@ jobs:
           do_not_skip: '["workflow_dispatch", "schedule", "push"]'
           concurrent_skipping: false
 
-  checks:
-    name: Check Go Code
-    runs-on: macos-latest
+  build:
+    name: Build Binary
+    runs-on: macos-12
     needs: detect-noop
     if: needs.detect-noop.outputs.noop != 'true'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Lint
-        uses: golangci/golangci-lint-action@v3
+      - name: Build
+        run: make build-darwin_arm64
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
         with:
-          version: ${{ env.GOLANGCI_VERSION }}
+          name: batt
+          path: bin/batt
