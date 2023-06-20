@@ -12,13 +12,16 @@ type Connection struct {
 	*gosmc.Connection
 }
 
-type MagsafeLedState int
+// MagSafeLedState is the state of the MagSafe LED.
+type MagSafeLedState int
+
+// Representation of MagSafeLedState.
 const (
-	LedOff MagsafeLedState = 1
-	LedGreen MagsafeLedState = 3
-	LedOrange MagsafeLedState = 4
-	LedErrorOnce MagsafeLedState = 5
-	LedErrorPerm MagsafeLedState = 6
+	LedOff       MagSafeLedState = 1
+	LedGreen     MagSafeLedState = 3
+	LedOrange    MagSafeLedState = 4
+	LedErrorOnce MagSafeLedState = 5
+	LedErrorPerm MagSafeLedState = 6
 )
 
 // New returns a new Connection.
@@ -173,21 +176,23 @@ func (c *Connection) IsPluggedIn() (bool, error) {
 	return ret, nil
 }
 
-func (c *Connection) SetMagsafeLedState(state MagsafeLedState) error {
-	logrus.Tracef("SetMagsafeLedState(%v) called", state)
+// SetMagSafeLedState .
+func (c *Connection) SetMagSafeLedState(state MagSafeLedState) error {
+	logrus.Tracef("SetMagSafeLedState(%v) called", state)
 
 	return c.Write("ACLC", []byte{byte(state)})
 }
 
-func (c *Connection) GetMagsafeLedState() (MagsafeLedState, error) {
-	logrus.Tracef("GetMagsafeLedState called")
+// GetMagSafeLedState .
+func (c *Connection) GetMagSafeLedState() (MagSafeLedState, error) {
+	logrus.Tracef("GetMagSafeLedState called")
 
 	v, err := c.Read("ACLC")
 	if err != nil || len(v.Bytes) != 1 {
 		return LedOrange, err
 	}
 
-	rawState := MagsafeLedState(v.Bytes[0])
+	rawState := MagSafeLedState(v.Bytes[0])
 	ret := LedOrange
 	switch rawState {
 	case LedOff, LedGreen, LedOrange, LedErrorOnce, LedErrorPerm:
@@ -195,20 +200,22 @@ func (c *Connection) GetMagsafeLedState() (MagsafeLedState, error) {
 	case 2:
 		ret = LedGreen
 	}
-	logrus.Tracef("GetMagsafeLedState returned %v", ret)
+	logrus.Tracef("GetMagSafeLedState returned %v", ret)
 	return ret, nil
 }
 
-func (c *Connection) SetMagsafeCharging(charging bool) error {
+// SetMagSafeCharging .
+func (c *Connection) SetMagSafeCharging(charging bool) error {
 	state := LedGreen
 	if charging {
 		state = LedOrange
 	}
-	return c.SetMagsafeLedState(state)
+	return c.SetMagSafeLedState(state)
 }
 
-func (c *Connection) IsMagsafeCharging() (bool, error) {
-	state, err := c.GetMagsafeLedState()
+// IsMagSafeCharging .
+func (c *Connection) IsMagSafeCharging() (bool, error) {
+	state, err := c.GetMagSafeLedState()
 
 	return state != LedGreen, err
 }
