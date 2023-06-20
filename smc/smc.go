@@ -213,6 +213,7 @@ func (c *Connection) GetMagSafeLedState() (MagSafeLedState, error) {
 	return ret, nil
 }
 
+// CheckMagSafeExistence .
 func (c *Connection) CheckMagSafeExistence() bool {
 	_, err := c.Read(MagSafeLedKey)
 	return err == nil

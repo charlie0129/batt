@@ -535,7 +535,7 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 		Short: "Control MagSafe LED according to battery charging status",
 		Long: `Control MagSafe LED according to battery charging status.
 
-On a MagSafe compatible device, the MagSafe LED will always be orange (charging) even if charge limit is reached and charging is disabled by batt. This setting can make the MagSafe LED behave like a normal device, i.e., it will turn green when charge limit is reached (not charging).
+On a MagSafe-compatible device, the MagSafe LED will always be orange (charging) even if charge limit is reached and charging is disabled by batt, due to Apple's limitations. This setting can make the MagSafe LED behave like a normal device, i.e., it will turn green when charge limit is reached (not charging).
 
 One thing to note: this option is purely cosmetic. batt will still function even if you disable this option.`,
 	}

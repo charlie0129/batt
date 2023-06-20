@@ -10,6 +10,18 @@ Previously, before optimized battery charging is introduced, MacBooks are known 
 
 `batt` can effectively alleviate this problem by limiting the battery charge level. It can be used to set a maximum charge level. For example, you can set it to 80%, and it will stop charging when the battery reaches 80%.
 
+## Features
+
+`batt` tried to keep as simple as possible. Charging limiting is the only thing to care about for most users:
+
+- Limit battery charge, with a lower and upper bound, like ThinkPads. [Docs](#limit-battery-charge)
+
+However, if you are nerdy and want to dive into the details, it does have some advanced features for the computer nerds out there :)
+
+- Control MagSafe LED (if present) according to charge status. [Docs](#control-magsafe-led)
+- Cut power from the wall (even if the adapter is physically plugged in) to use battery power. [Docs](#enabledisable-power-adapter)
+- It solves common sleep-related issues when controlling charging. [Docs1](#preventing-idle-sleep) [Docs2](#disabling-charging-before-sleep)
+
 ## How is it different from XXX?
 
 **It is free and opensource**. It even comes with some features (like idle sleep preventions and pre-sleep stop charging) that are only available in paid counterparts. It comes with no ads, no tracking, no telemetry, no analytics, no bullshit. It is open source, so you can read the code and verify that it does what it says it does.
@@ -29,17 +41,17 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 > Currently, it is command-line only. Some knowledge of the command-line is required. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
 
 1. Get the binary. You can download it from [GitHub releases](https://github.com/charlie0129/batt/releases), extract the tar archive, and you will get a `batt` binary. If you want the latest features and bug fixes, you can build it yourself (see [Building](#building) for more details)
-2. Put the binary somewhere safe. It will be used by macOS `launchd` later, so you don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`.
+2. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line.
 3. Install daemon using `sudo batt install`. This component is what actually controls charging. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. 
-4. In case you have GateKeeper turned on, you will see something like _"batt is can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. To solve this, you can either 1. Go to System Preferences -> Security & Privacy -> Open Anyway; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
+4. In case you have GateKeeper turned on, you will see something like _"batt is can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. To solve this, you can either 1. (recommended) Go to System Preferences -> Security & Privacy -> Open Anyway; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
 5. Test if it works by running `sudo batt status`. If you see some status info, you are good to go!
 6. Time to customize. By default `batt` will set a charge limit to 60%. For example, to set the charge limit to 80%, run `sudo batt limit 80`. 
-7. As said before, it is recommended to disable macOS's optimized charging when using `batt`. To do so, open System Preferences, go to Battery, and uncheck "Optimize battery charging".
+7. As said before, it is highly recommended to disable macOS's optimized charging when using `batt`. To do so, open _System Preferences_, go to _Battery_, and uncheck _Optimized battery charging_.
 
 Notes:
 
 - Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
-- If your current charge is above the limit, your computer will just stop charging. To see any effect, you will need to use your battery until it is below the limit. You can use `sudo batt adapter disable` to force the computer to use battery even if it is plugged in.
+- If your current charge is above the limit, your computer will just stop charging and stays at your current charge level, which is by design. You can use your battery until it is below the limit to see the effects.
 - To disable the charge limit, run `sudo batt limit 100`.
 
 > Finally, if you find `batt` helpful, stars ⭐️ are much appreciated!
@@ -100,9 +112,21 @@ To enable this feature, run `sudo batt disable-charging-pre-sleep enable`. To di
 
 When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
 
-`batt` have similar features built-in (since `v0.1.0-beta.5`). The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. Same as using 'batt lower-limit-delta 2'. To customize the lower limit, use `batt lower-limit-delta`.
+`batt` have similar features built-in (since `v0.1.0`). The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. Same as using 'batt lower-limit-delta 2'. To customize the lower limit, use `batt lower-limit-delta`.
 
 For example, if you want to set the lower limit to be 5% less than the upper limit, run `sudo batt lower-limit-delta 5`. So, if you have your charge (upper) limit set to 60%, the lower limit will be 55%.
+
+### Control MagSafe LED
+
+> Only available after (not including) `v0.1.0`. It is disabled by default.
+
+On a MagSafe-compatible device, the MagSafe LED will always be orange (charging) even if charge limit is reached and charging is disabled by batt, due to Apple's limitations. This setting can make the MagSafe LED behave like a normal device, i.e., it will turn green when charge limit is reached (not charging).
+
+One thing to note: this option is purely cosmetic. batt will still function even if you disable this option.
+
+To enable MagSafe LED control, run `sudo batt magsafe enable`.
+
+Acknowledgement: @exidler
 
 ### Check logs
 
@@ -189,3 +213,4 @@ If you `believe you will not encou`nter any problem in the future and still want
 - [actuallymentor/battery](https://github.com/actuallymentor/battery) for various SMC keys.
 - [hholtmann/smcFanControl](https://github.com/hholtmann/smcFanControl) for its C code to read/write SMC, which inspires [charlie0129/gosmc](https://github.com/charlie0129/gosmc).
 - Apple for its guide to register and unregister sleep and wake notifications.
+- @exidler for building the MagSafe LED controlling logic.
