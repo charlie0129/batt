@@ -12,6 +12,18 @@ type Connection struct {
 	*gosmc.Connection
 }
 
+// MagSafeLedState is the state of the MagSafe LED.
+type MagSafeLedState int
+
+// Representation of MagSafeLedState.
+const (
+	LedOff       MagSafeLedState = 1
+	LedGreen     MagSafeLedState = 3
+	LedOrange    MagSafeLedState = 4
+	LedErrorOnce MagSafeLedState = 5
+	LedErrorPerm MagSafeLedState = 6
+)
+
 // New returns a new Connection.
 func New() *Connection {
 	return &Connection{
@@ -76,6 +88,7 @@ func (c *Connection) IsChargingEnabled() (bool, error) {
 func (c *Connection) EnableCharging() error {
 	logrus.Tracef("EnableCharging called")
 
+	// CHSC
 	err := c.Write("CH0B", []byte{0x0})
 	if err != nil {
 		return err
@@ -157,8 +170,52 @@ func (c *Connection) IsPluggedIn() (bool, error) {
 		return false, err
 	}
 
-	ret := len(v.Bytes) == 1 && v.Bytes[0] == 0x1
+	ret := len(v.Bytes) == 1 && int8(v.Bytes[0]) > 0
 	logrus.Tracef("IsPluggedIn returned %t", ret)
 
 	return ret, nil
+}
+
+// SetMagSafeLedState .
+func (c *Connection) SetMagSafeLedState(state MagSafeLedState) error {
+	logrus.Tracef("SetMagSafeLedState(%v) called", state)
+
+	return c.Write("ACLC", []byte{byte(state)})
+}
+
+// GetMagSafeLedState .
+func (c *Connection) GetMagSafeLedState() (MagSafeLedState, error) {
+	logrus.Tracef("GetMagSafeLedState called")
+
+	v, err := c.Read("ACLC")
+	if err != nil || len(v.Bytes) != 1 {
+		return LedOrange, err
+	}
+
+	rawState := MagSafeLedState(v.Bytes[0])
+	ret := LedOrange
+	switch rawState {
+	case LedOff, LedGreen, LedOrange, LedErrorOnce, LedErrorPerm:
+		ret = rawState
+	case 2:
+		ret = LedGreen
+	}
+	logrus.Tracef("GetMagSafeLedState returned %v", ret)
+	return ret, nil
+}
+
+// SetMagSafeCharging .
+func (c *Connection) SetMagSafeCharging(charging bool) error {
+	state := LedGreen
+	if charging {
+		state = LedOrange
+	}
+	return c.SetMagSafeLedState(state)
+}
+
+// IsMagSafeCharging .
+func (c *Connection) IsMagSafeCharging() (bool, error) {
+	state, err := c.GetMagSafeLedState()
+
+	return state != LedGreen, err
 }
