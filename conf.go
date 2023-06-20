@@ -19,6 +19,7 @@ type Config struct {
 	DisableChargingPreSleep bool `json:"disableChargingPreSleep"`
 	AllowNonRootAccess      bool `json:"allowNonRootAccess"`
 	LowerLimitDelta         int  `json:"lowerLimitDelta"`
+	ControlMagSafeLED       bool `json:"controlMagSafeLED"`
 }
 
 var (
@@ -29,6 +30,7 @@ var (
 		DisableChargingPreSleep: true,
 		AllowNonRootAccess:      false,
 		LowerLimitDelta:         2,
+		ControlMagSafeLED:       false, // no well-tested yet
 	}
 )
 

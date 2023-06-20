@@ -48,7 +48,7 @@ func installDaemon() error {
 	_, err = os.Stat("/Library/LaunchDaemons/cc.chlc.batt.plist")
 	if err == nil {
 		logrus.Errorf("/Library/LaunchDaemons/cc.chlc.batt.plist already exists")
-		return fmt.Errorf("/Library/LaunchDaemons/cc.chlc.batt.plist already exists. To avoid overwriting it, please remove it manually and try again")
+		return fmt.Errorf("/Library/LaunchDaemons/cc.chlc.batt.plist already exists. Did you forget to uninstall batt? If not, please uninstall it first")
 	}
 
 	err = os.WriteFile("/Library/LaunchDaemons/cc.chlc.batt.plist", []byte(tmpl), 0644)

@@ -42,6 +42,7 @@ func NewCommand() *cobra.Command {
 		NewStatusCommand(),
 		NewAdapterCommand(),
 		NewLowerLimitDeltaCommand(),
+		NewSetControlMagSafeLEDCommand(),
 	)
 
 	return cmd
@@ -404,6 +405,7 @@ func NewStatusCommand() *cobra.Command {
 		Use:   "status",
 		Short: "Get the current status of batt",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Get Config.
 			ret, err := get("/config")
 			if err != nil {
 				return fmt.Errorf("failed to get config: %v", err)
@@ -423,9 +425,11 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Printf("prevent idle-sleep when charging: %t\n", conf.PreventIdleSleep)
 			cmd.Printf("disable charging before sleep if charge limit is enabled: %t\n", conf.DisableChargingPreSleep)
 			cmd.Printf("allow non-root users to assess the daemon: %t\n", conf.AllowNonRootAccess)
+			cmd.Printf("control MagSafe LED: %t\n", conf.ControlMagSafeLED)
 
 			cmd.Print("\n")
 
+			// Get Battery Info.
 			ret, err = get("/battery-info")
 			if err != nil {
 				return fmt.Errorf("failed to get battery info: %v", err)
@@ -520,6 +524,60 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 			return nil
 		},
 	}
+
+	return cmd
+}
+
+// NewSetControlMagSafeLEDCommand .
+func NewSetControlMagSafeLEDCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "magsafe",
+		Short: "Control MagSafe LED according to battery charging status",
+		Long: `Control MagSafe LED according to battery charging status.
+
+On a MagSafe compatible device, the MagSafe LED will always be orange (charging) even if charge limit is reached and charging is disabled by batt. This setting can make the MagSafe LED behave like a normal device, i.e., it will turn green when charge limit is reached (not charging).
+
+One thing to note: this option is purely cosmetic. batt will still function even if you disable this option.`,
+	}
+
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "enable",
+			Short: "Control MagSafe LED according to battery charging status",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				ret, err := put("/magsafe", "true")
+				if err != nil {
+					return fmt.Errorf("failed to set magsafe: %v", err)
+				}
+
+				if ret != "" {
+					logrus.Infof("daemon responded: %s", ret)
+				}
+
+				logrus.Infof("successfully enabled magsafe")
+
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "disable",
+			Short: "Do not control MagSafe LED",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				ret, err := put("/magsafe", "false")
+				if err != nil {
+					return fmt.Errorf("failed to set magsafe: %v", err)
+				}
+
+				if ret != "" {
+					logrus.Infof("daemon responded: %s", ret)
+				}
+
+				logrus.Infof("successfully disabled magsafe")
+
+				return nil
+			},
+		},
+	)
 
 	return cmd
 }

@@ -213,6 +213,11 @@ func (c *Connection) GetMagSafeLedState() (MagSafeLedState, error) {
 	return ret, nil
 }
 
+func (c *Connection) CheckMagSafeExistence() bool {
+	_, err := c.Read(MagSafeLedKey)
+	return err == nil
+}
+
 // SetMagSafeCharging .
 func (c *Connection) SetMagSafeCharging(charging bool) error {
 	state := LedGreen

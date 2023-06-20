@@ -255,3 +255,33 @@ func setLowerLimitDelta(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusCreated, ret)
 }
+
+func setControlMagSafeLED(c *gin.Context) {
+	// Check if MasSafe is supported first. If not, return error.
+	if !smcConn.CheckMagSafeExistence() {
+		logrus.Errorf("setControlMagSafeLED called but there is no MasSafe LED on this device")
+		err := fmt.Errorf("there is no MasSafe on this device. You can only enable this setting on a compatible device, e.g. MacBook Pro 14-inch 2021")
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	var d bool
+	if err := c.BindJSON(&d); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	config.ControlMagSafeLED = d
+	if err := saveConfig(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	logrus.Infof("set control MagSafe LED to %t", d)
+
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("ControlMagSafeLED set to %t. You should be able to the effect in a few minutes.", d))
+}

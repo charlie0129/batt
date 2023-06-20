@@ -62,8 +62,11 @@ func maintainLoopInner() bool {
 				logrus.Errorf("EnableCharging failed: %v", err)
 				return false
 			}
-			if batteryCharge, err := smcConn.GetBatteryCharge(); err == nil {
-				_ = smcConn.SetMagSafeCharging(batteryCharge < 100)
+			if config.ControlMagSafeLED {
+				batteryCharge, err := smcConn.GetBatteryCharge()
+				if err == nil {
+					_ = smcConn.SetMagSafeCharging(batteryCharge < 100)
+				}
 			}
 		}
 		maintainedChargingInProgress = false
@@ -120,7 +123,9 @@ func maintainLoopInner() bool {
 		maintainedChargingInProgress = false
 	}
 
-	updateMagSafeLed(isChargingEnabled)
+	if config.ControlMagSafeLED {
+		updateMagSafeLed(isChargingEnabled)
+	}
 
 	// batteryCharge >= upper - delta && batteryCharge < upper
 	// do nothing, keep as-is
@@ -135,7 +140,10 @@ func updateMagSafeLed(isChargingEnabled bool) {
 	}
 
 	if isChargingEnabled != ledCharging {
-		_ = smcConn.SetMagSafeCharging(isChargingEnabled)
+		err := smcConn.SetMagSafeCharging(isChargingEnabled)
+		if err != nil {
+			logrus.Errorf("SetMagSafeCharging failed: %v", err)
+		}
 	}
 }
 
