@@ -40,13 +40,14 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 > Currently, it is command-line only. Some knowledge of the command-line is required. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
 
-1. Get the binary. You can download it from [GitHub releases](https://github.com/charlie0129/batt/releases), extract the tar archive, and you will get a `batt` binary. If you want the latest features and bug fixes, you can build it yourself (see [Building](#building) for more details)
-2. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line.
-3. Install daemon using `sudo batt install`. This component is what actually controls charging. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. 
-4. In case you have GateKeeper turned on, you will see something like _"batt is can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. To solve this, you can either 1. (recommended) Go to System Preferences -> Security & Privacy -> Open Anyway; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
-5. Test if it works by running `sudo batt status`. If you see some status info, you are good to go!
-6. Time to customize. By default `batt` will set a charge limit to 60%. For example, to set the charge limit to 80%, run `sudo batt limit 80`. 
-7. As said before, it is highly recommended to disable macOS's optimized charging when using `batt`. To do so, open _System Preferences_, go to _Battery_, and uncheck _Optimized battery charging_.
+1. (Optional) If you are lazy, then there is an install script to help you: `curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash`. After running this, you can skip to step 5.
+2. Get the binary. You can download it from [GitHub releases](https://github.com/charlie0129/batt/releases), extract the tar archive, and you will get a `batt` binary. If you want the latest features and bug fixes, you can build it yourself (see [Building](#building) for more details)
+3. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line.
+4. Install daemon using `sudo batt install`. This component is what actually controls charging. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. 
+5. In case you have GateKeeper turned on, you will see something like _"batt is can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. To solve this, you can either 1. (recommended) Go to System Preferences -> Security & Privacy -> Open Anyway; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
+6. Test if it works by running `sudo batt status`. If you see some status info, you are good to go!
+7. Time to customize. By default `batt` will set a charge limit to 60%. For example, to set the charge limit to 80%, run `sudo batt limit 80`. 
+8. As said before, it is highly recommended to disable macOS's optimized charging when using `batt`. To do so, open _System Preferences_, go to _Battery_, and uncheck _Optimized battery charging_.
 
 Notes:
 
@@ -196,7 +197,13 @@ Since it is a hobby project, I want to balance effort and the final outcome. Go 
 
 ### How to upgrade?
 
-If a new version is released, you can upgrade it by:
+Automatic:
+
+```bash
+curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash
+```
+
+Manual:
 
 1. Run `sudo batt uninstall` to remove the old daemon.
 2. Replace the old `batt` binary with the downloaded new one. `sudo cp ./batt $(where batt)`
