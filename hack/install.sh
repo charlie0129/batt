@@ -33,8 +33,8 @@ if [[ -z "$PREFIX" ]]; then
   PREFIX="/usr/local/bin"
 fi
 
-sudo mkdir -p "$PREFIX"
 echo "Downloading batt from $tarball_url to $PREFIX (to change install location, set \$PREFIX env)"
+sudo mkdir -p "$PREFIX"
 curl -L "$tarball_url" | sudo tar -xzC "$PREFIX"
 
 install_cmd="sudo $PREFIX/batt install --allow-non-root-access"

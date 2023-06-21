@@ -531,11 +531,11 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 // NewSetControlMagSafeLEDCommand .
 func NewSetControlMagSafeLEDCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "magsafe",
+		Use:   "magsafe-led",
 		Short: "Control MagSafe LED according to battery charging status",
 		Long: `Control MagSafe LED according to battery charging status.
 
-On a MagSafe-compatible device, the MagSafe LED will always be orange (charging) even if charge limit is reached and charging is disabled by batt, due to Apple's limitations. This setting can make the MagSafe LED behave like a normal device, i.e., it will turn green when charge limit is reached (not charging).
+This setting can make the MagSafe LED behave like a normal device, i.e., it will turn green when charge limit is reached (not charging). By default, on a MagSafe-compatible device, the MagSafe LED will always be orange (charging) even if charge limit is reached and charging is disabled by batt, due to Apple's limitations. You cannot enable this feature on a non-MagSafe-compatible device.
 
 One thing to note: this option is purely cosmetic. batt will still function even if you disable this option.`,
 	}
@@ -545,7 +545,7 @@ One thing to note: this option is purely cosmetic. batt will still function even
 			Use:   "enable",
 			Short: "Control MagSafe LED according to battery charging status",
 			RunE: func(cmd *cobra.Command, args []string) error {
-				ret, err := put("/magsafe", "true")
+				ret, err := put("/magsafe-led", "true")
 				if err != nil {
 					return fmt.Errorf("failed to set magsafe: %v", err)
 				}
@@ -554,7 +554,7 @@ One thing to note: this option is purely cosmetic. batt will still function even
 					logrus.Infof("daemon responded: %s", ret)
 				}
 
-				logrus.Infof("successfully enabled magsafe")
+				logrus.Infof("successfully enabled magsafe led controlling")
 
 				return nil
 			},
@@ -563,7 +563,7 @@ One thing to note: this option is purely cosmetic. batt will still function even
 			Use:   "disable",
 			Short: "Do not control MagSafe LED",
 			RunE: func(cmd *cobra.Command, args []string) error {
-				ret, err := put("/magsafe", "false")
+				ret, err := put("/magsafe-led", "false")
 				if err != nil {
 					return fmt.Errorf("failed to set magsafe: %v", err)
 				}
@@ -572,7 +572,7 @@ One thing to note: this option is purely cosmetic. batt will still function even
 					logrus.Infof("daemon responded: %s", ret)
 				}
 
-				logrus.Infof("successfully disabled magsafe")
+				logrus.Infof("successfully disabled magsafe led controlling")
 
 				return nil
 			},

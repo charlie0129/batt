@@ -120,14 +120,14 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 ### Control MagSafe LED
 
 > Only available after (not including) `v0.1.0`. It is disabled by default.
+>
+> Acknowledgement: [@exidler](https://github.com/exidler)
 
-On a MagSafe-compatible device, the MagSafe LED will always be orange (charging) even if charge limit is reached and charging is disabled by batt, due to Apple's limitations. This setting can make the MagSafe LED behave like a normal device, i.e., it will turn green when charge limit is reached (not charging).
+This setting can make the MagSafe LED behave like a normal device, i.e., it will turn green when charge limit is reached (not charging). By default, on a MagSafe-compatible device, the MagSafe LED will always be orange (charging) even if charge limit is reached and charging is disabled by batt, due to Apple's limitations. You cannot enable this feature on a non-MagSafe-compatible device.
 
 One thing to note: this option is purely cosmetic. batt will still function even if you disable this option.
 
-To enable MagSafe LED control, run `sudo batt magsafe enable`.
-
-Acknowledgement: @exidler
+To enable MagSafe LED control, run `sudo batt magsafe-led enable`.
 
 ### Check logs
 
@@ -156,6 +156,26 @@ I have tried some alternatives, both closed source and open source, but I kept n
 I want a _simple_ tool that does just one thing, and **does it well** -- limiting charging, just like the [Unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy). It seems I don't have any options but to develop by myself. So I spent a weekend developing this tool, so here we are! `batt` is here!
 
 ## FAQ
+
+### How to uninstall?
+
+1. Run `sudo batt uninstall` to remove the daemon.
+2. Remove the config by `sudo rm /etc/batt.json`.
+3. Remove the `batt` binary itself by `sudo rm $(where batt)`.
+
+### How to upgrade?
+
+Automatic:
+
+```bash
+curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash
+```
+
+Manual:
+
+1. Run `sudo batt uninstall` to remove the old daemon.
+2. Replace the old `batt` binary with the downloaded new one. `sudo cp ./batt $(where batt)`
+3. Run `sudo batt install` to install the daemon again. Although most config is preserved, some security related config is intentionally reset during re-installation. For example, if you used `--allow-non-root-access` when installing previously, you will need to use it again.
 
 ### Why is it Apple Silicon only?
 
@@ -189,26 +209,6 @@ If you are concerned about security, you can check the source code [here](https:
 
 Since it is a hobby project, I want to balance effort and the final outcome. Go seems a good choice for me. However, C is required to register sleep and wake notifications using Apple's IOKit framework. Also, Go don't have any library to r/w SMC, so I have to write it myself ([charlie0129/gosmc](https://github.com/charlie0129/gosmc)). This part is also mainly written in C as it interacts with the hardware and uses OS capabilities. Thankfully, writing a library didn't slow down development too much.
 
-### How to uninstall?
-
-1. Run `sudo batt uninstall` to remove the daemon.
-2. Remove the config by `sudo rm /etc/batt.json`.
-3. Remove the `batt` binary itself by `sudo rm $(where batt)`.
-
-### How to upgrade?
-
-Automatic:
-
-```bash
-curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash
-```
-
-Manual:
-
-1. Run `sudo batt uninstall` to remove the old daemon.
-2. Replace the old `batt` binary with the downloaded new one. `sudo cp ./batt $(where batt)`
-3. Run `sudo batt install` to install the daemon again. Although most config is preserved, some security related config is intentionally reset during re-installation. For example, if you used `--allow-non-root-access` when installing previously, you will need to use it again.
-
 ### Why is there so many logs?
 
 By default, `batt` daemon will have its log level set to `debug` for easy debugging. The `debug` logs are helpful when reporting problems since it contains useful information. So it is recommended to keep it as `debug`. You may find a lot of logs in `/tmp/batt.log` after you use your Mac for a few days. However, there is no need to worry about this. The logs will be cleaned by macOS on reboot. It will not grow indefinitely.
@@ -220,4 +220,4 @@ If you `believe you will not encou`nter any problem in the future and still want
 - [actuallymentor/battery](https://github.com/actuallymentor/battery) for various SMC keys.
 - [hholtmann/smcFanControl](https://github.com/hholtmann/smcFanControl) for its C code to read/write SMC, which inspires [charlie0129/gosmc](https://github.com/charlie0129/gosmc).
 - Apple for its guide to register and unregister sleep and wake notifications.
-- @exidler for building the MagSafe LED controlling logic.
+- [@exidler](https://github.com/exidler) for building the MagSafe LED controlling logic.
