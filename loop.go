@@ -15,6 +15,8 @@ var (
 	loopInterval = time.Duration(20) * time.Second
 )
 
+// infiniteLoop runs forever and maintains the battery charge,
+// which is called by the daemon.
 func infiniteLoop() {
 	for {
 		maintainLoop()
@@ -22,6 +24,9 @@ func infiniteLoop() {
 	}
 }
 
+// maintainLoop maintains the battery charge. It has the logic to
+// prevent parallel runs. So if one maintain loop is already running,
+// the next one will need to wait until the first one finishes.
 func maintainLoop() bool {
 	maintainLoopLock.Lock()
 	defer maintainLoopLock.Unlock()
@@ -36,6 +41,9 @@ func maintainLoop() bool {
 	return maintainLoopInner()
 }
 
+// maintainLoopForced maintains the battery charge. It runs as soon as
+// it is called, without waiting for the previous maintain loop to finish.
+// It is mainly called by the HTTP APIs.
 func maintainLoopForced() bool {
 	return maintainLoopInner()
 }

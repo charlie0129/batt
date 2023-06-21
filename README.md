@@ -40,7 +40,7 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 > Currently, it is command-line only. Some knowledge of the command-line is required. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
 
-1. (Optional) If you are lazy, then there is an install script to help you: `curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash`. After running this, you can skip to step 5.
+1. (Optional) If you are lazy, there is an install script to help you get the first 3 steps done: `curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash`. After running this, you can skip to step 5.
 2. Get the binary. You can download it from [GitHub releases](https://github.com/charlie0129/batt/releases), extract the tar archive, and you will get a `batt` binary. If you want the latest features and bug fixes, you can build it yourself (see [Building](#building) for more details)
 3. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line.
 4. Install daemon using `sudo batt install`. This component is what actually controls charging. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. 
