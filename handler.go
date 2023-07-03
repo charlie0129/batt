@@ -285,3 +285,15 @@ func setControlMagSafeLED(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("ControlMagSafeLED set to %t. You should be able to the effect in a few minutes.", d))
 }
+
+func getCurrentCharge(c *gin.Context) {
+	charge, err := smcConn.GetBatteryCharge()
+	if err != nil {
+		logrus.Errorf("getCurrentCharge failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, charge)
+}

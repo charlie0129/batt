@@ -40,6 +40,7 @@ func setupRoutes() *gin.Engine {
 	router.GET("/charging", getCharging)
 	router.GET("/battery-info", getBatteryInfo)
 	router.PUT("/magsafe-led", setControlMagSafeLED)
+	router.GET("/current-charge", getCurrentCharge)
 
 	return router
 }

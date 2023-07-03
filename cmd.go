@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/distatus/battery"
+	"github.com/fatih/color"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -405,31 +406,57 @@ func NewStatusCommand() *cobra.Command {
 		Use:   "status",
 		Short: "Get the current status of batt",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Get Config.
-			ret, err := get("/config")
+			// Get charging status.
+			cmd.Println(boldWhite("Charging status:"))
+
+			ret, err := get("/charging")
 			if err != nil {
-				return fmt.Errorf("failed to get config: %v", err)
+				return fmt.Errorf("failed to get charging status: %v", err)
 			}
 
-			conf := Config{}
-			err = json.Unmarshal([]byte(ret), &conf)
-			if err != nil {
-				return fmt.Errorf("failed to unmarshal config: %v", err)
+			switch ret {
+			case "true":
+				cmd.Println("  Allow charging: " + bool2Text(true))
+				cmd.Println("    Your Mac will charge if plugged in.")
+			case "false":
+				cmd.Println("  Allow charging: " + bool2Text(false))
+				cmd.Println("    Your Mac will not charge if plugged in.")
+			default:
+				cmd.Println("  Charging: unknown")
 			}
-			if conf.Limit < 100 {
-				cmd.Printf("charge limit: %d%%\n", conf.Limit)
-				cmd.Printf("lower limit: %d%%\n", conf.Limit-conf.LowerLimitDelta)
-			} else {
-				cmd.Printf("charge limit: disabled\n")
-			}
-			cmd.Printf("prevent idle-sleep when charging: %t\n", conf.PreventIdleSleep)
-			cmd.Printf("disable charging before sleep if charge limit is enabled: %t\n", conf.DisableChargingPreSleep)
-			cmd.Printf("allow non-root users to assess the daemon: %t\n", conf.AllowNonRootAccess)
-			cmd.Printf("control MagSafe LED: %t\n", conf.ControlMagSafeLED)
 
-			cmd.Print("\n")
+			ret, err = get("/adapter")
+			if err != nil {
+				return fmt.Errorf("failed to get power adapter status: %v", err)
+			}
+
+			switch ret {
+			case "true":
+				cmd.Println("  Use power adapter: " + bool2Text(true))
+				cmd.Println("    Your Mac will use power from the wall, if it is plugged in.")
+			case "false":
+				cmd.Println("  Use power adapter: " + bool2Text(false))
+				cmd.Println("    Your Mac will not use power from the wall, even if it is plugged in.")
+			default:
+				cmd.Println("  Power adapter: unknown")
+			}
+
+			cmd.Println()
 
 			// Get Battery Info.
+			cmd.Println(boldWhite("Battery status:"))
+
+			ret, err = get("/current-charge")
+			if err != nil {
+				return fmt.Errorf("failed to get current charge: %v", err)
+			}
+			var currentCharge int
+			currentCharge, err = strconv.Atoi(ret)
+			if err != nil {
+				return fmt.Errorf("failed to unmarshal current charge: %v", err)
+			}
+			cmd.Printf("  Current charge: %s\n", boldWhite("%d%%", currentCharge))
+
 			ret, err = get("/battery-info")
 			if err != nil {
 				return fmt.Errorf("failed to get battery info: %v", err)
@@ -439,7 +466,8 @@ func NewStatusCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to unmarshal battery info: %v", err)
 			}
-			state := "UNKNOWN"
+
+			state := "not charging"
 			switch bat.State {
 			case battery.Charging:
 				state = "charging"
@@ -448,41 +476,37 @@ func NewStatusCommand() *cobra.Command {
 			case battery.Full:
 				state = "full"
 			}
-			cmd.Printf("state: %s\n", state)
-			cmd.Printf("full capacity: %.1f Wh\n", bat.Design/1e3)
-			cmd.Printf("charge rate: %.1f W\n", bat.ChargeRate/1e3)
-			cmd.Printf("voltage: %.1f V\n", bat.DesignVoltage)
+			cmd.Printf("  State: %s\n", boldWhite(state))
+			cmd.Printf("  Full capacity: %s\n", boldWhite("%.1f Wh", bat.Design/1e3))
+			cmd.Printf("  charge rate: %s\n", boldWhite("%.1f W", bat.ChargeRate/1e3))
+			cmd.Printf("  voltage: %s\n", boldWhite("%.2f V", bat.DesignVoltage))
 
-			cmd.Print("\n")
+			cmd.Println()
 
-			ret, err = get("/adapter")
+			// Get Config.
+			cmd.Println(boldWhite("Batt configuration:"))
+
+			ret, err = get("/config")
 			if err != nil {
-				return fmt.Errorf("failed to get power adapter status: %v", err)
+				return fmt.Errorf("failed to get config: %v", err)
 			}
 
-			switch ret {
-			case "true":
-				cmd.Println("power adapter: enabled")
-			case "false":
-				cmd.Println("power adapter: disabled")
-			default:
-				cmd.Println("power adapter: unknown")
-			}
-
-			ret, err = get("/charging")
+			conf := Config{}
+			err = json.Unmarshal([]byte(ret), &conf)
 			if err != nil {
-				return fmt.Errorf("failed to get charging status: %v", err)
+				return fmt.Errorf("failed to unmarshal config: %v", err)
 			}
 
-			switch ret {
-			case "true":
-				cmd.Println("charging: enabled")
-			case "false":
-				cmd.Println("charging: disabled")
-			default:
-				cmd.Println("charging: unknown")
+			if conf.Limit < 100 {
+				cmd.Printf("  Upper limit: %s\n", boldWhite("%d%%", conf.Limit))
+				cmd.Printf("  Lower limit: %s (%d-%d)\n", boldWhite("%d%%", conf.Limit-conf.LowerLimitDelta), conf.Limit, conf.LowerLimitDelta)
+			} else {
+				cmd.Printf("  Charge limit: %s\n", boldWhite("100%% (disabled)"))
 			}
-
+			cmd.Printf("  Prevent idle-sleep when charging: %s\n", bool2Text(conf.PreventIdleSleep))
+			cmd.Printf("  Disable charging before sleep if charge limit is enabled: %s\n", bool2Text(conf.DisableChargingPreSleep))
+			cmd.Printf("  Allow non-root users to access the daemon: %s\n", bool2Text(conf.AllowNonRootAccess))
+			cmd.Printf("  Control MagSafe LED: %s\n", bool2Text(conf.ControlMagSafeLED))
 			return nil
 		},
 	}
@@ -580,4 +604,15 @@ One thing to note: this option is purely cosmetic. batt will still function even
 	)
 
 	return cmd
+}
+
+func bool2Text(b bool) string {
+	if b {
+		return color.New(color.Bold, color.FgGreen).Sprint("✔")
+	}
+	return boldWhite("✘")
+}
+
+func boldWhite(format string, a ...interface{}) string {
+	return color.New(color.Bold, color.FgWhite).Sprintf(format, a...)
 }
