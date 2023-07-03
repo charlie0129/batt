@@ -63,8 +63,9 @@ func NewVersionCommand() *cobra.Command {
 // NewDaemonCommand .
 func NewDaemonCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "daemon",
-		Short: "Run batt daemon in the foreground",
+		Use:    "daemon",
+		Hidden: true,
+		Short:  "Run batt daemon in the foreground",
 		Run: func(cmd *cobra.Command, args []string) {
 			logrus.Infof("batt version %s commit %s", version.Version, version.GitCommit)
 			runDaemon()
@@ -76,11 +77,11 @@ func NewDaemonCommand() *cobra.Command {
 func NewInstallCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Install batt daemon to launchd (system-wide)",
+		Short: "Install batt (system-wide)",
 		Long: `Install batt daemon to launchd (system-wide).
 This makes batt run in the background and automatically start on boot. You must run this command as root.
 
-By default, only root user is allowed to access the batt daemon for security reasons. As a result, you will need to run batt as root to control the battery charging. If you want to allow non-root users to access the daemon, you can use the --allow-non-root-access flag. However, this is NOT recommended as it introduces security risks.`,
+By default, only root user is allowed to access the batt daemon for security reasons. As a result, you will need to run batt as root to control battery charging, e.g. setting charge limit. If you want to allow non-root users, i.e., you, to access the daemon, you can use the --allow-non-root-access flag, so you don't have to use sudo every time. However, this is NOT recommended as it introduces security risks.`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 
 			err := loadConfig()
@@ -142,7 +143,7 @@ By default, only root user is allowed to access the batt daemon for security rea
 func NewUninstallCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "uninstall",
-		Short: "Uninstall batt daemon from launchd (system-wide)",
+		Short: "Uninstall batt (system-wide)",
 		Long: `Uninstall batt daemon from launchd (system-wide).
 This stops batt and removes it from launchd.
 
@@ -192,10 +193,11 @@ You must run this command as root.`,
 func NewLimitCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "limit [percentage]",
-		Short: "Set the battery charge limit",
-		Long: `Set the battery charge limit.
+		Short: "Set upper charge limit",
+		Long: `Set upper charge limit.
+
 This is a percentage from 10 to 100.
-Setting the limit to 10-99 will enable the battery charge limit. However, setting the limit to 100 will disable the battery charge limit.`,
+Setting the limit to 10-99 will enable the battery charge limit. However, setting the limit to 100 will disable the battery charge limit, which is the default behavior of macOS.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return fmt.Errorf("invalid number of arguments")
@@ -414,12 +416,13 @@ func NewStatusCommand() *cobra.Command {
 				return fmt.Errorf("failed to get charging status: %v", err)
 			}
 
+			additionalMsg := " (updates can take up to 5 minutes)"
 			switch ret {
 			case "true":
-				cmd.Println("  Allow charging: " + bool2Text(true))
+				cmd.Println("  Allow charging: " + bool2Text(true) + additionalMsg)
 				cmd.Println("    Your Mac will charge if plugged in.")
 			case "false":
-				cmd.Println("  Allow charging: " + bool2Text(false))
+				cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
 				cmd.Println("    Your Mac will not charge if plugged in.")
 			default:
 				cmd.Println("  Charging: unknown")
