@@ -1,3 +1,5 @@
+👆↖️ Note: use table of contents of quickly navigate to the section you want.
+
 # batt
 
 `batt` is a tool to control battery charging on Apple Silicon MacBooks.
@@ -40,10 +42,10 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 > Currently, it is command-line only. Some knowledge of the command-line is required. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
 
-1. (Optional) If you are lazy, there is an install script to help you get the first 3 steps done: `curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash`. After running this, you can skip to step 5.
-2. Get the binary. You can download stable versions from [GitHub releases](https://github.com/charlie0129/batt/releases), extract the tar archive, and you will get a `batt` binary. If you want unstable versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months) or [build it yourself](#building) .
-3. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line.
-4. Install daemon using `sudo batt install`. This component is what actually controls charging. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. 
+1. (Optional) If you are lazy, there is an install script to help you get the first 3 steps done: `curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash`. This will download and install the latest _stable_ version for you, then you can skip to step 5.
+2. Get the binary. For _stable_ and _beta_ releases, you can find the download link in the [release page](https://github.com/charlie0129/batt/releases). If you want development versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months and you need to `chmod +x batt` after extracting the archive) or [build it yourself](#building) .
+3. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line. In this case, the binary location will be `/usr/local/bin/batt`.
+4. Install daemon using `sudo batt install`. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. To uninstall: please refer to [How to uninstall?](#how-to-uninstall)
 5. In case you have GateKeeper turned on, you will see something like _"batt is can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. To solve this, you can either 1. (recommended) Go to System Preferences -> Security & Privacy -> Open Anyway; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
 6. Test if it works by running `sudo batt status`. If you see some status info, you are good to go!
 7. Time to customize. By default `batt` will set a charge limit to 60%. For example, to set the charge limit to 80%, run `sudo batt limit 80`. 
@@ -51,9 +53,10 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 Notes:
 
-- Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
 - If your current charge is above the limit, your computer will just stop charging and stays at your current charge level, which is by design. You can use your battery until it is below the limit to see the effects.
+- You can refer to [Usage](#usage) for additional configurations. Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
 - To disable the charge limit, run `sudo batt limit 100`.
+- [How to uninstall?](#how-to-uninstall) [How to upgrade?](#how-to-upgrade)
 
 > Finally, if you find `batt` helpful, stars ⭐️ are much appreciated!
 
@@ -135,9 +138,9 @@ Logs are directed to `/tmp/batt.log`. If something goes wrong, you can check the
 
 ## Building
 
-You need to install [Go](https://go.dev/doc/install) and command line developer tools (by running `xcode-select --install`).
+You need to install command line developer tools (by running `xcode-select --install`) and Go (follow the official instructions [here](https://go.dev/doc/install)).
 
-Simply running `make` should build the binary into `./bin/batt`. You can then move it to your `$PATH`.
+Simply running `make` in this repo should build the binary into `./bin/batt`. You can then follow [the upgrade guide](#how-to-upgrade) to install it (you just use the binary you have built, not downloading a new one, of course).
 
 ## Architecture
 
@@ -167,6 +170,8 @@ I want a _simple_ tool that does just one thing, and **does it well** -- limitin
 
 Automatic:
 
+> Updates to the latest _stable_ version. If you want to use other versions (_beta_, _development_), please use the manual method.
+
 ```bash
 curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash
 ```
@@ -174,8 +179,9 @@ curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash
 Manual:
 
 1. Run `sudo batt uninstall` to remove the old daemon.
-2. Replace the old `batt` binary with the downloaded new one. `sudo cp ./batt $(where batt)`
-3. Run `sudo batt install` to install the daemon again. Although most config is preserved, some security related config is intentionally reset during re-installation. For example, if you used `--allow-non-root-access` when installing previously, you will need to use it again.
+2. Download the new binary. For _stable_ and _beta_ releases, you can find the download link in the [release page](https://github.com/charlie0129/batt/releases). If you want development versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months and you need to `chmod +x batt` after extracting the archive) or [build it yourself](#building) .
+3. Replace the old `batt` binary with the downloaded new one. `sudo cp ./batt $(where batt)`
+4. Run `sudo batt install` to install the daemon again. Although most config is preserved, some security related config is intentionally reset during re-installation. For example, if you used `--allow-non-root-access` when installing previously, you will need to use it again like this `sudo batt install --allow-non-root-access`.
 
 ### Why is it Apple Silicon only?
 
