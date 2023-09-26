@@ -10,7 +10,7 @@ import (
 func (c *Connection) GetBatteryCharge() (int, error) {
 	logrus.Tracef("GetBatteryCharge called")
 
-	v, err := c.Read(BatteryChargeKeyApple)
+	v, err := c.Read(BatteryChargeKey)
 	if err != nil {
 		return 0, err
 	}
