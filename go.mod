@@ -3,7 +3,7 @@ module github.com/charlie0129/batt
 go 1.19
 
 require (
-	github.com/charlie0129/gosmc v0.0.0-20230610080908-76239f0377e7
+	github.com/charlie0129/gosmc v0.0.0-20230926132459-a239bdb045d0
 	github.com/distatus/battery v0.10.0
 	github.com/fatih/color v1.15.0
 	github.com/gin-gonic/gin v1.9.1
