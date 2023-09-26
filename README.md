@@ -12,7 +12,9 @@
 
 Previously, before optimized battery charging is introduced, MacBooks are known to suffer from battery swelling when they are kept at 100% all the time, especially the 2015s. Even with optimized battery charging, the effect is not optimal (described [below](#but-macos-have-similar-features-built-in-is-it)).
 
-`batt` can effectively alleviate this problem by limiting the battery charge level. It can be used to set a maximum charge level. For example, you can set it to 80%, and it will stop charging when the battery reaches 80%.
+`batt` can effectively alleviate this problem by limiting the battery charge level. It can be used to set a maximum charge level. For example, you can set it to 80%, and it will stop charging when the battery reaches 80%. Once it reaches the predefined level, your computer will use power from the wall _only_, leaving no strain on your battery.
+
+Quick link to [installation guide](#installation).
 
 ## Features
 
@@ -42,9 +44,9 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 ## Installation
 
-> Currently, it is command-line only. Some knowledge of the command-line is required. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
+> Currently, it is command-line only. Some knowledge of the command-line is recommended. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
 
-1. (Optional) If you are lazy, there is an installation script to help you get the first 3 steps done (Internet connection required): `curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash`. This will download and install the latest _stable_ version for you, then you can skip to step 5.
+1. (Optional) If you are lazy, there is an installation script to help you get the first 3 steps done (Internet connection required). Put this in your terminal: `curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash`. You may need to provide your password (to control charging). This will download and install the latest _stable_ version for you, then you can skip to step 5.
 2. Get the binary. For _stable_ and _beta_ releases, you can find the download link in the [release page](https://github.com/charlie0129/batt/releases). If you want development versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months and you need to `chmod +x batt` after extracting the archive) or [build it yourself](#building) .
 3. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line. In this case, the binary location will be `/usr/local/bin/batt`.
 4. Install daemon using `sudo batt install`. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. To uninstall: please refer to [How to uninstall?](#how-to-uninstall)

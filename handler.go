@@ -87,7 +87,7 @@ func setLimit(c *gin.Context) {
 	} else {
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", l, l-config.LowerLimitDelta, charge)
 		if charge > config.Limit {
-			msg += ", you may need to drain your battery below the limit to see any effect"
+			msg += ". Current charge is above the limit, so your computer will use power from the wall only. Battery charge will remain the same."
 		}
 	}
 
