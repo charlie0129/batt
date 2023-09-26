@@ -297,3 +297,15 @@ func getCurrentCharge(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusOK, charge)
 }
+
+func getPluggedIn(c *gin.Context) {
+	pluggedIn, err := smcConn.IsPluggedIn()
+	if err != nil {
+		logrus.Errorf("getCurrentCharge failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, pluggedIn)
+}

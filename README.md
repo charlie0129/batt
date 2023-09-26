@@ -2,6 +2,8 @@
 
 # batt
 
+[![Go Checks](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml)[![Buind Test Binary](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml)
+
 `batt` is a tool to control battery charging on Apple Silicon MacBooks.
 
 ## Why do you need this?
@@ -42,18 +44,18 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 > Currently, it is command-line only. Some knowledge of the command-line is required. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
 
-1. (Optional) If you are lazy, there is an install script to help you get the first 3 steps done: `curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash`. This will download and install the latest _stable_ version for you, then you can skip to step 5.
+1. (Optional) If you are lazy, there is an installation script to help you get the first 3 steps done (Internet connection required): `curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash`. This will download and install the latest _stable_ version for you, then you can skip to step 5.
 2. Get the binary. For _stable_ and _beta_ releases, you can find the download link in the [release page](https://github.com/charlie0129/batt/releases). If you want development versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months and you need to `chmod +x batt` after extracting the archive) or [build it yourself](#building) .
 3. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line. In this case, the binary location will be `/usr/local/bin/batt`.
 4. Install daemon using `sudo batt install`. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. To uninstall: please refer to [How to uninstall?](#how-to-uninstall)
-5. In case you have GateKeeper turned on, you will see something like _"batt is can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. To solve this, you can either 1. (recommended) Go to System Preferences -> Security & Privacy -> Open Anyway; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
+5. In case you have GateKeeper turned on, you will see something like _"batt is can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. If you don't see it, you can skip this step. To solve this, you can either 1. (recommended) Go to System Preferences -> Security & Privacy -> General -> Open Anyway; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
 6. Test if it works by running `sudo batt status`. If you see some status info, you are good to go!
 7. Time to customize. By default `batt` will set a charge limit to 60%. For example, to set the charge limit to 80%, run `sudo batt limit 80`. 
-8. As said before, it is highly recommended to disable macOS's optimized charging when using `batt`. To do so, open _System Preferences_, go to _Battery_, and uncheck _Optimized battery charging_.
+8. As said before, it is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open _System Preferences_, go to _Battery_, and uncheck _Optimized battery charging_.
 
 Notes:
 
-- If your current charge is above the limit, your computer will just stop charging and stays at your current charge level, which is by design. You can use your battery until it is below the limit to see the effects.
+- If your current charge is above the limit, your computer will just stop charging and use power from the wall. It will stay at your current charge level, which is by design. You can use your battery until it is below the limit to see the effects.
 - You can refer to [Usage](#usage) for additional configurations. Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
 - To disable the charge limit, run `sudo batt limit 100`.
 - [How to uninstall?](#how-to-uninstall) [How to upgrade?](#how-to-upgrade)
@@ -185,11 +187,15 @@ Manual:
 
 ### Why is it Apple Silicon only?
 
-Simply because you don't need this on Intel :p. 
+You probably don't need this on Intel :p
 
-On Intel MacBooks, you can control battery charging in a much, much easier way, simply setting the `BCLM` key in Apple SMC to the limit you need, and you are all done. There are many tools available. For example, you can use [smc-command](https://github.com/hholtmann/smcFanControl/tree/master/smc-command) to set SMC keys. 
+On Intel MacBooks, you can control battery charging in a much, much easier way, simply setting the `BCLM` key in Apple SMC to the limit you need, and you are all done. There are many tools available. For example, you can use [smc-command](https://github.com/hholtmann/smcFanControl/tree/master/smc-command) to set SMC keys. Of course, you will lose some advanced features like upper and lower limit.
 
 However, on Apple Silicon, the way how charging is controlled changed. There is no such key. Therefore, we have to use a much more complicated way to achieve the same goal, and handle more edge cases, hence `batt`.
+
+### Will there be an Intel version?
+
+Probably not. `batt` was made Apple-Silicon-only after some early development. I have tested batt on Intel during development (you can probably find some traces from the code :). Even though some features in batt are known to work on Intel, some are not. Development and testing on Intel requires additional effort, especially those feature that are not working. Considering the fact that Intel MacBooks are going to be obsolete in a few years and some similar tools already exist (without some advanced features), I don't think it is worth the effort. If you are interested in developing an Intel version, feel free to raise a PR.
 
 ### Why does my MacBook stop charging after I close the lid?
 

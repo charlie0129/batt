@@ -54,6 +54,8 @@ package: build
 	tar czf "$(PKG_OUTPUT)" -C "$(DIST)" "$(BIN_BASENAME)" LICENSE;
 	cd "$(PKG_OUTPUT_DIR)" && sha256sum "$(PKG_FULLNAME)" >> "$(CHECKSUM_FULLNAME)";
 	echo "# PACKAGE checksum saved to $(PKG_OUTPUT_DIR)/$(CHECKSUM_FULLNAME)"
+	echo "# PACKAGE linking $(DIST)/$(BIN)-packages-latest <==> $(PKG_OUTPUT_DIR)"
+	ln -snf "$(BIN)-$(VERSION)/packages" "$(DIST)/$(BIN)-packages-latest"
 
 # INTERNAL: package-<os>_<arch> to build and package for a specific platform
 package-%:
@@ -69,8 +71,6 @@ all-package: $(addprefix package-, $(subst /,_, $(BIN_PLATFORMS)))
 	cd "$(PKG_OUTPUT_DIR)" && shopt -s nullglob && \
 	    sha256sum *.{tar.gz,zip} > "$(CHECKSUM_FULLNAME)"
 	echo "# PACKAGE all checksums saved to $(PKG_OUTPUT_DIR)/$(CHECKSUM_FULLNAME)"
-	echo "# PACKAGE linking $(DIST)/$(BIN)-packages-latest <==> $(PKG_OUTPUT_DIR)s"
-	ln -snf "$(BIN)-$(VERSION)/packages" "$(DIST)/$(BIN)-packages-latest"
 
 # ===== MISC =====
 
