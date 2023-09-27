@@ -550,7 +550,7 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Printf("  State: %s\n", bold(state))
 			cmd.Printf("  Full capacity: %s\n", bold("%.1f Wh", bat.Design/1e3))
 			cmd.Printf("  Charge rate: %s\n", bold("%.1f W", bat.ChargeRate/1e3))
-			cmd.Printf("  voltage: %s\n", bold("%.2f V", bat.DesignVoltage))
+			cmd.Printf("  Voltage: %s\n", bold("%.2f V", bat.DesignVoltage))
 
 			cmd.Println()
 

@@ -78,8 +78,6 @@ func installDaemon() error {
 }
 
 func uninstallDaemon() error {
-	// TODO: revert any changes, enable battery charging and enable adapter before uninstalling
-
 	logrus.Infof("stopping batt")
 
 	// run launchctl unload /Library/LaunchDaemons/cc.chlc.batt.plist
@@ -89,14 +87,14 @@ func uninstallDaemon() error {
 		"/Library/LaunchDaemons/cc.chlc.batt.plist",
 	).Run()
 	if err != nil {
-		return fmt.Errorf("failed to unload /Library/LaunchDaemons/cc.chlc.batt.plist: %w", err)
+		return fmt.Errorf("failed to unload /Library/LaunchDaemons/cc.chlc.batt.plist: %w. Are you root?", err)
 	}
 
 	logrus.Infof("removing launch daemon")
 
 	err = os.Remove("/Library/LaunchDaemons/cc.chlc.batt.plist")
 	if err != nil {
-		return fmt.Errorf("failed to remove /Library/LaunchDaemons/cc.chlc.batt.plist: %w", err)
+		return fmt.Errorf("failed to remove /Library/LaunchDaemons/cc.chlc.batt.plist: %w. Do you have enough permissions? Is batt already uninstalled?", err)
 	}
 
 	return nil
