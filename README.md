@@ -227,11 +227,15 @@ Since it is a hobby project, I want to balance effort and the final outcome. Go 
 
 By default, `batt` daemon will have its log level set to `debug` for easy debugging. The `debug` logs are helpful when reporting problems since it contains useful information. So it is recommended to keep it as `debug`. You may find a lot of logs in `/tmp/batt.log` after you use your Mac for a few days. However, there is no need to worry about this. The logs will be cleaned by macOS on reboot. It will not grow indefinitely.
 
-If you `believe you will not encou`nter any problem in the future and still want to set a higher log level, you can achieve this by editing `/Library/LaunchDaemons/cc.chlc.batt.plist` and then restart the daemon by loading and unloading the LaunchDaemon.
+If you believe you will not encounter any problem in the future and still want to set a higher log level, you can achieve this by:
+
+1. Stop batt: `sudo launchctl unload /Library/LaunchDaemons/cc.chlc.batt.plist` (batt must be stopped to change config so you can't skip this step)
+2. Use your preferred editor to edit `/Library/LaunchDaemons/cc.chlc.batt.plist` and change the value of `-l=debug` to your preferred level. The default value is `debug`.
+3. Start batt again: `sudo launchctl load /Library/LaunchDaemons/cc.chlc.batt.plist`
 
 ## Acknowledgements
 
 - [actuallymentor/battery](https://github.com/actuallymentor/battery) for various SMC keys.
 - [hholtmann/smcFanControl](https://github.com/hholtmann/smcFanControl) for its C code to read/write SMC, which inspires [charlie0129/gosmc](https://github.com/charlie0129/gosmc).
-- Apple for its guide to register and unregister sleep and wake notifications.
+- [Apple](https://developer.apple.com/library/archive/qa/qa1340/_index.html) for its guide to register and unregister sleep and wake notifications.
 - [@exidler](https://github.com/exidler) for building the MagSafe LED controlling logic.
