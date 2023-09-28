@@ -3,6 +3,12 @@
 set -o errexit
 set -o pipefail
 
+# must run on Apple Silicon
+if [[ ! $(sysctl -n machdep.cpu.brand_string) =~ "Apple" ]]; then
+  echo "This script must be run on Apple Silicon."
+  exit 1
+fi
+
 # must have curl
 if ! command -v curl >/dev/null; then
   echo "curl is required"
