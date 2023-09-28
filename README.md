@@ -46,7 +46,7 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 > Currently, it is command-line only. Some knowledge of the command-line is recommended. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
 
-1. (Optional) If you are lazy, there is an installation script to help you get the first 3 steps done (Internet connection required). Put this in your terminal: `curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash`. You may need to provide your password (to control charging). This will download and install the latest _stable_ version for you, then you can skip to step 5.
+1. (Optional) If you are lazy, there is an installation script to help you get the first 3 steps done (Internet connection required). Put this in your terminal: `bash <(curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh)`. You may need to provide your password (to control charging). This will download and install the latest _stable_ version for you, then you can skip to step 5.
 2. Get the binary. For _stable_ and _beta_ releases, you can find the download link in the [release page](https://github.com/charlie0129/batt/releases). If you want development versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months and you need to `chmod +x batt` after extracting the archive) or [build it yourself](#building) .
 3. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line. In this case, the binary location will be `/usr/local/bin/batt`.
 4. Install daemon using `sudo batt install`. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. To uninstall: please refer to [How to uninstall?](#how-to-uninstall)
@@ -177,7 +177,7 @@ Automatic:
 > Updates to the latest _stable_ version. If you want to use other versions (_beta_, _development_), please use the manual method.
 
 ```bash
-curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh | bash
+bash <(curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh)
 ```
 
 Manual:

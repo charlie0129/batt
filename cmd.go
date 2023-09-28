@@ -668,10 +668,13 @@ One thing to note: this option is purely cosmetic. batt will still function even
 }
 
 func bool2Text(b bool) string {
+	var c string
 	if b {
-		return color.New(color.Bold, color.FgGreen).Sprint("✔")
+		c = "✔"
+	} else {
+		c = "✘"
 	}
-	return bold("✘")
+	return bold(c)
 }
 
 func bold(format string, a ...interface{}) string {

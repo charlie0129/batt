@@ -14,23 +14,15 @@ confirm() {
     echo -n "$1 [y/n]: "
     read -r -n 1 REPLY
     case $REPLY in
-    [y])
+    [yY])
       echo
       return 0
       ;;
-    [n])
+    [nN])
       echo
       return 1
       ;;
-    [Y])
-      echo
-      return 0
-      ;;
-    [N])
-      echo
-      return 1
-      ;;
-    *) printf "invalid input" ;;
+    *) printf " is invalid. Press 'y' to continue; 'n' to exit. \n" ;;
     esac
   done
 }
@@ -43,6 +35,8 @@ launch_daemon="/Library/LaunchDaemons/cc.chlc.batt.plist"
 
 # Uninstall old versions (if present)
 if [[ -f "$launch_daemon" ]]; then
+  echo "You have old versions of batt installed, which need to be uninstalled before installing the latest version. We will uninstall it for you now."
+  confirm "Is this OK?" || exit 0
   info "Stopping old versions of batt..."
   sudo launchctl unload "$launch_daemon"
   sudo rm -f "$launch_daemon"
@@ -70,7 +64,7 @@ if [[ -z "$PREFIX" ]]; then
 fi
 
 echo "Will install batt ${version} to $PREFIX (to change install location, set \$PREFIX environment variable)."
-confirm "Continue?" || exit 0
+confirm "Ready to install?" || exit 0
 info "Downloading batt ${version} from $tarball_url and installing to $PREFIX..."
 sudo mkdir -p "$PREFIX"
 curl -fsSL "$tarball_url" | sudo tar -xzC "$PREFIX"
