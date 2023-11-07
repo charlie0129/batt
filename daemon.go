@@ -12,7 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
-	ginlogrus "github.com/toorop/gin-logrus"
 
 	"github.com/charlie0129/batt/smc"
 )
@@ -27,7 +26,7 @@ func setupRoutes() *gin.Engine {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.Use(ginlogrus.Logger(logrus.StandardLogger()))
+	router.Use(ginLogger(logrus.StandardLogger()))
 	router.GET("/config", getConfig)
 	router.PUT("/config", setConfig) // Should not be called by user.
 	router.GET("/limit", getLimit)
@@ -99,7 +98,7 @@ func runDaemon() {
 	}
 
 	go func() {
-		logrus.Infof("main loop starts")
+		logrus.Debugln("main loop starts")
 
 		infiniteLoop()
 

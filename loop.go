@@ -31,6 +31,7 @@ func maintainLoop() bool {
 	maintainLoopLock.Lock()
 	defer maintainLoopLock.Unlock()
 
+	// See wg.Add() in sleepcallback.go for why we need to wait.
 	tsBeforeWait := time.Now()
 	wg.Wait()
 	tsAfterWait := time.Now()
