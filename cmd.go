@@ -495,7 +495,7 @@ func NewStatusCommand() *cobra.Command {
 			// Charging status.
 			cmd.Println(bold("Charging status:"))
 
-			additionalMsg := " (status updates can take up to 5 minutes)"
+			additionalMsg := " (refreshes can take up to 5 minutes)"
 			if charging {
 				cmd.Println("  Allow charging: " + bool2Text(true) + additionalMsg)
 				cmd.Print("    Your Mac will charge")
@@ -541,9 +541,9 @@ func NewStatusCommand() *cobra.Command {
 			state := "not charging"
 			switch bat.State {
 			case battery.Charging:
-				state = "charging"
+				state = color.GreenString("charging")
 			case battery.Discharging:
-				state = "discharging"
+				state = color.RedString("discharging")
 			case battery.Full:
 				state = "full"
 			}
@@ -560,7 +560,7 @@ func NewStatusCommand() *cobra.Command {
 				cmd.Printf("  Upper limit: %s\n", bold("%d%%", conf.Limit))
 				cmd.Printf("  Lower limit: %s (%d-%d)\n", bold("%d%%", conf.Limit-conf.LowerLimitDelta), conf.Limit, conf.LowerLimitDelta)
 			} else {
-				cmd.Printf("  Charge limit: %s\n", bold("100%% (disabled)"))
+				cmd.Printf("  Charge limit: %s\n", bold("100%% (batt disabled)"))
 			}
 			cmd.Printf("  Prevent idle-sleep when charging: %s\n", bool2Text(conf.PreventIdleSleep))
 			cmd.Printf("  Disable charging before sleep if charge limit is enabled: %s\n", bool2Text(conf.DisableChargingPreSleep))
@@ -668,13 +668,10 @@ One thing to note: this option is purely cosmetic. batt will still function even
 }
 
 func bool2Text(b bool) string {
-	var c string
 	if b {
-		c = "✔"
-	} else {
-		c = "✘"
+		return color.New(color.Bold, color.FgGreen).Sprint("✔")
 	}
-	return bold(c)
+	return color.New(color.Bold, color.FgRed).Sprint("✘")
 }
 
 func bold(format string, a ...interface{}) string {
