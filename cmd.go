@@ -136,7 +136,7 @@ By default, only root user is allowed to access the batt daemon for security rea
 				if os.Geteuid() != 0 {
 					logrus.Errorf("you must run this command as root")
 				}
-				return fmt.Errorf("failed to install daemon: %v", err)
+				return fmt.Errorf("failed to install daemon: %v. Are you root?", err)
 			}
 
 			err = saveConfig()

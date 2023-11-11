@@ -46,8 +46,8 @@ func canSystemSleepCallback() {
 	// because there may still be a maintain loop waiting (see the wg.Wait() in loop.go).
 	// So decisions may not be made yet. We need to wait.
 	// Actually, we wait the larger of preSleepLoopDelaySeconds and postSleepLoopDelaySeconds. This is not implemented yet.
-	if time.Now().Sub(lastWakeTime) < time.Duration(preSleepLoopDelaySeconds)*time.Second {
-		logrus.Debugln("system has just waked up, deny idle sleep")
+	if timeAfterWokenUp := time.Since(lastWakeTime); timeAfterWokenUp < time.Duration(preSleepLoopDelaySeconds)*time.Second {
+		logrus.Debugf("system has just waked up (%fs ago), deny idle sleep", timeAfterWokenUp.Seconds())
 		C.CancelPowerChange()
 		return
 	}

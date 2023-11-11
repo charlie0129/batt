@@ -14,6 +14,7 @@ import (
 var (
 	//go:embed hack/cc.chlc.batt.plist
 	plistTemplate string
+	plistPath     = "/Library/LaunchDaemons/cc.chlc.batt.plist"
 )
 
 func installDaemon() error {
@@ -45,21 +46,21 @@ func installDaemon() error {
 	}
 
 	// warn if the file already exists
-	_, err = os.Stat("/Library/LaunchDaemons/cc.chlc.batt.plist")
+	_, err = os.Stat(plistPath)
 	if err == nil {
-		logrus.Errorf("/Library/LaunchDaemons/cc.chlc.batt.plist already exists")
-		return fmt.Errorf("/Library/LaunchDaemons/cc.chlc.batt.plist already exists. Did you forget to uninstall batt? Please uninstall it first, by running 'sudo batt uninstall'")
+		logrus.Errorf("%s already exists", plistPath)
+		return fmt.Errorf("%s already exists. This is often caused by an incorrect installation. Did you forget to uninstall batt before installing it again? Please uninstall it first, by running 'sudo batt uninstall'. If you already removed batt, you can solve this problem by 'sudo rm %s'", plistPath, plistPath)
 	}
 
-	err = os.WriteFile("/Library/LaunchDaemons/cc.chlc.batt.plist", []byte(tmpl), 0644)
+	err = os.WriteFile(plistPath, []byte(tmpl), 0644)
 	if err != nil {
-		return fmt.Errorf("failed to write /Library/LaunchDaemons/cc.chlc.batt.plist: %w", err)
+		return fmt.Errorf("failed to write %s: %w", plistPath, err)
 	}
 
 	// chown root:wheel
-	err = os.Chown("/Library/LaunchDaemons/cc.chlc.batt.plist", 0, 0)
+	err = os.Chown(plistPath, 0, 0)
 	if err != nil {
-		return fmt.Errorf("failed to chown /Library/LaunchDaemons/cc.chlc.batt.plist: %w", err)
+		return fmt.Errorf("failed to chown %s: %w", plistPath, err)
 	}
 
 	logrus.Infof("starting batt")
@@ -68,10 +69,10 @@ func installDaemon() error {
 	err = exec.Command(
 		"/bin/launchctl",
 		"load",
-		"/Library/LaunchDaemons/cc.chlc.batt.plist",
+		plistPath,
 	).Run()
 	if err != nil {
-		return fmt.Errorf("failed to load /Library/LaunchDaemons/cc.chlc.batt.plist: %w", err)
+		return fmt.Errorf("failed to load %s: %w", plistPath, err)
 	}
 
 	return nil
@@ -84,17 +85,26 @@ func uninstallDaemon() error {
 	err := exec.Command(
 		"/bin/launchctl",
 		"unload",
-		"/Library/LaunchDaemons/cc.chlc.batt.plist",
+		plistPath,
 	).Run()
 	if err != nil {
-		return fmt.Errorf("failed to unload /Library/LaunchDaemons/cc.chlc.batt.plist: %w. Are you root?", err)
+		return fmt.Errorf("failed to unload %s: %w. Are you root?", plistPath, err)
 	}
 
 	logrus.Infof("removing launch daemon")
 
-	err = os.Remove("/Library/LaunchDaemons/cc.chlc.batt.plist")
+	// if the file doesn't exist, we don't need to remove it
+	_, err = os.Stat(plistPath)
 	if err != nil {
-		return fmt.Errorf("failed to remove /Library/LaunchDaemons/cc.chlc.batt.plist: %w. Do you have enough permissions? Is batt already uninstalled?", err)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to stat %s: %w", plistPath, err)
+	}
+
+	err = os.Remove(plistPath)
+	if err != nil {
+		return fmt.Errorf("failed to remove %s: %w. Are you root?", plistPath, err)
 	}
 
 	return nil
