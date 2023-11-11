@@ -518,7 +518,7 @@ func NewStatusCommand() *cobra.Command {
 					cmd.Print(", because your current charge is above the lower limit. Charging will be allowed after current charge drops below the lower limit.")
 				}
 				if pluggedIn && currentCharge < low {
-					cmd.Print(" If no manual intervention is involved, charging should be allowed soon. Wait for a few minutes and come back.")
+					cmd.Print(". However, if no manual intervention is involved, charging should be allowed soon. Wait for 5 minutes and come back.")
 				}
 				cmd.Println()
 			}
