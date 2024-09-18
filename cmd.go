@@ -56,6 +56,7 @@ func NewCommand() *cobra.Command {
 		NewInstallCommand(),
 		NewUninstallCommand(),
 		NewLimitCommand(),
+		NewDisableCommand(),
 		NewSetDisableChargingPreSleepCommand(),
 		NewSetPreventIdleSleepCommand(),
 		NewStatusCommand(),
@@ -235,6 +236,31 @@ Setting the limit to 10-99 will enable the battery charge limit. However, settin
 			}
 
 			logrus.Infof("successfully set battery charge limit to %s%%", args[0])
+
+			return nil
+		},
+	}
+}
+
+func NewDisableCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "disable",
+		Short:   "Disable batt",
+		GroupID: gBasic,
+		Long: `Disable batt.
+
+Stop batt from controlling battery charging. This will allow your Mac to charge to 100% and operate normally.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ret, err := put("/limit", "100")
+			if err != nil {
+				return fmt.Errorf("failed to disable batt: %v", err)
+			}
+
+			if ret != "" {
+				logrus.Infof("daemon responded: %s", ret)
+			}
+
+			logrus.Infof("successfully disabled batt. Charge limit has been reset to 100%%. To re-enable batt, just set a charge limit using \"batt limit\".")
 
 			return nil
 		},
