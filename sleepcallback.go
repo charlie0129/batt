@@ -119,7 +119,6 @@ func systemWillSleepCallback() {
 //export systemWillPowerOnCallback
 func systemWillPowerOnCallback() {
 	// System has started the wake-up process...
-	logrus.Debugln("received kIOMessageSystemWillPowerOn notification, system has started the wake-up process")
 }
 
 //export systemHasPoweredOnCallback
@@ -162,4 +161,9 @@ func listenNotifications() error {
 		return fmt.Errorf("IORegisterForSystemPower failed")
 	}
 	return nil
+}
+
+func stopListeningNotifications() {
+	C.StopListeningNotifications()
+	logrus.Info("stopped listening system sleep notifications")
 }

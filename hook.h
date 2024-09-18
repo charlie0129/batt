@@ -8,3 +8,4 @@ extern void systemHasPoweredOnCallback();
 int AllowPowerChange();
 int CancelPowerChange();
 int ListenNotifications();
+int StopListeningNotifications();

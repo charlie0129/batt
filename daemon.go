@@ -124,19 +124,30 @@ func runDaemon() {
 	// Wait for a SIGINT or SIGTERM:
 	sig := <-sigc
 	logrus.Infof("caught signal \"%s\": shutting down.", sig)
+
+	logrus.Info("shutting down http server")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	err = srv.Shutdown(ctx)
 	if err != nil {
 		logrus.Errorf("failed to shutdown http server: %v", err)
 	}
 	cancel()
+
+	logrus.Info("stopping listening notifications")
+	stopListeningNotifications()
+
+	logrus.Info("closing smc connection")
 	err = smcConn.Close()
 	if err != nil {
 		logrus.Errorf("failed to close smc connection: %v", err)
 	}
+
+	logrus.Info("saving config")
 	err = saveConfig()
 	if err != nil {
 		logrus.Errorf("failed to save config: %v", err)
 	}
+
+	logrus.Info("exiting")
 	os.Exit(0)
 }

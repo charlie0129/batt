@@ -14,6 +14,10 @@
 #include "hook.h"
 
 io_connect_t root_port; // a reference to the Root Power Domain IOService
+// notification port allocated by IORegisterForSystemPower
+IONotificationPortRef notifyPortRef;
+// notifier object, used to deregister later
+io_object_t notifierObject;
 long gMessageArgument;
 
 int AllowPowerChange()
@@ -85,11 +89,6 @@ void sleepCallBack(void* refCon, io_service_t service, natural_t messageType, vo
 
 int ListenNotifications()
 {
-    // notification port allocated by IORegisterForSystemPower
-    IONotificationPortRef notifyPortRef;
-
-    // notifier object, used to deregister later
-    io_object_t notifierObject;
     // this parameter is passed to the callback
     void* refCon;
 
@@ -108,5 +107,25 @@ int ListenNotifications()
     CFRunLoopRun();
 
     // Not reached, CFRunLoopRun doesn't return in this case.
+    return 0;
+}
+
+int StopListeningNotifications()
+{
+    // remove the sleep notification port from the application runloop
+    CFRunLoopRemoveSource(CFRunLoopGetCurrent(),
+       IONotificationPortGetRunLoopSource(notifyPortRef),
+       kCFRunLoopCommonModes);
+
+    // deregister for system sleep notifications
+    IODeregisterForSystemPower(&notifierObject);
+
+    // IORegisterForSystemPower implicitly opens the Root Power Domain IOService
+    // so we close it here
+    IOServiceClose(root_port);
+
+    // destroy the notification port allocated by IORegisterForSystemPower
+    IONotificationPortDestroy(notifyPortRef);
+
     return 0;
 }
