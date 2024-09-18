@@ -35,7 +35,7 @@ func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "batt",
 		Short: "batt is a tool to control battery charging on Apple Silicon MacBooks",
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			return setupLogger()
 		},
 	}
@@ -73,7 +73,7 @@ func NewVersionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version",
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			cmd.Printf("%s %s\n", version.Version, version.GitCommit)
 		},
 	}
@@ -86,7 +86,7 @@ func NewDaemonCommand() *cobra.Command {
 		Hidden:  true,
 		Short:   "Run batt daemon in the foreground",
 		GroupID: gAdvanced,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			logrus.Infof("batt version %s commit %s", version.Version, version.GitCommit)
 			runDaemon()
 		},
@@ -103,7 +103,7 @@ func NewInstallCommand() *cobra.Command {
 This makes batt run in the background and automatically start on boot. You must run this command as root.
 
 By default, only root user is allowed to access the batt daemon for security reasons. As a result, you will need to run batt as root to control battery charging, e.g. setting charge limit. If you want to allow non-root users, i.e., you, to access the daemon, you can use the --allow-non-root-access flag, so you don't have to use sudo every time. However, bear in mind that it introduces security risks.`,
-		PreRunE: func(cmd *cobra.Command, args []string) error {
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
 
 			err := loadConfig()
 			if err != nil {
@@ -126,7 +126,7 @@ By default, only root user is allowed to access the batt daemon for security rea
 
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if config.AllowNonRootAccess {
 				logrus.Warnf("non-root users are allowed to access the batt daemon. It can be a security risk.")
 			}
@@ -170,7 +170,7 @@ func NewUninstallCommand() *cobra.Command {
 This stops batt and removes it from launchd.
 
 You must run this command as root.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			err := uninstallDaemon()
 			if err != nil {
 				// check if current user is root
@@ -221,7 +221,7 @@ func NewLimitCommand() *cobra.Command {
 
 This is a percentage from 10 to 100.
 Setting the limit to 10-99 will enable the battery charge limit. However, setting the limit to 100 will disable the battery charge limit, which is the default behavior of macOS.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return fmt.Errorf("invalid number of arguments")
 			}
@@ -242,6 +242,7 @@ Setting the limit to 10-99 will enable the battery charge limit. However, settin
 	}
 }
 
+// NewDisableCommand .
 func NewDisableCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "disable",
@@ -250,7 +251,7 @@ func NewDisableCommand() *cobra.Command {
 		Long: `Disable batt.
 
 Stop batt from controlling battery charging. This will allow your Mac to charge to 100% and operate normally.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			ret, err := put("/limit", "100")
 			if err != nil {
 				return fmt.Errorf("failed to disable batt: %v", err)
@@ -286,7 +287,7 @@ However, this does not prevent manual sleep. For example, if you manually put yo
 		&cobra.Command{
 			Use:   "enable",
 			Short: "Prevent idle sleep during a charging session",
-			RunE: func(cmd *cobra.Command, args []string) error {
+			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := put("/prevent-idle-sleep", "true")
 				if err != nil {
 					return fmt.Errorf("failed to set prevent idle sleep: %v", err)
@@ -304,7 +305,7 @@ However, this does not prevent manual sleep. For example, if you manually put yo
 		&cobra.Command{
 			Use:   "disable",
 			Short: "Do not prevent idle sleep during a charging session",
-			RunE: func(cmd *cobra.Command, args []string) error {
+			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := put("/prevent-idle-sleep", "false")
 				if err != nil {
 					return fmt.Errorf("failed to set prevent idle sleep: %v", err)
@@ -341,7 +342,7 @@ To prevent such cases, you can use disable-charging-pre-sleep. This will disable
 		&cobra.Command{
 			Use:   "enable",
 			Short: "Disable charging before sleep during a charging session",
-			RunE: func(cmd *cobra.Command, args []string) error {
+			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := put("/disable-charging-pre-sleep", "true")
 				if err != nil {
 					return fmt.Errorf("failed to set disable charging pre sleep: %v", err)
@@ -359,7 +360,7 @@ To prevent such cases, you can use disable-charging-pre-sleep. This will disable
 		&cobra.Command{
 			Use:   "disable",
 			Short: "Do not disable charging before sleep during a charging session",
-			RunE: func(cmd *cobra.Command, args []string) error {
+			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := put("/disable-charging-pre-sleep", "false")
 				if err != nil {
 					return fmt.Errorf("failed to set disable charging pre sleep: %v", err)
@@ -394,7 +395,7 @@ When you disable power adapter, power input from the wall will be disabled. Your
 		&cobra.Command{
 			Use:   "disable",
 			Short: "Disable power adapter",
-			RunE: func(cmd *cobra.Command, args []string) error {
+			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := put("/adapter", "false")
 				if err != nil {
 					return fmt.Errorf("failed to disable power adapter: %v", err)
@@ -412,7 +413,7 @@ When you disable power adapter, power input from the wall will be disabled. Your
 		&cobra.Command{
 			Use:   "enable",
 			Short: "Enable power adapter",
-			RunE: func(cmd *cobra.Command, args []string) error {
+			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := put("/adapter", "true")
 				if err != nil {
 					return fmt.Errorf("failed to enable power adapter: %v", err)
@@ -430,7 +431,7 @@ When you disable power adapter, power input from the wall will be disabled. Your
 		&cobra.Command{
 			Use:   "status",
 			Short: "Get the current status of power adapter",
-			RunE: func(cmd *cobra.Command, args []string) error {
+			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := get("/adapter")
 				if err != nil {
 					return fmt.Errorf("failed to get power adapter status: %v", err)
@@ -459,7 +460,7 @@ func NewStatusCommand() *cobra.Command {
 		Use:     "status",
 		GroupID: gBasic,
 		Short:   "Get the current status of batt",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Get various info first.
 			ret, err := get("/charging")
 			if err != nil {
@@ -577,7 +578,7 @@ func NewStatusCommand() *cobra.Command {
 			case battery.Full:
 				state = "full"
 			}
-			cmd.Printf("  State: %s\n", bold(state))
+			cmd.Printf("  State: %s\n", bold("%s", state))
 			cmd.Printf("  Full capacity: %s\n", bold("%.1f Wh", bat.Design/1e3))
 			cmd.Printf("  Charge rate: %s\n", bold("%.1f W", bat.ChargeRate/1e3))
 			cmd.Printf("  Voltage: %s\n", bold("%.2f V", bat.DesignVoltage))
@@ -614,7 +615,7 @@ When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two 
 batt have similar features. The charge limit you have set (using 'batt limit') will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. Same as using 'batt lower-limit-delta 2'. To customize the lower limit, use 'batt lower-limit-delta'.
 
 For example, if you want to set the lower limit to be 5% less than the upper limit, run 'sudo batt lower-limit-delta 5'. By doing this, if you have your charge (upper) limit set to 60%, the lower limit will be 55%.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return fmt.Errorf("invalid number of arguments")
 			}
@@ -659,7 +660,7 @@ One thing to note: this option is purely cosmetic. batt will still function even
 		&cobra.Command{
 			Use:   "enable",
 			Short: "Control MagSafe LED according to battery charging status",
-			RunE: func(cmd *cobra.Command, args []string) error {
+			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := put("/magsafe-led", "true")
 				if err != nil {
 					return fmt.Errorf("failed to set magsafe: %v", err)
@@ -677,7 +678,7 @@ One thing to note: this option is purely cosmetic. batt will still function even
 		&cobra.Command{
 			Use:   "disable",
 			Short: "Do not control MagSafe LED",
-			RunE: func(cmd *cobra.Command, args []string) error {
+			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := put("/magsafe-led", "false")
 				if err != nil {
 					return fmt.Errorf("failed to set magsafe: %v", err)
