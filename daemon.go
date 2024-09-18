@@ -54,6 +54,19 @@ func runDaemon() {
 	}
 	logrus.Infof("config loaded: %#v", config)
 
+	// Receive SIGHUP to reload config
+	go func() {
+		sigc := make(chan os.Signal, 1)
+		signal.Notify(sigc, syscall.SIGHUP)
+		for range sigc {
+			err := loadConfig()
+			if err != nil {
+				logrus.Errorf("failed to reload config: %v", err)
+			}
+			logrus.Infof("config reloaded: %#v", config)
+		}
+	}()
+
 	srv := &http.Server{
 		Handler: router,
 	}
