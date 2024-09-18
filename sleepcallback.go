@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/charlie0129/batt/smc"
 )
 
 var (
@@ -109,6 +111,10 @@ func systemWillSleepCallback() {
 			logrus.Errorf("DisableCharging failed: %v", err)
 			return
 		}
+		err = smcConn.SetMagSafeLedState(smc.LedOff)
+		if err != nil {
+			logrus.Errorf("SetMagSafeLedState failed: %v", err)
+		}
 	} else {
 		logrus.Debugln("no maintained charging is in progress, allow sleep")
 	}
@@ -134,6 +140,14 @@ func systemHasPoweredOnCallback() {
 			// Use sleep instead of time.After because when the computer sleeps, we
 			// actually want the sleep to prolong as well.
 			sleep(postSleepLoopDelaySeconds)
+
+			if config.DisableChargingPreSleep {
+				err := smcConn.SetMagSafeLedState(smc.LedOff)
+				if err != nil {
+					logrus.Errorf("SetMagSafeLedState failed: %v", err)
+				}
+			}
+
 			wg.Done()
 		}()
 	}
