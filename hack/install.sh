@@ -86,6 +86,6 @@ echo '- If you see an alert says "batt cannot be opened because XXX", please go 
 echo "- Be sure to **disable** macOS's optimized charging: Go to System Preferences -> Battery -> uncheck Optimized battery charging."
 echo '- To set charge limit to 80%, run "batt limit 80".'
 echo '- To see batt help: run "batt help".'
-echo '- To see disable charge limit: run "batt limit 100".'
+echo '- To see disable charge limit: run "batt disable".'
 echo '- To uninstall: run "sudo batt uninstall" and follow the instructions.'
 echo '- To upgrade: just run this script again when a new version is released.'
