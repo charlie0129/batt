@@ -30,7 +30,7 @@ var (
 		DisableChargingPreSleep: true,
 		AllowNonRootAccess:      false,
 		LowerLimitDelta:         2,
-		ControlMagSafeLED:       false, // no well-tested yet
+		ControlMagSafeLED:       true, // no well-tested yet
 	}
 )
 
