@@ -37,6 +37,20 @@ info() {
     echo -e "$(date +'%Y-%m-%d %H:%M:%S') \033[34m[INFO]\033[0m $*"
 }
 
+# If the full path to batt has Homebrew prefix ("/opt"), stop here.
+if which batt 2>/dev/null | grep -q /opt; then
+  echo "You have batt installed via Homebrew. Please use Homebrew to upgrade batt:"
+  echo "  - brew update"
+  echo "  - sudo brew services stop batt"
+  echo "  - brew upgrade batt"
+  echo "  - sudo brew services start batt"
+  echo "If you want to use this script to install batt, please uninstall Homebrew-installed batt first by:"
+  echo "  - sudo brew services stop batt"
+  echo "  - brew uninstall batt"
+  echo "  - sudo rm -rf /opt/homebrew/Cellar/batt"
+  exit 1
+fi
+
 launch_daemon="/Library/LaunchDaemons/cc.chlc.batt.plist"
 
 # Uninstall old versions (if present)
