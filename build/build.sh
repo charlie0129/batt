@@ -47,8 +47,8 @@ export GOOS="${OS}"
 export GO111MODULE=on
 export GOFLAGS="${GOFLAGS:-} -mod=mod "
 
-printf "# BUILD output: %s\ttarget: %s/%s\tversion: %s\n" \
-  "${OUTPUT}" "${OS}" "${ARCH}" "${VERSION}"
+printf "# BUILD output: %s\ttarget: %s/%s\tversion: %s\ttags: %s\n" \
+  "${OUTPUT}" "${OS}" "${ARCH}" "${VERSION}" "${GOTAGS:- }"
 
 printf "# BUILD building for "
 
@@ -79,11 +79,12 @@ if [ -n "${GIT_COMMIT:-}" ]; then
   always_ldflags="${always_ldflags} -X $(go list -m)/pkg/version.GitCommit=${GIT_COMMIT}"
 fi
 
-export CGO_CFLAGS="-O2 -target arm64-apple-macos12"
+export CGO_CFLAGS="-O2"
 export CGO_LDFLAGS="-O2"
 
 go build \
   -gcflags="${gogcflags}" \
+  -tags="${GOTAGS:-}" \
   -asmflags="${goasmflags}" \
   -ldflags="${always_ldflags} ${goldflags}" \
   -o "${OUTPUT}" \

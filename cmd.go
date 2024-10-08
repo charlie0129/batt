@@ -26,7 +26,6 @@ var (
 	commandGroups = []string{
 		gBasic,
 		gAdvanced,
-		gInstallation,
 	}
 )
 
@@ -55,8 +54,6 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(
 		NewDaemonCommand(),
 		NewVersionCommand(),
-		NewInstallCommand(),
-		NewUninstallCommand(),
 		NewLimitCommand(),
 		NewDisableCommand(),
 		NewSetDisableChargingPreSleepCommand(),
@@ -66,6 +63,19 @@ func NewCommand() *cobra.Command {
 		NewLowerLimitDeltaCommand(),
 		NewSetControlMagSafeLEDCommand(),
 	)
+
+	// If building for non-brew, show install commands.
+	// If building for brew, hide install commands because brew will handle installation.
+	if !hideInstallCommands {
+		cmd.AddGroup(&cobra.Group{
+			ID:    gInstallation,
+			Title: gInstallation,
+		})
+		cmd.AddCommand(
+			NewInstallCommand(),
+			NewUninstallCommand(),
+		)
+	}
 
 	return cmd
 }
