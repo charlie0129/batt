@@ -45,6 +45,10 @@ func setupRoutes() *gin.Engine {
 	return router
 }
 
+var (
+	alwaysAllowNonRootAccess = false
+)
+
 func runDaemon() {
 	router := setupRoutes()
 
@@ -53,6 +57,11 @@ func runDaemon() {
 		logrus.Fatal(err)
 	}
 	logrus.Infof("config loaded: %#v", config)
+
+	if alwaysAllowNonRootAccess {
+		config.AllowNonRootAccess = true
+		logrus.Info("alwaysAllowNonRootAccess is set to true, allowing non-root access")
+	}
 
 	// Receive SIGHUP to reload config
 	go func() {

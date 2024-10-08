@@ -42,6 +42,8 @@ func NewCommand() *cobra.Command {
 
 	globalFlags := cmd.PersistentFlags()
 	globalFlags.StringVarP(&logLevel, "log-level", "l", "info", "log level (trace, debug, info, warn, error, fatal, panic)")
+	globalFlags.StringVar(&configPath, "config", configPath, "config file path")
+	globalFlags.StringVar(&unixSocketPath, "daemon-socket", unixSocketPath, "batt daemon unix socket path")
 
 	for _, i := range commandGroups {
 		cmd.AddGroup(&cobra.Group{
@@ -81,7 +83,7 @@ func NewVersionCommand() *cobra.Command {
 
 // NewDaemonCommand .
 func NewDaemonCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "daemon",
 		Hidden:  true,
 		Short:   "Run batt daemon in the foreground",
@@ -91,6 +93,13 @@ func NewDaemonCommand() *cobra.Command {
 			runDaemon()
 		},
 	}
+
+	f := cmd.Flags()
+
+	f.BoolVar(&alwaysAllowNonRootAccess, "always-allow-non-root-access", false,
+		"Always allow non-root users to access the daemon.")
+
+	return cmd
 }
 
 // NewInstallCommand .
