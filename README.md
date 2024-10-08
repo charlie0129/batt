@@ -59,6 +59,8 @@ You can choose either one. Please do not use both at the same time to avoid conf
 2. `sudo brew services start batt`
 3. Please read [Notes](#notes).
 
+> Thank you, [@Jerry1144](https://github.com/charlie0129/batt/issues/9#issuecomment-2165493285), for bootstrapping the Homebrew formula.
+
 ### Installation Script
 
 1. (Optional) If you are lazy, there is an installation script to help you get the first 3 steps done (Internet connection required). Put this in your terminal: `bash <(curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh)`. You may need to provide your password (to control charging). This will download and install the latest _stable_ version for you, then you can skip to step 5.
@@ -212,8 +214,9 @@ bash <(curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh
 Homebrew-installed:
 
 ```bash
+sudo brew services stop batt
 brew upgrade batt
-sudo brew services restart batt
+sudo brew services start batt
 ```
 
 Manual:
