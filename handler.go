@@ -283,7 +283,7 @@ func setControlMagSafeLED(c *gin.Context) {
 
 	logrus.Infof("set control MagSafe LED to %t", d)
 
-	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("ControlMagSafeLED set to %t. You should be able to the effect in a few minutes.", d))
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("ControlMagSafeLED set to %t. You should be able to see the effect in a few minutes.", d))
 }
 
 func getCurrentCharge(c *gin.Context) {
