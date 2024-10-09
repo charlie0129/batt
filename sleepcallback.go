@@ -141,7 +141,7 @@ func systemHasPoweredOnCallback() {
 			// actually want the sleep to prolong as well.
 			sleep(postSleepLoopDelaySeconds)
 
-			if config.DisableChargingPreSleep {
+			if config.DisableChargingPreSleep && config.ControlMagSafeLED {
 				err := smcConn.SetMagSafeLedState(smc.LedOff)
 				if err != nil {
 					logrus.Errorf("SetMagSafeLedState failed: %v", err)

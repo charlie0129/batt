@@ -30,7 +30,10 @@ var (
 		DisableChargingPreSleep: true,
 		AllowNonRootAccess:      false,
 		LowerLimitDelta:         2,
-		ControlMagSafeLED:       true, // no well-tested yet
+		// There are Macs without MagSafe LED. We only do checks when the user
+		// explicitly enables this feature. In the future, we might add a check
+		// that disables this feature if the Mac does not have a MagSafe LED.
+		ControlMagSafeLED: false,
 	}
 )
 
