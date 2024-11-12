@@ -143,20 +143,20 @@ func maintainLoopInner() bool {
 }
 
 func updateMagSafeLed(isChargingEnabled bool) {
-	ledCharging, err := smcConn.IsMagSafeCharging()
+	err := smcConn.SetMagSafeCharging(isChargingEnabled)
 	if err != nil {
-		logrus.Errorf("IsMagSafeCharging failed: %v", err)
-	}
-
-	if isChargingEnabled != ledCharging {
-		err := smcConn.SetMagSafeCharging(isChargingEnabled)
-		if err != nil {
-			logrus.Errorf("SetMagSafeCharging failed: %v", err)
-		}
+		logrus.Errorf("SetMagSafeCharging failed: %v", err)
 	}
 }
 
-func printStatus(batteryCharge int, lower int, upper int, isChargingEnabled bool, isPluggedIn bool, maintainedChargingInProgress bool) {
+func printStatus(
+	batteryCharge int,
+	lower int,
+	upper int,
+	isChargingEnabled bool,
+	isPluggedIn bool,
+	maintainedChargingInProgress bool,
+) {
 	logrus.Debugf("batteryCharge=%d, lower=%d, upper=%d, chargingEnabled=%t, isPluggedIn=%t, maintainedChargingInProgress=%t",
 		batteryCharge,
 		lower,

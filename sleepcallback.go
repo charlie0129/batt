@@ -111,7 +111,7 @@ func systemWillSleepCallback() {
 			logrus.Errorf("DisableCharging failed: %v", err)
 			return
 		}
-		err = smcConn.SetMagSafeLedState(smc.LedOff)
+		err = smcConn.SetMagSafeLedState(smc.LEDOff)
 		if err != nil {
 			logrus.Errorf("SetMagSafeLedState failed: %v", err)
 		}
@@ -142,7 +142,7 @@ func systemHasPoweredOnCallback() {
 			sleep(postSleepLoopDelaySeconds)
 
 			if config.DisableChargingPreSleep && config.ControlMagSafeLED {
-				err := smcConn.SetMagSafeLedState(smc.LedOff)
+				err := smcConn.SetMagSafeLedState(smc.LEDOff)
 				if err != nil {
 					logrus.Errorf("SetMagSafeLedState failed: %v", err)
 				}
