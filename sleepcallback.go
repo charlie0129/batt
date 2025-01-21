@@ -111,9 +111,11 @@ func systemWillSleepCallback() {
 			logrus.Errorf("DisableCharging failed: %v", err)
 			return
 		}
-		err = smcConn.SetMagSafeLedState(smc.LEDOff)
-		if err != nil {
-			logrus.Errorf("SetMagSafeLedState failed: %v", err)
+		if config.ControlMagSafeLED {
+			err = smcConn.SetMagSafeLedState(smc.LEDOff)
+			if err != nil {
+				logrus.Errorf("SetMagSafeLedState failed: %v", err)
+			}
 		}
 	} else {
 		logrus.Debugln("no maintained charging is in progress, allow sleep")

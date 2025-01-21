@@ -12,7 +12,12 @@ import (
 )
 
 func send(method string, path string, data string) (string, error) {
-	logrus.Debugf("sending %s %s with data %s to %s", method, path, data, unixSocketPath)
+	logrus.WithFields(logrus.Fields{
+		"method": method,
+		"path":   path,
+		"data":   data,
+		"unix":   unixSocketPath,
+	}).Debug("sending request")
 
 	httpc := http.Client{
 		Transport: &http.Transport{
@@ -63,7 +68,10 @@ func send(method string, path string, data string) (string, error) {
 
 	code := resp.StatusCode
 
-	logrus.Debugf("got response: %d %s", code, body)
+	logrus.WithFields(logrus.Fields{
+		"code": code,
+		"body": body,
+	}).Debug("got response")
 
 	if code < 200 || code > 299 {
 		return "", fmt.Errorf("got %d: %s", code, body)

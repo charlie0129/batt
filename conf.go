@@ -50,7 +50,7 @@ func saveConfig() error {
 func loadConfig() error {
 	// Check if config file exists
 	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
-		logrus.Infof("config file %s does not exist, using default config %#v", configPath, defaultConfig)
+		logrus.WithField("config", defaultConfig).Infof("config file %s does not exist, using default config", configPath)
 		config = defaultConfig
 		err := saveConfig()
 		if err != nil {

@@ -157,12 +157,12 @@ func printStatus(
 	isPluggedIn bool,
 	maintainedChargingInProgress bool,
 ) {
-	logrus.Debugf("batteryCharge=%d, lower=%d, upper=%d, chargingEnabled=%t, isPluggedIn=%t, maintainedChargingInProgress=%t",
-		batteryCharge,
-		lower,
-		upper,
-		isChargingEnabled,
-		isPluggedIn,
-		maintainedChargingInProgress,
-	)
+	logrus.WithFields(logrus.Fields{
+		"batteryCharge":                batteryCharge,
+		"lower":                        lower,
+		"upper":                        upper,
+		"chargingEnabled":              isChargingEnabled,
+		"isPluggedIn":                  isPluggedIn,
+		"maintainedChargingInProgress": maintainedChargingInProgress,
+	}).Debug("maintain loop status")
 }
