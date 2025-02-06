@@ -44,16 +44,30 @@ func (r *MaintainLoopRecorder) AddRecord() {
 	r.LastMaintainLoopTimes = append(r.LastMaintainLoopTimes, time.Now())
 }
 
-// GetRecordsIn returns the number of records in the last duration.
+// GetRecordsIn returns the number of continuous records in the last duration.
 func (r *MaintainLoopRecorder) GetRecordsIn(last time.Duration) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Find continuous records from the end of the list.
+	// Continuous records are defined as the time difference between
+	// two adjacent records is less than loopInterval+1 second.
 	count := 0
-	for _, t := range r.LastMaintainLoopTimes {
-		if time.Since(t) <= last {
-			count++
+	for i := len(r.LastMaintainLoopTimes) - 1; i >= 0; i-- {
+		record := r.LastMaintainLoopTimes[i]
+		if time.Since(record) > last {
+			break
 		}
+
+		theRecordAfter := record
+		if i+1 < len(r.LastMaintainLoopTimes) {
+			theRecordAfter = r.LastMaintainLoopTimes[i+1]
+		}
+
+		if theRecordAfter.Sub(record) >= loopInterval+time.Second {
+			break
+		}
+		count++
 	}
 
 	return count
@@ -185,7 +199,7 @@ func maintainLoopInner() bool {
 				"maintainLoopCount":         maintainLoopCount,
 				"expectedMaintainLoopCount": expectedMaintainLoopCount,
 				"minMaintainLoopCount":      minMaintainLoopCount,
-			}).Infof("Battery charge is below lower limit, but too many missed maintain loops are missed. Rapid sleep/wake?")
+			}).Infof("Battery charge is below lower limit, but too many missed maintain loops are missed. Will wait until maintain loops are stable")
 			return true
 		}
 
