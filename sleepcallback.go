@@ -12,17 +12,16 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/charlie0129/batt/smc"
+	"github.com/charlie0129/batt/pkg/smc"
 )
 
 var (
-	preSleepLoopDelaySeconds  = 300
-	postSleepLoopDelaySeconds = 120
+	preSleepLoopDelaySeconds  = 60
+	postSleepLoopDelaySeconds = 30
 )
 
 var (
-	lastWakeTime  = time.Now()
-	lastSleepTime = time.Now().Add(-time.Duration(preSleepLoopDelaySeconds) * time.Second)
+	lastWakeTime = time.Now()
 )
 
 //export canSystemSleepCallback
@@ -77,7 +76,6 @@ func systemWillSleepCallback() {
 	   kIOReturnSuccess, however the system WILL still go to sleep.
 	*/
 	logrus.Debugln("received kIOMessageSystemWillSleep notification, system will go to sleep")
-	lastSleepTime = time.Now()
 
 	if !config.DisableChargingPreSleep {
 		logrus.Debugln("DisableChargingPreSleep is disabled, allow sleep")
@@ -93,7 +91,7 @@ func systemWillSleepCallback() {
 	// By always disabling charging before sleep (if charge limit is enabled), we can prevent
 	// some rare cases.
 	if config.Limit < 100 {
-		logrus.Infof("charge limit is enabled, disabling charging, delaying next loop by %d seconds, and allowing sleep", preSleepLoopDelaySeconds)
+		logrus.Infof("charge limit is enabled, disabling charging, and allowing sleep")
 		// Delay next loop to prevent charging to be re-enabled after we disabled it.
 		// macOS will wait 30s before going to sleep, there is a chance that a maintain loop is
 		// executed during that time and it enables charging.
@@ -139,16 +137,16 @@ func systemHasPoweredOnCallback() {
 		logrus.Debugf("delaying next loop by %d seconds", postSleepLoopDelaySeconds)
 		wg.Add(1)
 		go func() {
-			// Use sleep instead of time.After because when the computer sleeps, we
-			// actually want the sleep to prolong as well.
-			sleep(postSleepLoopDelaySeconds)
-
 			if config.DisableChargingPreSleep && config.ControlMagSafeLED {
 				err := smcConn.SetMagSafeLedState(smc.LEDOff)
 				if err != nil {
 					logrus.Errorf("SetMagSafeLedState failed: %v", err)
 				}
 			}
+
+			// Use sleep instead of time.After because when the computer sleeps, we
+			// actually want the sleep to prolong as well.
+			sleep(postSleepLoopDelaySeconds)
 
 			wg.Done()
 		}()

@@ -18,14 +18,14 @@ const (
 )
 
 // SetMagSafeLedState .
-func (c *Connection) SetMagSafeLedState(state MagSafeLedState) error {
+func (c *AppleSMC) SetMagSafeLedState(state MagSafeLedState) error {
 	logrus.Tracef("SetMagSafeLedState(%v) called", state)
 
 	return c.Write(MagSafeLedKey, []byte{byte(state)})
 }
 
 // GetMagSafeLedState .
-func (c *Connection) GetMagSafeLedState() (MagSafeLedState, error) {
+func (c *AppleSMC) GetMagSafeLedState() (MagSafeLedState, error) {
 	logrus.Tracef("GetMagSafeLedState called")
 
 	v, err := c.Read(MagSafeLedKey)
@@ -46,13 +46,13 @@ func (c *Connection) GetMagSafeLedState() (MagSafeLedState, error) {
 }
 
 // CheckMagSafeExistence .
-func (c *Connection) CheckMagSafeExistence() bool {
+func (c *AppleSMC) CheckMagSafeExistence() bool {
 	_, err := c.Read(MagSafeLedKey)
 	return err == nil
 }
 
 // SetMagSafeCharging .
-func (c *Connection) SetMagSafeCharging(charging bool) error {
+func (c *AppleSMC) SetMagSafeCharging(charging bool) error {
 	state := LEDGreen
 	if charging {
 		state = LEDOrange
@@ -61,7 +61,7 @@ func (c *Connection) SetMagSafeCharging(charging bool) error {
 }
 
 // IsMagSafeCharging .
-func (c *Connection) IsMagSafeCharging() (bool, error) {
+func (c *AppleSMC) IsMagSafeCharging() (bool, error) {
 	state, err := c.GetMagSafeLedState()
 
 	return state == LEDOrange, err

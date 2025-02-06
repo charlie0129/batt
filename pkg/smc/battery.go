@@ -7,7 +7,7 @@ import (
 )
 
 // GetBatteryCharge returns the battery charge.
-func (c *Connection) GetBatteryCharge() (int, error) {
+func (c *AppleSMC) GetBatteryCharge() (int, error) {
 	logrus.Tracef("GetBatteryCharge called")
 
 	v, err := c.Read(BatteryChargeKey)

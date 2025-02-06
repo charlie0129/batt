@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"sync"
 	"time"
 
@@ -12,8 +13,58 @@ var (
 	maintainLoopLock             = &sync.Mutex{}
 	// mg is used to skip several loops when system woke up or before sleep
 	wg           = &sync.WaitGroup{}
-	loopInterval = time.Duration(20) * time.Second
+	loopInterval = time.Duration(10) * time.Second
+	loopRecorder = NewMaintainLoopRecorder(60)
 )
+
+type MaintainLoopRecorder struct {
+	MaxRecordCount        int
+	LastMaintainLoopTimes []time.Time
+	mu                    *sync.Mutex
+}
+
+func NewMaintainLoopRecorder(maxRecordCount int) *MaintainLoopRecorder {
+	return &MaintainLoopRecorder{
+		MaxRecordCount:        maxRecordCount,
+		LastMaintainLoopTimes: make([]time.Time, 0),
+		mu:                    &sync.Mutex{},
+	}
+}
+
+func (r *MaintainLoopRecorder) AddRecord() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(r.LastMaintainLoopTimes) >= r.MaxRecordCount {
+		r.LastMaintainLoopTimes = r.LastMaintainLoopTimes[1:]
+	}
+	r.LastMaintainLoopTimes = append(r.LastMaintainLoopTimes, time.Now())
+}
+
+func (r *MaintainLoopRecorder) GetRecordsIn(last time.Duration) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	count := 0
+	for _, t := range r.LastMaintainLoopTimes {
+		if time.Now().Sub(t) <= last {
+			count++
+		}
+	}
+
+	return count
+}
+
+func (r *MaintainLoopRecorder) GetLastRecord() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(r.LastMaintainLoopTimes) == 0 {
+		return time.Time{}
+	}
+
+	return r.LastMaintainLoopTimes[len(r.LastMaintainLoopTimes)-1]
+}
 
 // infiniteLoop runs forever and maintains the battery charge,
 // which is called by the daemon.
@@ -39,6 +90,17 @@ func maintainLoop() bool {
 		logrus.Debugf("this maintain loop waited %d seconds after being initiated, now ready to execute", int(tsAfterWait.Sub(tsBeforeWait).Seconds()))
 	}
 
+	lastRecord := loopRecorder.GetLastRecord()
+	diff := time.Now().Sub(lastRecord)
+	if diff > loopInterval+time.Second {
+		logrus.WithFields(logrus.Fields{
+			"lastRecord": loopRecorder.GetLastRecord(),
+			"interval":   loopInterval.String(),
+			"actual":     diff.String(),
+		}).Warn("possible missed maintain loop")
+	}
+
+	loopRecorder.AddRecord()
 	return maintainLoopInner()
 }
 
@@ -94,21 +156,40 @@ func maintainLoopInner() bool {
 		return false
 	}
 
-	if isChargingEnabled && isPluggedIn {
-		maintainedChargingInProgress = true
-	} else {
-		maintainedChargingInProgress = false
-	}
+	maintainedChargingInProgress = isChargingEnabled && isPluggedIn
 
 	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress)
 
 	if batteryCharge < lower && !isChargingEnabled {
-		logrus.Infof("battery charge %d%% is below %d%% (%d-%d) but charging is disabled, enabling charging",
-			batteryCharge,
-			lower,
-			upper,
-			delta,
-		)
+		maintainLoopCount := loopRecorder.GetRecordsIn(time.Minute * 2)
+		expectedMaintainLoopCount := int(time.Minute * 2 / loopInterval)
+		minMaintainLoopCount := expectedMaintainLoopCount - 1
+		// If maintain loop is missed too many times, we assume the system is in a rapid sleep/wake loop, or macOS
+		// haven't sent the sleep notification but the system is actually sleep/waking up. In either case, we should
+		// not enable charging, which will cause unexpected charging.
+		//
+		// This is a workaround for the issue that macOS sometimes doesn't send the sleep notification.
+		//
+		// We allow at most 1 missed maintain loop.
+		if maintainLoopCount < minMaintainLoopCount {
+			logrus.WithFields(logrus.Fields{
+				"batteryCharge":             batteryCharge,
+				"lower":                     lower,
+				"upper":                     upper,
+				"delta":                     delta,
+				"maintainLoopCount":         maintainLoopCount,
+				"expectedMaintainLoopCount": expectedMaintainLoopCount,
+				"minMaintainLoopCount":      minMaintainLoopCount,
+			}).Infof("Battery charge is below lower limit, but too many missed maintain loops are missed. Rapid sleep/wake?")
+			return true
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"batteryCharge": batteryCharge,
+			"lower":         lower,
+			"upper":         upper,
+			"delta":         delta,
+		}).Infof("Battery charge is below lower limit, enabling charging")
 		err = smcConn.EnableCharging()
 		if err != nil {
 			logrus.Errorf("EnableCharging failed: %v", err)
@@ -119,10 +200,12 @@ func maintainLoopInner() bool {
 	}
 
 	if batteryCharge >= upper && isChargingEnabled {
-		logrus.Infof("battery charge %d%% reached %d%% but charging is enabled, disabling charging",
-			batteryCharge,
-			upper,
-		)
+		logrus.WithFields(logrus.Fields{
+			"batteryCharge": batteryCharge,
+			"lower":         lower,
+			"upper":         upper,
+			"delta":         delta,
+		}).Infof("Battery charge is above upper limit, disabling charging")
 		err = smcConn.DisableCharging()
 		if err != nil {
 			logrus.Errorf("DisableCharging failed: %v", err)
@@ -149,6 +232,19 @@ func updateMagSafeLed(isChargingEnabled bool) {
 	}
 }
 
+var lastPrintTime time.Time
+
+type loopStatus struct {
+	batteryCharge                int
+	lower                        int
+	upper                        int
+	isChargingEnabled            bool
+	isPluggedIn                  bool
+	maintainedChargingInProgress bool
+}
+
+var lastStatus loopStatus
+
 func printStatus(
 	batteryCharge int,
 	lower int,
@@ -157,12 +253,33 @@ func printStatus(
 	isPluggedIn bool,
 	maintainedChargingInProgress bool,
 ) {
-	logrus.WithFields(logrus.Fields{
+	currentStatus := loopStatus{
+		batteryCharge:                batteryCharge,
+		lower:                        lower,
+		upper:                        upper,
+		isChargingEnabled:            isChargingEnabled,
+		isPluggedIn:                  isPluggedIn,
+		maintainedChargingInProgress: maintainedChargingInProgress,
+	}
+
+	fields := logrus.Fields{
 		"batteryCharge":                batteryCharge,
 		"lower":                        lower,
 		"upper":                        upper,
 		"chargingEnabled":              isChargingEnabled,
 		"isPluggedIn":                  isPluggedIn,
 		"maintainedChargingInProgress": maintainedChargingInProgress,
-	}).Debug("maintain loop status")
+	}
+
+	defer func() { lastPrintTime = time.Now() }()
+
+	// Skip printing if the last print was less than loopInterval+1 seconds ago and everything is the same.
+	if time.Now().Sub(lastPrintTime) < loopInterval+time.Second && reflect.DeepEqual(lastStatus, currentStatus) {
+		logrus.WithFields(fields).Trace("maintain loop status")
+		return
+	}
+
+	logrus.WithFields(fields).Debug("maintain loop status")
+
+	lastStatus = currentStatus
 }

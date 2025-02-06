@@ -13,11 +13,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"github.com/charlie0129/batt/smc"
+	"github.com/charlie0129/batt/pkg/smc"
 )
 
 var (
-	smcConn        *smc.Connection
+	smcConn        *smc.AppleSMC
 	unixSocketPath = "/var/run/batt.sock"
 )
 

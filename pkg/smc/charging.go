@@ -3,7 +3,7 @@ package smc
 import "github.com/sirupsen/logrus"
 
 // IsChargingEnabled returns whether charging is enabled.
-func (c *Connection) IsChargingEnabled() (bool, error) {
+func (c *AppleSMC) IsChargingEnabled() (bool, error) {
 	logrus.Tracef("IsChargingEnabled called")
 
 	v, err := c.Read(ChargingKey1)
@@ -18,7 +18,7 @@ func (c *Connection) IsChargingEnabled() (bool, error) {
 }
 
 // EnableCharging enables charging.
-func (c *Connection) EnableCharging() error {
+func (c *AppleSMC) EnableCharging() error {
 	logrus.Tracef("EnableCharging called")
 
 	// CHSC
@@ -36,7 +36,7 @@ func (c *Connection) EnableCharging() error {
 }
 
 // DisableCharging disables charging.
-func (c *Connection) DisableCharging() error {
+func (c *AppleSMC) DisableCharging() error {
 	logrus.Tracef("DisableCharging called")
 
 	err := c.Write(ChargingKey1, []byte{0x2})

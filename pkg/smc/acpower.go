@@ -3,7 +3,7 @@ package smc
 import "github.com/sirupsen/logrus"
 
 // IsPluggedIn returns whether the device is plugged in.
-func (c *Connection) IsPluggedIn() (bool, error) {
+func (c *AppleSMC) IsPluggedIn() (bool, error) {
 	logrus.Tracef("IsPluggedIn called")
 
 	v, err := c.Read(ACPowerKey)

@@ -3,7 +3,7 @@ package smc
 import "github.com/sirupsen/logrus"
 
 // IsAdapterEnabled returns whether the adapter is enabled.
-func (c *Connection) IsAdapterEnabled() (bool, error) {
+func (c *AppleSMC) IsAdapterEnabled() (bool, error) {
 	logrus.Tracef("IsAdapterEnabled called")
 
 	v, err := c.Read(AdapterKey)
@@ -18,14 +18,14 @@ func (c *Connection) IsAdapterEnabled() (bool, error) {
 }
 
 // EnableAdapter enables the adapter.
-func (c *Connection) EnableAdapter() error {
+func (c *AppleSMC) EnableAdapter() error {
 	logrus.Tracef("EnableAdapter called")
 
 	return c.Write(AdapterKey, []byte{0x0})
 }
 
 // DisableAdapter disables the adapter.
-func (c *Connection) DisableAdapter() error {
+func (c *AppleSMC) DisableAdapter() error {
 	logrus.Tracef("DisableAdapter called")
 
 	return c.Write(AdapterKey, []byte{0x1})

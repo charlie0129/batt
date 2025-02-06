@@ -11,8 +11,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/charlie0129/batt/pkg/smc"
 	"github.com/charlie0129/batt/pkg/version"
-	"github.com/charlie0129/batt/smc"
 )
 
 var (
