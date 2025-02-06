@@ -7,8 +7,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var timeFormat = "2006-01-02 15:04:05.000"
-
 func setupLogger() error {
 	level, err := logrus.ParseLevel(logLevel)
 	if err != nil {
@@ -16,8 +14,7 @@ func setupLogger() error {
 	}
 	logrus.SetLevel(level)
 	logrus.SetFormatter(&logrus.TextFormatter{
-		TimestampFormat: timeFormat,
-		FullTimestamp:   true,
+		FullTimestamp: true,
 	})
 
 	return nil
