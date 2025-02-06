@@ -5,8 +5,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var _ Connection = &AppleSMC{}
-
 // AppleSMC is a wrapper of gosmc.Connection.
 type AppleSMC struct {
 	conn gosmc.Connection
@@ -19,6 +17,7 @@ func New() *AppleSMC {
 	}
 }
 
+// NewMock returns a new mocked AppleSMC with prefill values.
 func NewMock(prefillValues map[string][]byte) *AppleSMC {
 	conn := gosmc.NewMockConnection()
 

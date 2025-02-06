@@ -17,12 +17,14 @@ var (
 	loopRecorder = NewMaintainLoopRecorder(60)
 )
 
+// MaintainLoopRecorder records the last N maintain loop times.
 type MaintainLoopRecorder struct {
 	MaxRecordCount        int
 	LastMaintainLoopTimes []time.Time
 	mu                    *sync.Mutex
 }
 
+// NewMaintainLoopRecorder returns a new MaintainLoopRecorder.
 func NewMaintainLoopRecorder(maxRecordCount int) *MaintainLoopRecorder {
 	return &MaintainLoopRecorder{
 		MaxRecordCount:        maxRecordCount,
@@ -31,6 +33,7 @@ func NewMaintainLoopRecorder(maxRecordCount int) *MaintainLoopRecorder {
 	}
 }
 
+// AddRecord adds a new record.
 func (r *MaintainLoopRecorder) AddRecord() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -41,13 +44,14 @@ func (r *MaintainLoopRecorder) AddRecord() {
 	r.LastMaintainLoopTimes = append(r.LastMaintainLoopTimes, time.Now())
 }
 
+// GetRecordsIn returns the number of records in the last duration.
 func (r *MaintainLoopRecorder) GetRecordsIn(last time.Duration) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	count := 0
 	for _, t := range r.LastMaintainLoopTimes {
-		if time.Now().Sub(t) <= last {
+		if time.Since(t) <= last {
 			count++
 		}
 	}
@@ -55,6 +59,7 @@ func (r *MaintainLoopRecorder) GetRecordsIn(last time.Duration) int {
 	return count
 }
 
+// GetLastRecord returns the last record.
 func (r *MaintainLoopRecorder) GetLastRecord() time.Time {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -91,7 +96,7 @@ func maintainLoop() bool {
 	}
 
 	lastRecord := loopRecorder.GetLastRecord()
-	diff := time.Now().Sub(lastRecord)
+	diff := time.Since(lastRecord)
 	if diff > loopInterval+time.Second {
 		logrus.WithFields(logrus.Fields{
 			"lastRecord": loopRecorder.GetLastRecord(),
@@ -274,7 +279,7 @@ func printStatus(
 	defer func() { lastPrintTime = time.Now() }()
 
 	// Skip printing if the last print was less than loopInterval+1 seconds ago and everything is the same.
-	if time.Now().Sub(lastPrintTime) < loopInterval+time.Second && reflect.DeepEqual(lastStatus, currentStatus) {
+	if time.Since(lastPrintTime) < loopInterval+time.Second && reflect.DeepEqual(lastStatus, currentStatus) {
 		logrus.WithFields(fields).Trace("maintain loop status")
 		return
 	}
