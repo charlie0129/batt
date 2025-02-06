@@ -3,6 +3,9 @@
 set -o errexit
 set -o pipefail
 
+bold="\033[1m"
+reset="\033[0m"
+
 # must run on Apple Silicon
 if [[ ! $(sysctl -n machdep.cpu.brand_string) =~ "Apple" ]]; then
   echo "This script must be run on Apple Silicon."
@@ -15,7 +18,25 @@ if ! command -v curl >/dev/null; then
   exit 1
 fi
 
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+  echo "This script installs batt on your macOS."
+  echo "Usage: $0 [-y]"
+  echo "  -y: auto confirm"
+  echo "Environment variables:"
+  echo "  PREFIX: install location (default: /usr/local/bin)"
+  echo "  VERSION: version to install (default: latest stable release)"
+  exit 0
+fi
+
+# check -y
+if [[ "$1" == "-y" ]]; then
+  AUTO_CONFIRM=true
+fi
+
 confirm() {
+  if [[ "$AUTO_CONFIRM" == "true" ]]; then
+    return 0
+  fi
   while true; do
     echo -n "$1 [y/n]: "
     read -r -n 1 REPLY
@@ -51,6 +72,23 @@ if which batt 2>/dev/null | grep -q /opt; then
   exit 1
 fi
 
+if [[ -z "$VERSION" ]]; then
+  tarball_suffix="darwin-arm64.tar.gz"
+
+  info "Querying latest batt release..."
+  # jq is intentionally not used here because it is not available on macOS by default
+  res=$(curl -fsSL https://api.github.com/repos/charlie0129/batt/releases/latest)
+  tarball_url=$(echo "$res" |
+    grep -o "browser_download_url.*$tarball_suffix" |
+    grep -o "https.*")
+  version=$(echo "$res" | grep -o "tag_name.*" | grep -o "\"v.*\"")
+  version=${version//\"/}
+  info "Latest stable version is ${version}."
+else
+  version="$VERSION"
+  tarball_url="https://github.com/charlie0129/batt/releases/download/$version/batt-$version-darwin-arm64.tar.gz"
+fi
+
 launch_daemon="/Library/LaunchDaemons/cc.chlc.batt.plist"
 
 # Uninstall old versions (if present)
@@ -67,23 +105,11 @@ if [[ -f "$launch_daemon" ]]; then
   fi
 fi
 
-tarball_suffix="darwin-arm64.tar.gz"
-
-info "Querying latest batt release..."
-# jq is intentionally not used here because it is not available on macOS by default
-res=$(curl -fsSL https://api.github.com/repos/charlie0129/batt/releases/latest)
-tarball_url=$(echo "$res" |
-  grep -o "browser_download_url.*$tarball_suffix" |
-  grep -o "https.*")
-version=$(echo "$res" | grep -o "tag_name.*" | grep -o "\"v.*\"")
-version=${version//\"/}
-info "Latest stable version is ${version}."
-
 if [[ -z "$PREFIX" ]]; then
   PREFIX="/usr/local/bin"
 fi
 
-echo "Will install batt ${version} to $PREFIX (to change install location, set \$PREFIX environment variable)."
+echo -e "Will install batt ${bold}${version}${reset} to ${bold}$PREFIX${reset} (to change install location, set \$PREFIX environment variable)."
 confirm "Ready to install?" || exit 0
 info "Downloading batt ${version} from $tarball_url and installing to $PREFIX..."
 sudo mkdir -p "$PREFIX"
@@ -98,7 +124,7 @@ $install_cmd
 info "Installation finished."
 echo "Further instructions:"
 echo '- If you see an alert says "batt cannot be opened because XXX", please go to System Preferences -> Security & Privacy -> General -> Open Anyway.'
-echo "- Be sure to **disable** macOS's optimized charging: Go to System Preferences -> Battery -> uncheck Optimized battery charging."
+echo -e "- Be sure to ${bold}disable${reset} macOS's optimized charging: Go to System Preferences -> Battery -> uncheck Optimized battery charging."
 echo '- To set charge limit to 80%, run "batt limit 80".'
 echo '- To see batt help: run "batt help".'
 echo '- To see disable charge limit: run "batt disable".'
