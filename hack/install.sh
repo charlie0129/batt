@@ -88,6 +88,7 @@ confirm "Ready to install?" || exit 0
 info "Downloading batt ${version} from $tarball_url and installing to $PREFIX..."
 sudo mkdir -p "$PREFIX"
 curl -fsSL "$tarball_url" | sudo tar -xzC "$PREFIX"
+sudo xattr -r -d com.apple.quarantine "$PREFIX/batt"
 
 install_cmd="sudo $PREFIX/batt install --allow-non-root-access"
 info "Installing batt..."
