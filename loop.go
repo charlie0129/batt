@@ -136,14 +136,20 @@ func maintainLoop() bool {
 		logrus.Debugf("this maintain loop waited %d seconds after being initiated, now ready to execute", int(tsAfterWait.Sub(tsBeforeWait).Seconds()))
 	}
 
-	lastRecord := loopRecorder.GetLastRecord()
-	diff := time.Since(lastRecord)
-	if diff > loopInterval+time.Second {
+	// TODO: put it in a function (and the similar code in maintainLoopForced)
+	maintainLoopCount := loopRecorder.GetRecordsIn(time.Minute * 2)
+	expectedMaintainLoopCount := int(time.Minute * 2 / loopInterval)
+	minMaintainLoopCount := expectedMaintainLoopCount - 1
+	relativeTimes := loopRecorder.GetRecordsRelativeToCurrent(time.Minute * 2)
+	// If maintain loop is missed too many times, we assume the system is in a rapid sleep/wake loop, or macOS
+	// haven't sent the sleep notification but the system is actually sleep/waking up. In either case, log it.
+	if maintainLoopCount < minMaintainLoopCount {
 		logrus.WithFields(logrus.Fields{
-			"lastRecord": loopRecorder.GetLastRecord(),
-			"interval":   loopInterval.String(),
-			"actual":     diff.String(),
-		}).Warn("possible missed maintain loop")
+			"maintainLoopCount":         maintainLoopCount,
+			"expectedMaintainLoopCount": expectedMaintainLoopCount,
+			"minMaintainLoopCount":      minMaintainLoopCount,
+			"relativeTimes":             relativeTimes,
+		}).Infof("Possibly missed maintain loop")
 	}
 
 	loopRecorder.AddRecord()
