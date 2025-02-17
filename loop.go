@@ -49,6 +49,11 @@ func (r *MaintainLoopRecorder) GetRecordsIn(last time.Duration) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// The last record must be within the last duration.
+	if len(r.LastMaintainLoopTimes) > 0 && time.Since(r.LastMaintainLoopTimes[len(r.LastMaintainLoopTimes)-1]) >= loopInterval+time.Second {
+		return 0
+	}
+
 	// Find continuous records from the end of the list.
 	// Continuous records are defined as the time difference between
 	// two adjacent records is less than loopInterval+1 second.
@@ -71,6 +76,27 @@ func (r *MaintainLoopRecorder) GetRecordsIn(last time.Duration) int {
 	}
 
 	return count
+}
+
+func (r *MaintainLoopRecorder) GetRecordsRelativeToCurrent(last time.Duration) []time.Duration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(r.LastMaintainLoopTimes) == 0 {
+		return nil
+	}
+
+	current := time.Now()
+	var records []time.Duration
+	for i := len(r.LastMaintainLoopTimes) - 1; i >= 0; i-- {
+		record := r.LastMaintainLoopTimes[i]
+		if current.Sub(record) > last {
+			break
+		}
+		records = append(records, current.Sub(record))
+	}
+
+	return records
 }
 
 // GetLastRecord returns the last record.
@@ -183,6 +209,7 @@ func maintainLoopInner() bool {
 		maintainLoopCount := loopRecorder.GetRecordsIn(time.Minute * 2)
 		expectedMaintainLoopCount := int(time.Minute * 2 / loopInterval)
 		minMaintainLoopCount := expectedMaintainLoopCount - 1
+		relativeTimes := loopRecorder.GetRecordsRelativeToCurrent(time.Minute * 2)
 		// If maintain loop is missed too many times, we assume the system is in a rapid sleep/wake loop, or macOS
 		// haven't sent the sleep notification but the system is actually sleep/waking up. In either case, we should
 		// not enable charging, which will cause unexpected charging.
@@ -199,6 +226,7 @@ func maintainLoopInner() bool {
 				"maintainLoopCount":         maintainLoopCount,
 				"expectedMaintainLoopCount": expectedMaintainLoopCount,
 				"minMaintainLoopCount":      minMaintainLoopCount,
+				"relativeTimes":             relativeTimes,
 			}).Infof("Battery charge is below lower limit, but too many missed maintain loops are missed. Will wait until maintain loops are stable")
 			return true
 		}

@@ -42,7 +42,9 @@ func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
 			fields: fields{
 				MaxRecordCount: 10,
 				LastMaintainLoopTimes: []time.Time{
+					time.Now().Add(-time.Second * 70).Add(-10 * time.Millisecond),
 					time.Now().Add(-time.Second * 60).Add(-10 * time.Millisecond),
+					time.Now().Add(-time.Second * 40).Add(-10 * time.Millisecond),
 					time.Now().Add(-time.Second * 30).Add(-10 * time.Millisecond),
 					time.Now().Add(-time.Second * 20).Add(-10 * time.Millisecond),
 					time.Now().Add(-time.Second * 10).Add(-10 * time.Millisecond),
@@ -52,7 +54,26 @@ func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
 			args: args{
 				last: time.Second * 50,
 			},
-			want: 3,
+			want: 4,
+		},
+		{
+			name: "test continuous records 2",
+			fields: fields{
+				MaxRecordCount: 10,
+				LastMaintainLoopTimes: []time.Time{
+					time.Now().Add(-time.Second * 70).Add(-10 * time.Millisecond),
+					time.Now().Add(-time.Second * 60).Add(-10 * time.Millisecond),
+					time.Now().Add(-time.Second * 40).Add(-10 * time.Millisecond),
+					time.Now().Add(-time.Second * 30).Add(-10 * time.Millisecond),
+					time.Now().Add(-time.Second * 20).Add(-10 * time.Millisecond),
+					time.Now().Add(-time.Second * 15).Add(-10 * time.Millisecond),
+				},
+				mu: &sync.Mutex{},
+			},
+			args: args{
+				last: time.Second * 50,
+			},
+			want: 0,
 		},
 	}
 	for _, tt := range tests {
