@@ -78,6 +78,7 @@ func (r *MaintainLoopRecorder) GetRecordsIn(last time.Duration) int {
 	return count
 }
 
+// GetRecordsRelativeToCurrent returns the time differences between the records and the current time.
 func (r *MaintainLoopRecorder) GetRecordsRelativeToCurrent(last time.Duration) []time.Duration {
 	r.mu.Lock()
 	defer r.mu.Unlock()
