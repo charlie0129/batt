@@ -79,7 +79,7 @@ func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
 	for _, tt := range tests {
 		loopInterval = time.Second * 10
 		t.Run(tt.name, func(t *testing.T) {
-			r := &MaintainLoopRecorder{
+			r := &TimeSeriesRecorder{
 				MaxRecordCount:        tt.fields.MaxRecordCount,
 				LastMaintainLoopTimes: tt.fields.LastMaintainLoopTimes,
 				mu:                    tt.fields.mu,

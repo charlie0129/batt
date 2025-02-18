@@ -14,38 +14,80 @@ var (
 	// mg is used to skip several loops when system woke up or before sleep
 	wg           = &sync.WaitGroup{}
 	loopInterval = time.Duration(10) * time.Second
-	loopRecorder = NewMaintainLoopRecorder(60)
+	loopRecorder = NewTimeSeriesRecorder(60)
 )
 
-// MaintainLoopRecorder records the last N maintain loop times.
-type MaintainLoopRecorder struct {
+// TimeSeriesRecorder records the last N maintain loop times.
+type TimeSeriesRecorder struct {
 	MaxRecordCount        int
 	LastMaintainLoopTimes []time.Time
 	mu                    *sync.Mutex
 }
 
-// NewMaintainLoopRecorder returns a new MaintainLoopRecorder.
-func NewMaintainLoopRecorder(maxRecordCount int) *MaintainLoopRecorder {
-	return &MaintainLoopRecorder{
+// NewTimeSeriesRecorder returns a new TimeSeriesRecorder.
+func NewTimeSeriesRecorder(maxRecordCount int) *TimeSeriesRecorder {
+	return &TimeSeriesRecorder{
 		MaxRecordCount:        maxRecordCount,
 		LastMaintainLoopTimes: make([]time.Time, 0),
 		mu:                    &sync.Mutex{},
 	}
 }
 
-// AddRecord adds a new record.
-func (r *MaintainLoopRecorder) AddRecord() {
+// AddRecordNow adds a new record with the current time.
+func (r *TimeSeriesRecorder) AddRecordNow() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if len(r.LastMaintainLoopTimes) >= r.MaxRecordCount {
 		r.LastMaintainLoopTimes = r.LastMaintainLoopTimes[1:]
 	}
-	r.LastMaintainLoopTimes = append(r.LastMaintainLoopTimes, time.Now())
+	// Round to strip monotonic clock reading.
+	// This will prevent time.Since from returning values that are not accurate (especially when the system is in sleep mode).
+	r.LastMaintainLoopTimes = append(r.LastMaintainLoopTimes, time.Now().Round(0))
+}
+
+// ClearRecords clears all records.
+func (r *TimeSeriesRecorder) ClearRecords() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.LastMaintainLoopTimes = make([]time.Time, 0)
+}
+
+// GetRecords returns the records.
+func (r *TimeSeriesRecorder) GetRecords() []time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.LastMaintainLoopTimes
+}
+
+// GetRecordsString returns the records in string format.
+func (r *TimeSeriesRecorder) GetRecordsString() []string {
+	records := r.GetRecords()
+	var recordsString []string
+	for _, record := range records {
+		recordsString = append(recordsString, record.Format(time.RFC3339))
+	}
+	return recordsString
+}
+
+// AddRecord adds a new record.
+func (r *TimeSeriesRecorder) AddRecord(t time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Strip monotonic clock reading.
+	t = t.Round(0)
+
+	if len(r.LastMaintainLoopTimes) >= r.MaxRecordCount {
+		r.LastMaintainLoopTimes = r.LastMaintainLoopTimes[1:]
+	}
+	r.LastMaintainLoopTimes = append(r.LastMaintainLoopTimes, t)
 }
 
 // GetRecordsIn returns the number of continuous records in the last duration.
-func (r *MaintainLoopRecorder) GetRecordsIn(last time.Duration) int {
+func (r *TimeSeriesRecorder) GetRecordsIn(last time.Duration) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -78,8 +120,8 @@ func (r *MaintainLoopRecorder) GetRecordsIn(last time.Duration) int {
 	return count
 }
 
-// GetRecordsRelativeToCurrent returns the time differences between the records and the current time.
-func (r *MaintainLoopRecorder) GetRecordsRelativeToCurrent(last time.Duration) []time.Duration {
+// GetLastRecords returns the time differences between the records and the current time.
+func (r *TimeSeriesRecorder) GetLastRecords(last time.Duration) []time.Time {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -87,21 +129,37 @@ func (r *MaintainLoopRecorder) GetRecordsRelativeToCurrent(last time.Duration) [
 		return nil
 	}
 
-	current := time.Now()
-	var records []time.Duration
+	var records []time.Time
 	for i := len(r.LastMaintainLoopTimes) - 1; i >= 0; i-- {
 		record := r.LastMaintainLoopTimes[i]
-		if current.Sub(record) > last {
+		if time.Since(record) > last {
 			break
 		}
-		records = append(records, current.Sub(record))
+		records = append(records, record)
 	}
 
 	return records
 }
 
+//nolint:unused // .
+func formatTimes(times []time.Time) []string {
+	var timesString []string
+	for _, t := range times {
+		timesString = append(timesString, t.Format(time.RFC3339))
+	}
+	return timesString
+}
+
+func formatRelativeTimes(times []time.Time) []string {
+	var timesString []string
+	for _, t := range times {
+		timesString = append(timesString, time.Since(t).String())
+	}
+	return timesString
+}
+
 // GetLastRecord returns the last record.
-func (r *MaintainLoopRecorder) GetLastRecord() time.Time {
+func (r *TimeSeriesRecorder) GetLastRecord() time.Time {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -140,7 +198,7 @@ func maintainLoop() bool {
 	maintainLoopCount := loopRecorder.GetRecordsIn(time.Minute * 2)
 	expectedMaintainLoopCount := int(time.Minute * 2 / loopInterval)
 	minMaintainLoopCount := expectedMaintainLoopCount - 1
-	relativeTimes := loopRecorder.GetRecordsRelativeToCurrent(time.Minute * 2)
+	relativeTimes := loopRecorder.GetLastRecords(time.Minute * 2)
 	// If maintain loop is missed too many times, we assume the system is in a rapid sleep/wake loop, or macOS
 	// haven't sent the sleep notification but the system is actually sleep/waking up. In either case, log it.
 	if maintainLoopCount < minMaintainLoopCount {
@@ -148,11 +206,11 @@ func maintainLoop() bool {
 			"maintainLoopCount":         maintainLoopCount,
 			"expectedMaintainLoopCount": expectedMaintainLoopCount,
 			"minMaintainLoopCount":      minMaintainLoopCount,
-			"relativeTimes":             relativeTimes,
+			"recentRecords":             formatRelativeTimes(relativeTimes),
 		}).Infof("Possibly missed maintain loop")
 	}
 
-	loopRecorder.AddRecord()
+	loopRecorder.AddRecordNow()
 	return maintainLoopInner()
 }
 
@@ -216,7 +274,7 @@ func maintainLoopInner() bool {
 		maintainLoopCount := loopRecorder.GetRecordsIn(time.Minute * 2)
 		expectedMaintainLoopCount := int(time.Minute * 2 / loopInterval)
 		minMaintainLoopCount := expectedMaintainLoopCount - 1
-		relativeTimes := loopRecorder.GetRecordsRelativeToCurrent(time.Minute * 2)
+		relativeTimes := loopRecorder.GetLastRecords(time.Minute * 2)
 		// If maintain loop is missed too many times, we assume the system is in a rapid sleep/wake loop, or macOS
 		// haven't sent the sleep notification but the system is actually sleep/waking up. In either case, we should
 		// not enable charging, which will cause unexpected charging.
@@ -233,7 +291,7 @@ func maintainLoopInner() bool {
 				"maintainLoopCount":         maintainLoopCount,
 				"expectedMaintainLoopCount": expectedMaintainLoopCount,
 				"minMaintainLoopCount":      minMaintainLoopCount,
-				"relativeTimes":             relativeTimes,
+				"recentRecords":             formatRelativeTimes(relativeTimes),
 			}).Infof("Battery charge is below lower limit, but too many missed maintain loops are missed. Will wait until maintain loops are stable")
 			return true
 		}
