@@ -30,8 +30,11 @@ var (
 // NewCommand .
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "batt",
-		Short:        "batt is a tool to control battery charging on Apple Silicon MacBooks",
+		Use:   "batt",
+		Short: "batt is a tool to control battery charging on Apple Silicon MacBooks",
+		Long: `batt is a tool to control battery charging on Apple Silicon MacBooks.
+
+Website: https://github.com/charlie0129/batt`,
 		SilenceUsage: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			return setupLogger()
@@ -109,6 +112,7 @@ func NewLimitCommand() *cobra.Command {
 		Long: `Set upper charge limit.
 
 This is a percentage from 10 to 100.
+
 Setting the limit to 10-99 will enable the battery charge limit. However, setting the limit to 100 will disable the battery charge limit, which is the default behavior of macOS.`,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) != 1 {
@@ -139,7 +143,7 @@ func NewDisableCommand() *cobra.Command {
 		GroupID: gBasic,
 		Long: `Disable batt.
 
-Stop batt from controlling battery charging. This will allow your Mac to charge to 100% and operate normally.`,
+Stop batt from controlling battery charging. This will allow your Mac to charge to 100%.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			ret, err := put("/limit", "100")
 			if err != nil {
@@ -165,11 +169,11 @@ func NewSetPreventIdleSleepCommand() *cobra.Command {
 		GroupID: gAdvanced,
 		Long: `Set whether to prevent idle sleep during a charging session.
 
-Due to macOS limitations, batt will pause when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, the battery charge limit will no longer function and the battery will charge to 100%. If you want the battery to stay below the charge limit, this behavior is probably not what you want. This option, together with disable-charging-pre-sleep, will prevent this from happening.
+Due to macOS limitations, batt will be paused when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, there is no way for batt to stop charging (since batt is paused by macOS) and the battery will charge to 100%. This option, together with disable-charging-pre-sleep, will prevent this from happening.
 
-To prevent this, you can set batt to prevent idle sleep. This will prevent your computer from idle sleep while in a charging session. This will only prevent **idle** sleep, when 1) charging is active 2) battery charge limit is enabled. So your computer can go to sleep as soon as a charging session is over.
+This option tells macOS NOT to go to sleep when the computer is in a charging session, so batt can continue to work until charging is finished. Note that it will only prevent **idle** sleep, when 1) charging is active 2) battery charge limit is enabled. So your computer can go to sleep as soon as a charging session is completed.
 
-However, this does not prevent manual sleep. For example, if you manually put your computer to sleep or close the lid, batt will not prevent your computer from sleeping. This is a limitation of macOS. To prevent such cases, see disable-charging-pre-sleep.`,
+However, this options does not prevent manual sleep (limitation of macOS). For example, if you manually put your computer to sleep (by choosing the Sleep option in the top-left Apple menu) or close the lid, batt will still be paused and the issue mentioned above will still happen. This is where disable-charging-pre-sleep comes in.`,
 	}
 
 	cmd.AddCommand(
@@ -222,9 +226,7 @@ func NewSetDisableChargingPreSleepCommand() *cobra.Command {
 		GroupID: gAdvanced,
 		Long: `Set whether to disable charging before sleep if charge limit is enabled.
 
-Due to macOS limitations, batt will pause when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, the battery charge limit will no longer function and the battery will charge to 100%. If you want the battery to stay below the charge limit, this behavior is probably not what you want. This option, together with prevent-idle-sleep, will prevent this from happening. prevent-idle-sleep can prevent idle sleep to keep the battery charge limit active. However, this does not prevent manual sleep. For example, if you manually put your computer to sleep or close the lid, batt will not prevent your computer from sleeping. This is a limitation of macOS. 
-
-To prevent such cases, you can use disable-charging-pre-sleep. This will disable charging just before your computer goes to sleep, preventing it from charging beyond the predefined limit. Once it wakes up, batt can take over and continue to do the rest work. It will only disable charging before sleep if battery charge limit is enabled.`,
+As described in preventing-idle-sleep, batt will be paused by macOS when your computer goes to sleep, and there is no way for batt to continue controlling battery charging. This option will disable charging just before sleep, so your computer will not overcharge during sleep, even if the battery charge is below the limit.`,
 	}
 
 	cmd.AddCommand(
@@ -275,9 +277,11 @@ func NewAdapterCommand() *cobra.Command {
 		Use:     "adapter",
 		Short:   "Enable or disable power input",
 		GroupID: gBasic,
-		Long: `Enable or disable power adapter, i.e, power input.
+		Long: `Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in. 
 
-When you disable power adapter, power input from the wall will be disabled. Your computer will not use any power from the wall even if it is plugged in. This is useful when you are plugged in and you still want to consume battery instead of power input.`,
+This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.
+
+NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.`,
 	}
 
 	cmd.AddCommand(
@@ -349,6 +353,7 @@ func NewStatusCommand() *cobra.Command {
 		Use:     "status",
 		GroupID: gBasic,
 		Short:   "Get the current status of batt",
+		Long:    `Get batt status, battery info, and configuration.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Get various info first.
 			ret, err := get("/charging")
@@ -411,7 +416,7 @@ func NewStatusCommand() *cobra.Command {
 			// Charging status.
 			cmd.Println(bold("Charging status:"))
 
-			additionalMsg := " (refreshes can take up to 5 minutes)"
+			additionalMsg := " (refreshes can take up to 2 minutes)"
 			if charging {
 				cmd.Println("  Allow charging: " + bool2Text(true) + additionalMsg)
 				cmd.Print("    Your Mac will charge")
@@ -435,7 +440,7 @@ func NewStatusCommand() *cobra.Command {
 				}
 				if pluggedIn && currentCharge < low {
 					if adapter {
-						cmd.Print(". However, if no manual intervention is involved, charging should be allowed soon. Wait for 5 minutes and come back.")
+						cmd.Print(". However, if no manual intervention is involved, charging should be allowed soon. Wait 2 minutes and come back.")
 					} else {
 						cmd.Print(", because adapter is disabled.")
 					}
@@ -538,11 +543,13 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 		Use:     "magsafe-led",
 		Short:   "Control MagSafe LED according to battery charging status",
 		GroupID: gAdvanced,
-		Long: `Control MagSafe LED according to battery charging status.
+		Long: `This option can make the MagSafe LED on your MacBook change color according to the charging status. For example: 
 
-This setting can make the MagSafe LED behave like a normal device, i.e., it will turn green when charge limit is reached (not charging). By default, on a MagSafe-compatible device, the MagSafe LED will always be orange (charging) even if charge limit is reached and charging is disabled by batt, due to Apple's limitations. You cannot enable this feature on a non-MagSafe-compatible device.
+- Green: charge limit is reached and charging is stopped.
+- Orange: charging is in progress.
+- Off: just woken up from sleep, charing is disabled and batt is waiting before controlling charging.
 
-One thing to note: this option is purely cosmetic. batt will still function even if you disable this option.`,
+Note that you must have a MagSafe LED on your MacBook to use this feature.`,
 	}
 
 	cmd.AddCommand(

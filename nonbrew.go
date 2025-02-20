@@ -22,9 +22,10 @@ func NewInstallCommand() *cobra.Command {
 		Short:   "Install batt (system-wide)",
 		GroupID: gInstallation,
 		Long: `Install batt daemon to launchd (system-wide).
+
 This makes batt run in the background and automatically start on boot. You must run this command as root.
 
-By default, only root user is allowed to access the batt daemon for security reasons. As a result, you will need to run batt as root to control battery charging, e.g. setting charge limit. If you want to allow non-root users, i.e., you, to access the daemon, you can use the --allow-non-root-access flag, so you don't have to use sudo every time. However, bear in mind that it introduces security risks.`,
+By default, only root user is allowed to access the batt daemon for security reasons. As a result, you will need to run batt client as root to control battery charging, e.g. setting charge limit. If you want to allow non-root users, i.e., you, to access the daemon, you can use the --allow-non-root-access flag, so you don't have to use sudo every time.`,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
 
 			err := loadConfig()
@@ -39,7 +40,7 @@ By default, only root user is allowed to access the batt daemon for security rea
 			}
 
 			if config.AllowNonRootAccess && !b {
-				logrus.Warnf("Previously, non-root users were allowed to access the batt daemon. However, this will be disabled at every installation unless you provide the --allow-non-root-access flag.")
+				logrus.Warnf("Previously, non-root users were allowed to access the batt daemon. However, this will be disabled at every installation unless you provide the --allow-non-root-access flag. Consider using the flag if you want to allow non-root users to access the daemon.")
 			}
 
 			// Before installation, always reset config.AllowNonRootAccess to flag value
@@ -50,7 +51,9 @@ By default, only root user is allowed to access the batt daemon for security rea
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if config.AllowNonRootAccess {
-				logrus.Warnf("non-root users are allowed to access the batt daemon. It can be a security risk.")
+				logrus.Info("non-root users are allowed to access the batt daemon.")
+			} else {
+				logrus.Info("only root user is allowed to access the batt daemon.")
 			}
 
 			err := installDaemon()
@@ -89,6 +92,7 @@ func NewUninstallCommand() *cobra.Command {
 		Short:   "Uninstall batt (system-wide)",
 		GroupID: gInstallation,
 		Long: `Uninstall batt daemon from launchd (system-wide).
+
 This stops batt and removes it from launchd.
 
 You must run this command as root.`,
