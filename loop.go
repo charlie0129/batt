@@ -12,9 +12,10 @@ var (
 	maintainedChargingInProgress = false
 	maintainLoopLock             = &sync.Mutex{}
 	// mg is used to skip several loops when system woke up or before sleep
-	wg           = &sync.WaitGroup{}
-	loopInterval = time.Duration(10) * time.Second
-	loopRecorder = NewTimeSeriesRecorder(60)
+	wg                      = &sync.WaitGroup{}
+	loopInterval            = time.Duration(10) * time.Second
+	loopRecorder            = NewTimeSeriesRecorder(60)
+	continuousLoopThreshold = 1 * time.Minute
 )
 
 // TimeSeriesRecorder records the last N maintain loop times.
@@ -195,10 +196,10 @@ func maintainLoop() bool {
 	}
 
 	// TODO: put it in a function (and the similar code in maintainLoopForced)
-	maintainLoopCount := loopRecorder.GetRecordsIn(time.Minute * 2)
-	expectedMaintainLoopCount := int(time.Minute * 2 / loopInterval)
+	maintainLoopCount := loopRecorder.GetRecordsIn(continuousLoopThreshold)
+	expectedMaintainLoopCount := int(continuousLoopThreshold / loopInterval)
 	minMaintainLoopCount := expectedMaintainLoopCount - 1
-	relativeTimes := loopRecorder.GetLastRecords(time.Minute * 2)
+	relativeTimes := loopRecorder.GetLastRecords(continuousLoopThreshold)
 	// If maintain loop is missed too many times, we assume the system is in a rapid sleep/wake loop, or macOS
 	// haven't sent the sleep notification but the system is actually sleep/waking up. In either case, log it.
 	if maintainLoopCount < minMaintainLoopCount {
@@ -211,17 +212,17 @@ func maintainLoop() bool {
 	}
 
 	loopRecorder.AddRecordNow()
-	return maintainLoopInner()
+	return maintainLoopInner(false)
 }
 
 // maintainLoopForced maintains the battery charge. It runs as soon as
 // it is called, without waiting for the previous maintain loop to finish.
 // It is mainly called by the HTTP APIs.
 func maintainLoopForced() bool {
-	return maintainLoopInner()
+	return maintainLoopInner(true)
 }
 
-func maintainLoopInner() bool {
+func maintainLoopInner(ignoreMissedLoops bool) bool {
 	upper := config.Limit
 	delta := config.LowerLimitDelta
 	lower := upper - delta
@@ -271,29 +272,31 @@ func maintainLoopInner() bool {
 	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress)
 
 	if batteryCharge < lower && !isChargingEnabled {
-		maintainLoopCount := loopRecorder.GetRecordsIn(time.Minute * 2)
-		expectedMaintainLoopCount := int(time.Minute * 2 / loopInterval)
-		minMaintainLoopCount := expectedMaintainLoopCount - 1
-		relativeTimes := loopRecorder.GetLastRecords(time.Minute * 2)
-		// If maintain loop is missed too many times, we assume the system is in a rapid sleep/wake loop, or macOS
-		// haven't sent the sleep notification but the system is actually sleep/waking up. In either case, we should
-		// not enable charging, which will cause unexpected charging.
-		//
-		// This is a workaround for the issue that macOS sometimes doesn't send the sleep notification.
-		//
-		// We allow at most 1 missed maintain loop.
-		if maintainLoopCount < minMaintainLoopCount {
-			logrus.WithFields(logrus.Fields{
-				"batteryCharge":             batteryCharge,
-				"lower":                     lower,
-				"upper":                     upper,
-				"delta":                     delta,
-				"maintainLoopCount":         maintainLoopCount,
-				"expectedMaintainLoopCount": expectedMaintainLoopCount,
-				"minMaintainLoopCount":      minMaintainLoopCount,
-				"recentRecords":             formatRelativeTimes(relativeTimes),
-			}).Infof("Battery charge is below lower limit, but too many missed maintain loops are missed. Will wait until maintain loops are stable")
-			return true
+		if !ignoreMissedLoops {
+			maintainLoopCount := loopRecorder.GetRecordsIn(continuousLoopThreshold)
+			expectedMaintainLoopCount := int(continuousLoopThreshold / loopInterval)
+			minMaintainLoopCount := expectedMaintainLoopCount - 1
+			relativeTimes := loopRecorder.GetLastRecords(continuousLoopThreshold)
+			// If maintain loop is missed too many times, we assume the system is in a rapid sleep/wake loop, or macOS
+			// haven't sent the sleep notification but the system is actually sleep/waking up. In either case, we should
+			// not enable charging, which will cause unexpected charging.
+			//
+			// This is a workaround for the issue that macOS sometimes doesn't send the sleep notification.
+			//
+			// We allow at most 1 missed maintain loop.
+			if maintainLoopCount < minMaintainLoopCount {
+				logrus.WithFields(logrus.Fields{
+					"batteryCharge":             batteryCharge,
+					"lower":                     lower,
+					"upper":                     upper,
+					"delta":                     delta,
+					"maintainLoopCount":         maintainLoopCount,
+					"expectedMaintainLoopCount": expectedMaintainLoopCount,
+					"minMaintainLoopCount":      minMaintainLoopCount,
+					"recentRecords":             formatRelativeTimes(relativeTimes),
+				}).Infof("Battery charge is below lower limit, but too many missed maintain loops are missed. Will wait until maintain loops are stable")
+				return true
+			}
 		}
 
 		logrus.WithFields(logrus.Fields{
