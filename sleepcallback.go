@@ -54,7 +54,7 @@ func canSystemSleepCallback() {
 	}
 
 	// Run a loop immediately to update `maintainedChargingInProgress` variable.
-	maintainLoopForced()
+	maintainLoopInner(false)
 
 	if maintainedChargingInProgress {
 		logrus.Debugln("maintained charging is in progress, deny idle sleep")
