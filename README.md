@@ -44,7 +44,8 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 ## Installation
 
-> Currently, it is command-line only. Some knowledge of the command-line is recommended. A native GUI is possible but not planned. If you want to build a GUI, you can ask me to put a link here to your project 
+> FYI: You are reading the instructions for `batt`, which is a commandline-only (CLI-only) application. There are some great 3rd-party GUI frontends built around `batt` by amazing opensource developers. If you find the commandline intimidating, you can use these GUI versions instead. Check out them:
+> 1. [BattGUI](https://github.com/clzoc/BattGUI) by [@clzoc](https://github.com/clzoc)
 
 You have two choices to install `batt`:
 
