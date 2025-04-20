@@ -303,3 +303,7 @@ If you absolutely need to charge your Mac _immediately_ after waking up from sle
 - [hholtmann/smcFanControl](https://github.com/hholtmann/smcFanControl) for its C code to read/write SMC, which inspires [charlie0129/gosmc](https://github.com/charlie0129/gosmc).
 - [Apple](https://developer.apple.com/library/archive/qa/qa1340/_index.html) for its guide to register and unregister sleep and wake notifications.
 - [@exidler](https://github.com/exidler) for building the MagSafe LED controlling logic.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=charlie0129/batt&type=Date)](https://www.star-history.com/#charlie0129/batt&Date)
