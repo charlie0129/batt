@@ -1,10 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
-	"bytes"
 
 	"github.com/sirupsen/logrus"
 )
@@ -52,7 +52,7 @@ func resetConfig() error {
 	config = defaultConfig
 
 	logrus.WithFields(logrus.Fields{
-		"config": defaultConfig,
+		"config":      defaultConfig,
 		"config_file": configPath,
 	}).Warn("resetting config file to default")
 
@@ -80,7 +80,7 @@ func loadConfig() error {
 
 	if len(bytes.TrimSpace(b)) == 0 {
 		logrus.WithFields(logrus.Fields{
-			"config_file": configPath,
+			"config_file":  configPath,
 			"config_bytes": b,
 		}).Warn("config file is empty")
 
