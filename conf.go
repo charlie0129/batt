@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -47,14 +48,27 @@ func saveConfig() error {
 	return os.WriteFile(configPath, b, 0644)
 }
 
+func resetConfig() error {
+	config = defaultConfig
+
+	logrus.WithFields(logrus.Fields{
+		"config":      defaultConfig,
+		"config_file": configPath,
+	}).Warn("resetting config file to default")
+
+	err := saveConfig()
+	return err
+}
+
 func loadConfig() error {
 	// Check if config file exists
 	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
-		logrus.WithField("config", defaultConfig).Infof("config file %s does not exist, using default config", configPath)
-		config = defaultConfig
-		err := saveConfig()
+		logrus.WithFields(logrus.Fields{
+			"config_file": configPath,
+		}).Warn("config file does not exist")
+
+		err = resetConfig()
 		if err != nil {
-			logrus.Errorf("failed to save config: %v", err)
 			return err
 		}
 	}
@@ -63,5 +77,23 @@ func loadConfig() error {
 	if err != nil {
 		return err
 	}
+
+	if len(bytes.TrimSpace(b)) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"config_file":  configPath,
+			"config_bytes": b,
+		}).Warn("config file is empty")
+
+		err = resetConfig()
+		if err != nil {
+			return err
+		}
+
+		b, err = os.ReadFile(configPath)
+		if err != nil {
+			return err
+		}
+	}
+
 	return json.Unmarshal(b, &config)
 }

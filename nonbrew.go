@@ -30,7 +30,7 @@ By default, only root user is allowed to access the batt daemon for security rea
 
 			err := loadConfig()
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to parse config during installation: %v", err)
 			}
 
 			flags := cmd.Flags()
