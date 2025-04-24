@@ -54,7 +54,7 @@ func runDaemon() {
 
 	err := loadConfig()
 	if err != nil {
-		logrus.Fatal(err)
+		logrus.Fatalf("failed to parse config during startup: %v", err)
 	}
 	logrus.Infof("config loaded: %#v", config)
 
