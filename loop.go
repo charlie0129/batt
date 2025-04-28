@@ -15,7 +15,7 @@ var (
 	wg                      = &sync.WaitGroup{}
 	loopInterval            = time.Duration(10) * time.Second
 	loopRecorder            = NewTimeSeriesRecorder(60)
-	continuousLoopThreshold = 1 * time.Minute
+	continuousLoopThreshold = 1*time.Minute + 20*time.Second // add 20s to be sure
 )
 
 // TimeSeriesRecorder records the last N maintain loop times.
