@@ -44,6 +44,11 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 ## Installation
 
+> [!WARNING] 
+> macOS Tahoe 26 is not supported because Apple has removed the functionality that batt relies on to control the battery. Until a new battery controlling method is found, we don't recommend upgrading to macOS Tahoe.
+
+You can read the issue comment for details: https://github.com/charlie0129/batt/issues/34#issuecomment-2958535441
+
 > FYI: You are reading the instructions for `batt`, which is a commandline-only (CLI-only) application. There are some great 3rd-party GUI frontends built around `batt` by amazing opensource developers. If you find the commandline intimidating, you can use these GUI versions instead. Check out them:
 > 1. [BattGUI](https://github.com/clzoc/BattGUI) by [@clzoc](https://github.com/clzoc)
 
