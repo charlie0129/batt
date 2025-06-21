@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/charlie0129/batt/internal/client"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
@@ -36,9 +37,11 @@ type statusData struct {
 	config        *Config
 }
 
+var apiClient = client.NewClient("/var/run/batt.sock")
+
 // fetchStatusData gathers all data required for the status command from the daemon.
 func fetchStatusData() (*statusData, error) {
-	ret, err := get("/charging")
+	ret, err := apiClient.Get("/charging")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get charging status: %w", err)
 	}
@@ -47,7 +50,7 @@ func fetchStatusData() (*statusData, error) {
 		return nil, err
 	}
 
-	ret, err = get("/plugged-in")
+	ret, err = apiClient.Get("/plugged-in")
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if you are plugged in: %w", err)
 	}
@@ -56,7 +59,7 @@ func fetchStatusData() (*statusData, error) {
 		return nil, err
 	}
 
-	ret, err = get("/adapter")
+	ret, err = apiClient.Get("/adapter")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get power adapter status: %w", err)
 	}
@@ -65,7 +68,7 @@ func fetchStatusData() (*statusData, error) {
 		return nil, err
 	}
 
-	ret, err = get("/current-charge")
+	ret, err = apiClient.Get("/current-charge")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current charge: %w", err)
 	}
@@ -74,7 +77,7 @@ func fetchStatusData() (*statusData, error) {
 		return nil, fmt.Errorf("failed to unmarshal current charge: %w", err)
 	}
 
-	ret, err = get("/battery-info")
+	ret, err = apiClient.Get("/battery-info")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get battery info: %w", err)
 	}
@@ -83,7 +86,7 @@ func fetchStatusData() (*statusData, error) {
 		return nil, fmt.Errorf("failed to unmarshal battery info: %w", err)
 	}
 
-	ret, err = get("/config")
+	ret, err = apiClient.Get("/config")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config: %w", err)
 	}
@@ -194,7 +197,7 @@ Setting the limit to 10-99 will enable the battery charge limit. However, settin
 				return fmt.Errorf("invalid number of arguments")
 			}
 
-			ret, err := put("/limit", args[0])
+			ret, err := apiClient.Put("/limit", args[0])
 			if err != nil {
 				return fmt.Errorf("failed to set limit: %v", err)
 			}
@@ -220,7 +223,7 @@ func NewDisableCommand() *cobra.Command {
 
 Stop batt from controlling battery charging. This will allow your Mac to charge to 100%.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ret, err := put("/limit", "100")
+			ret, err := apiClient.Put("/limit", "100")
 			if err != nil {
 				return fmt.Errorf("failed to disable batt: %v", err)
 			}
@@ -256,7 +259,7 @@ However, this options does not prevent manual sleep (limitation of macOS). For e
 			Use:   "enable",
 			Short: "Prevent idle sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/prevent-idle-sleep", "true")
+				ret, err := apiClient.Put("/prevent-idle-sleep", "true")
 				if err != nil {
 					return fmt.Errorf("failed to set prevent idle sleep: %v", err)
 				}
@@ -274,7 +277,7 @@ However, this options does not prevent manual sleep (limitation of macOS). For e
 			Use:   "disable",
 			Short: "Do not prevent idle sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/prevent-idle-sleep", "false")
+				ret, err := apiClient.Put("/prevent-idle-sleep", "false")
 				if err != nil {
 					return fmt.Errorf("failed to set prevent idle sleep: %v", err)
 				}
@@ -309,7 +312,7 @@ As described in preventing-idle-sleep, batt will be paused by macOS when your co
 			Use:   "enable",
 			Short: "Disable charging before sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/disable-charging-pre-sleep", "true")
+				ret, err := apiClient.Put("/disable-charging-pre-sleep", "true")
 				if err != nil {
 					return fmt.Errorf("failed to set disable charging pre sleep: %v", err)
 				}
@@ -327,7 +330,7 @@ As described in preventing-idle-sleep, batt will be paused by macOS when your co
 			Use:   "disable",
 			Short: "Do not disable charging before sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/disable-charging-pre-sleep", "false")
+				ret, err := apiClient.Put("/disable-charging-pre-sleep", "false")
 				if err != nil {
 					return fmt.Errorf("failed to set disable charging pre sleep: %v", err)
 				}
@@ -364,7 +367,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			Use:   "disable",
 			Short: "Disable power adapter",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/adapter", "false")
+				ret, err := apiClient.Put("/adapter", "false")
 				if err != nil {
 					return fmt.Errorf("failed to disable power adapter: %v", err)
 				}
@@ -382,7 +385,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			Use:   "enable",
 			Short: "Enable power adapter",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/adapter", "true")
+				ret, err := apiClient.Put("/adapter", "true")
 				if err != nil {
 					return fmt.Errorf("failed to enable power adapter: %v", err)
 				}
@@ -400,7 +403,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			Use:   "status",
 			Short: "Get the current status of power adapter",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := get("/adapter")
+				ret, err := apiClient.Get("/adapter")
 				if err != nil {
 					return fmt.Errorf("failed to get power adapter status: %v", err)
 				}
@@ -560,7 +563,7 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 				return fmt.Errorf("invalid delta: %v", err)
 			}
 
-			ret, err := put("/lower-limit-delta", strconv.Itoa(delta))
+			ret, err := apiClient.Put("/lower-limit-delta", strconv.Itoa(delta))
 			if err != nil {
 				return fmt.Errorf("failed to set lower limit delta: %v", err)
 			}
@@ -598,7 +601,7 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`,
 			Use:   "enable",
 			Short: "Control MagSafe LED according to battery charging status",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/magsafe-led", "true")
+				ret, err := apiClient.Put("/magsafe-led", "true")
 				if err != nil {
 					return fmt.Errorf("failed to set magsafe: %v", err)
 				}
@@ -616,7 +619,7 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`,
 			Use:   "disable",
 			Short: "Do not control MagSafe LED",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/magsafe-led", "false")
+				ret, err := apiClient.Put("/magsafe-led", "false")
 				if err != nil {
 					return fmt.Errorf("failed to set magsafe: %v", err)
 				}

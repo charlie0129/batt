@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/charlie0129/batt/internal/client"
 	"github.com/sirupsen/logrus"
 )
 
@@ -22,10 +23,10 @@ func setupLogger() error {
 }
 
 func handleCmdError(err error) {
-	if errors.Is(err, ErrDaemonNotRunning) {
+	if errors.Is(err, client.ErrDaemonNotRunning) {
 		fmt.Fprintln(os.Stderr, "\nError: batt daemon is not running")
 		fmt.Fprintln(os.Stderr, "Is the daemon running? Have you installed it?")
-	} else if errors.Is(err, ErrPermissionDenied) {
+	} else if errors.Is(err, client.ErrPermissionDenied) {
 		fmt.Fprintln(os.Stderr, "\nError: Permission Denied")
 		fmt.Fprintln(os.Stderr, "  - Try running the command again with 'sudo'")
 		fmt.Fprintln(os.Stderr, "  - Or reinstall the daemon with the '--allow-non-root-access' flag to grant permissions to your user")
