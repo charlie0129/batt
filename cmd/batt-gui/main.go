@@ -126,11 +126,19 @@ func updateStatus(mStatus, mLimit, timeToLimit *systray.MenuItem) {
 	currentCharge, _ := strconv.Atoi(chargeJSON)
 
 	statusIcon := ""
-	if bat.State == battery.Charging {
+	state := "Not charging"
+	switch bat.State {
+	case battery.Charging:
 		statusIcon = "⚡️"
+		state = "Charging"
+	case battery.Discharging:
+		state = "Discharging"
+	case battery.Full:
+		state = "Full"
 	}
+
 	systray.SetTitle(fmt.Sprintf("%s %d%%", statusIcon, currentCharge))
-	mStatus.SetTitle(fmt.Sprintf("Status: %s", bat.State.String()))
+	mStatus.SetTitle(fmt.Sprintf("Status: %s", state))
 
 	timeString := "N/A"
 	if bat.State == battery.Charging && currentCharge < conf.Limit {
