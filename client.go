@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -24,7 +25,13 @@ func send(method string, path string, data string) (string, error) {
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 				conn, err := net.Dial("unix", unixSocketPath)
 				if err != nil {
-					logrus.Errorf("failed to connect to unix socket. 1) Do you have adequate permissions? Please re-run as root. 2) Is the daemon running? Have you installed it?")
+					if os.IsNotExist(err) {
+						return nil, ErrDaemonNotRunning
+					}
+					if os.IsPermission(err) {
+						return nil, ErrPermissionDenied
+					}
+					logrus.Errorf("failed to connect to unix socket: %v", err)
 					return nil, err
 				}
 				return conn, err
