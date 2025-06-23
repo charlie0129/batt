@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/internal/client"
+	"github.com/charlie0129/batt/pkg/gui"
 )
 
 var (
@@ -97,6 +98,7 @@ Website: https://github.com/charlie0129/batt`,
 		NewSetControlMagSafeLEDCommand(),
 		NewInstallCommand(),
 		NewUninstallCommand(),
+		gui.NewGUICommand(unixSocketPath),
 	)
 
 	return cmd
