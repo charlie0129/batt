@@ -1,4 +1,4 @@
-package main
+package gui
 
 import (
 	"encoding/json"
@@ -7,26 +7,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/charlie0129/batt/internal/client"
 	"github.com/distatus/battery"
 	"github.com/getlantern/systray"
+
+	"github.com/charlie0129/batt/pkg/config"
 )
-
-// Config is the configuration of batt.
-type Config struct {
-	Limit                   int  `json:"limit"`
-	LowerLimitDelta         int  `json:"lowerLimitDelta"`
-	PreventIdleSleep        bool `json:"preventIdleSleep"`
-	DisableChargingPreSleep bool `json:"disableChargingPreSleep"`
-	AllowNonRootAccess      bool `json:"allowNonRootAccess"`
-	ControlMagSafeLED       bool `json:"controlMagSafeLED"`
-}
-
-var apiClient = client.NewClient("/var/run/batt.sock")
-
-func main() {
-	systray.Run(onReady, onExit)
-}
 
 func onReady() {
 	systray.SetTitle("🔋 Loading...")
@@ -111,11 +96,13 @@ func updateStatus(mStatus, mLimit, timeToLimit *systray.MenuItem) {
 		return
 	}
 
-	var conf Config
-	if err := json.Unmarshal([]byte(configJSON), &conf); err != nil {
+	var rawConfig config.RawFileConfig
+	if err := json.Unmarshal([]byte(configJSON), &rawConfig); err != nil {
 		log.Printf("Failed to unmarshal config: %v", err)
 		return
 	}
+
+	conf := config.NewFileFromConfig(&rawConfig, "")
 
 	var bat battery.Battery
 	if err := json.Unmarshal([]byte(batteryInfoJSON), &bat); err != nil {
@@ -141,11 +128,11 @@ func updateStatus(mStatus, mLimit, timeToLimit *systray.MenuItem) {
 	mStatus.SetTitle(fmt.Sprintf("Status: %s", state))
 
 	timeString := "N/A"
-	if bat.State == battery.Charging && currentCharge < conf.Limit {
+	if bat.State == battery.Charging && currentCharge < conf.UpperLimit() {
 		designCapacityWh := bat.Design / 1000.0
 		chargeRateW := bat.ChargeRate / 1000.0
 
-		targetCapacityWh := float64(conf.Limit) / 100.0 * designCapacityWh
+		targetCapacityWh := float64(conf.UpperLimit()) / 100.0 * designCapacityWh
 		currentCapacityWh := float64(currentCharge) / 100.0 * designCapacityWh
 		capacityToChargeWh := targetCapacityWh - currentCapacityWh
 
@@ -163,5 +150,5 @@ func updateStatus(mStatus, mLimit, timeToLimit *systray.MenuItem) {
 		}
 	}
 	timeToLimit.SetTitle(fmt.Sprintf("Time to Limit: %s", timeString))
-	mLimit.SetTitle(fmt.Sprintf("Limit: %d%%", conf.Limit))
+	mLimit.SetTitle(fmt.Sprintf("Limit: %d%%", conf.UpperLimit()))
 }
