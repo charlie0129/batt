@@ -34,7 +34,7 @@ jobs:
 
   checks:
     name: Check Go Code
-    runs-on: macos-14
+    runs-on: macos-15
     needs: detect-noop
     if: needs.detect-noop.outputs.noop != 'true'
     steps:

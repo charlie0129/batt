@@ -1,6 +1,6 @@
 module github.com/charlie0129/batt
 
-go 1.19
+go 1.23
 
 require (
 	github.com/charlie0129/gosmc v0.0.0-20250206014004-02656b3859e0
