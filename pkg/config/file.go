@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	pkgerrors "github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"k8s.io/utils/ptr"
 )
@@ -287,7 +288,12 @@ func (f *File) Load() error {
 		}
 		return pkgerrors.Wrapf(err, "failed to open file %s", f.filepath)
 	}
-	defer fp.Close()
+	defer func(fp *os.File) {
+		err := fp.Close()
+		if err != nil {
+			logrus.Warnf("failed to close file %s", f.filepath)
+		}
+	}(fp)
 
 	// Since we want to tell if the file is empty, using json.Decoder will
 	// not work.
@@ -326,7 +332,12 @@ func (f *File) Save() error {
 	if err != nil {
 		return pkgerrors.Wrapf(err, "failed to open file %s", f.filepath)
 	}
-	defer fp.Close()
+	defer func(fp *os.File) {
+		err := fp.Close()
+		if err != nil {
+			logrus.Warnf("failed to close file %s", f.filepath)
+		}
+	}(fp)
 
 	enc := json.NewEncoder(fp)
 	enc.SetIndent("", "  ")

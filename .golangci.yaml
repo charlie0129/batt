@@ -62,6 +62,9 @@ linters:
           - revive
         text: 'package-comments: should have a package comment'
       - linters:
+          - revive
+        text: 'exported: exported'
+      - linters:
           - gosec
         text: 'G101:'
       - linters:

@@ -84,6 +84,7 @@ export CGO_CFLAGS="-O2"
 export CGO_LDFLAGS="-O2"
 
 ls -alh
+ls -lah cmd
 
 go build \
   -gcflags="${gogcflags}" \
