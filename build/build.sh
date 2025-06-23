@@ -83,6 +83,8 @@ fi
 export CGO_CFLAGS="-O2"
 export CGO_LDFLAGS="-O2"
 
+ls -alh
+
 go build \
   -gcflags="${gogcflags}" \
   -tags="${GOTAGS:-}" \
