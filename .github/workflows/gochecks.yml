@@ -46,6 +46,11 @@ jobs:
         with:
           go-version: 1.23
 
+      - name: Go mod
+        run: |
+          go mod tidy
+          git diff --exit-code
+
       - name: Lint
         uses: golangci/golangci-lint-action@v6
         with:
