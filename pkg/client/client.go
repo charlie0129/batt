@@ -29,7 +29,7 @@ func NewClient(socketPath string) *Client {
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 					conn, err := net.Dial("unix", socketPath)
 					if err != nil {
-						if os.IsNotExist(err) {
+						if os.IsNotExist(err) || strings.Contains(err.Error(), "no such file or directory") {
 							return nil, ErrDaemonNotRunning
 						}
 						if os.IsPermission(err) {

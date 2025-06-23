@@ -286,3 +286,7 @@ func getPluggedIn(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusOK, pluggedIn)
 }
+
+func getChargingControlCapable(c *gin.Context) {
+	c.IndentedJSON(http.StatusOK, smcConn.IsChargingControlCapable())
+}

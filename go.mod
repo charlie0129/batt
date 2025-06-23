@@ -9,9 +9,9 @@ require (
 	github.com/getlantern/systray v1.2.2
 	github.com/gin-gonic/gin v1.9.1
 	github.com/pkg/errors v0.9.1
+	github.com/progrium/darwinkit v0.5.1-0.20240715194340-61b9e31a12fa
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.7.0
-	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 )
 
 require (

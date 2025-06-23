@@ -10,7 +10,7 @@ import (
 	pkgerrors "github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
-	"k8s.io/utils/ptr"
+	"github.com/charlie0129/batt/pkg/utils/ptr"
 )
 
 var (
@@ -81,7 +81,7 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 		PreventIdleSleep:        ptr.To(c.PreventIdleSleep()),
 		DisableChargingPreSleep: ptr.To(c.DisableChargingPreSleep()),
 		AllowNonRootAccess:      ptr.To(c.AllowNonRootAccess()),
-		LowerLimitDelta:         ptr.To(c.LowerLimit()),
+		LowerLimitDelta:         ptr.To(c.UpperLimit() - c.LowerLimit()),
 		ControlMagSafeLED:       ptr.To(c.ControlMagSafeLED()),
 	}
 
@@ -207,7 +207,8 @@ func (f *File) SetUpperLimit(i int) {
 		panic("config is nil")
 	}
 
-	if i > 100 || i-f.LowerLimit() < 0 {
+	delta := f.UpperLimit() - f.LowerLimit()
+	if i > 100 || i-delta < 0 {
 		panic("upper limit must be between 0 and 100 and greater than lower limit")
 	}
 

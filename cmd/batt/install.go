@@ -151,7 +151,7 @@ func installDaemon() error {
 
 	logrus.Infof("current executable path: %s", exePath)
 
-	tmpl := strings.ReplaceAll(hack.PlistTemplate, "/path/to/batt", exePath)
+	tmpl := strings.ReplaceAll(hack.LaunchDaemonPlistTemplate, "/path/to/batt", exePath)
 
 	logrus.Infof("writing launch daemon to /Library/LaunchDaemons")
 
@@ -165,7 +165,6 @@ func installDaemon() error {
 	_, err = os.Stat(plistPath)
 	if err == nil {
 		logrus.Errorf("%s already exists", plistPath)
-		return fmt.Errorf("%s already exists. This is often caused by an incorrect installation. Did you forget to uninstall batt before installing it again? Please uninstall it first, by running 'sudo batt uninstall'. If you already removed batt, you can solve this problem by 'sudo rm %s'", plistPath, plistPath)
 	}
 
 	err = os.WriteFile(plistPath, []byte(tmpl), 0644)

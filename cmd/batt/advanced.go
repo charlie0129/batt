@@ -26,7 +26,7 @@ However, this options does not prevent manual sleep (limitation of macOS). For e
 			Use:   "enable",
 			Short: "Prevent idle sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.Put("/prevent-idle-sleep", "true")
+				ret, err := apiClient.SetPreventIdleSleep(true)
 				if err != nil {
 					return fmt.Errorf("failed to set prevent idle sleep: %v", err)
 				}
@@ -44,7 +44,7 @@ However, this options does not prevent manual sleep (limitation of macOS). For e
 			Use:   "disable",
 			Short: "Do not prevent idle sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.Put("/prevent-idle-sleep", "false")
+				ret, err := apiClient.SetPreventIdleSleep(false)
 				if err != nil {
 					return fmt.Errorf("failed to set prevent idle sleep: %v", err)
 				}
@@ -78,7 +78,7 @@ As described in preventing-idle-sleep, batt will be paused by macOS when your co
 			Use:   "enable",
 			Short: "Disable charging before sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.Put("/disable-charging-pre-sleep", "true")
+				ret, err := apiClient.SetDisableChargingPreSleep(true)
 				if err != nil {
 					return fmt.Errorf("failed to set disable charging pre sleep: %v", err)
 				}
@@ -96,7 +96,7 @@ As described in preventing-idle-sleep, batt will be paused by macOS when your co
 			Use:   "disable",
 			Short: "Do not disable charging before sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.Put("/disable-charging-pre-sleep", "false")
+				ret, err := apiClient.SetDisableChargingPreSleep(false)
 				if err != nil {
 					return fmt.Errorf("failed to set disable charging pre sleep: %v", err)
 				}
@@ -134,7 +134,7 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`,
 			Use:   "enable",
 			Short: "Control MagSafe LED according to battery charging status",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.Put("/magsafe-led", "true")
+				ret, err := apiClient.SetControlMagSafeLED(true)
 				if err != nil {
 					return fmt.Errorf("failed to set magsafe: %v", err)
 				}
@@ -152,7 +152,7 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`,
 			Use:   "disable",
 			Short: "Do not control MagSafe LED",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.Put("/magsafe-led", "false")
+				ret, err := apiClient.SetControlMagSafeLED(false)
 				if err != nil {
 					return fmt.Errorf("failed to set magsafe: %v", err)
 				}

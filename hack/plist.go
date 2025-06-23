@@ -4,5 +4,7 @@ import _ "embed"
 
 var (
 	//go:embed cc.chlc.batt.plist
-	PlistTemplate string
+	LaunchDaemonPlistTemplate string
+	//go:embed cc.chlc.battapp.plist
+	LaunchAgentPlistTemplate string
 )

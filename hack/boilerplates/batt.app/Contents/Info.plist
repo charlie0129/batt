@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>CFBundlePackageType</key>
+        <string>APPL</string>
+        <key>LSApplicationCategoryType</key>
+        <string>public.app-category.utilities</string>
+        <key>CFBundleName</key>
+        <string>batt</string>
+        <key>CFBundleVersion</key>
+        <string>BATT_VERSION</string>
+        <key>CFBundleShortVersionString</key>
+        <string>BATT_VERSION</string>
+        <key>CFBundleDevelopmentRegion</key>
+        <string>en</string>
+        <key>LSMinimumSystemVersion</key>
+        <string>13.0</string>
+        <key>CFBundleInfoDictionaryVersion</key>
+        <string>6.0</string>
+        <key>CFBundleSupportedPlatforms</key>
+        <array>
+            <string>MacOSX</string>
+        </array>
+        <key>CFBundleIconFile</key>
+        <string></string>
+        <key>LSEnvironment</key>
+        <dict>
+            <key>BATT_RUN_GUI</key>
+            <string>1</string>
+        </dict>
+        <key>NSHumanReadableCopyright</key>
+        <string>charlie0129 GPL-2.0</string>
+        <key>CFBundleExecutable</key>
+        <string>batt</string>
+        <key>CFBundleIdentifier</key>
+        <string>cc.chlc.batt</string>
+        <key>NSHighResolutionCapable</key>
+        <true/>
+        <key>LSUIElement</key>
+        <true/>
+    </dict>
+</plist>

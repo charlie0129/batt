@@ -4,11 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/charlie0129/batt/internal/client"
+	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/gui"
 )
 
@@ -69,8 +70,19 @@ func NewCommand() *cobra.Command {
 Website: https://github.com/charlie0129/batt`,
 		SilenceUsage: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			// Reduce the number of CPUs used by the batt.
+			// batt does not need use much.
+			if os.Getenv("GOMAXPROCS") == "" {
+				runtime.GOMAXPROCS(2)
+			}
 			return setupLogger()
 		},
+	}
+
+	if os.Getenv("BATT_RUN_GUI") != "" {
+		cmd.Run = func(_ *cobra.Command, _ []string) {
+			gui.Run(unixSocketPath)
+		}
 	}
 
 	globalFlags := cmd.PersistentFlags()

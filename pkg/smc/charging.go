@@ -17,11 +17,17 @@ func (c *AppleSMC) IsChargingEnabled() (bool, error) {
 	return ret, nil
 }
 
+func (c *AppleSMC) IsChargingControlCapable() bool {
+	logrus.Tracef("IsChargingControlCapable called")
+
+	_, err := c.Read(ChargingKey1)
+	return err == nil
+}
+
 // EnableCharging enables charging.
 func (c *AppleSMC) EnableCharging() error {
 	logrus.Tracef("EnableCharging called")
 
-	// CHSC
 	err := c.Write(ChargingKey1, []byte{0x0})
 	if err != nil {
 		return err
