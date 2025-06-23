@@ -5,10 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
-	"path/filepath"
 	"runtime"
-	"strings"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
@@ -16,9 +13,9 @@ import (
 	"github.com/progrium/darwinkit/objc"
 	"github.com/spf13/cobra"
 
-	"github.com/charlie0129/batt/hack"
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/version"
 )
 
 var (
@@ -59,23 +56,68 @@ func Run(unixSocketPath string) {
 	app.Run()
 }
 
-func addMenubar(app appkit.Application, apiClient *client.Client) {
+func installDaemon(exe string) error {
+	output := &bytes.Buffer{}
+	cmd := exec.Command("/usr/bin/osascript", "-e", fmt.Sprintf("do shell script \"%s install --allow-non-root-access && /bin/ln -sf %s %s\" with administrator privileges", exe, exe, battSymlinkLocation))
+	cmd.Stderr = output
+	cmd.Stdout = output
+	err := cmd.Run()
+	if err != nil {
+		return pkgerrors.Wrapf(err, "failed to install batt daemon: %s", output.String())
+	}
 
+	return nil
+}
+
+func startAppAtBoot(exe string) error {
+	// tmpl := strings.ReplaceAll(hack.LaunchAgentPlistTemplate, "/path/to/batt", exe)
+	//
+	// home, err := os.UserHomeDir()
+	// if err != nil {
+	// 	return pkgerrors.Wrapf(err, "failed to get home directory")
+	// }
+	// launchAgentsDir := filepath.Join(home, "Library/LaunchAgents")
+	//
+	// // mkdir -p
+	// err = os.MkdirAll(launchAgentsDir, 0755)
+	// if err != nil {
+	// 	return pkgerrors.Wrapf(err, "failed to create launch agent directory")
+	// }
+	//
+	// err = os.WriteFile(path.Join(launchAgentsDir, "cc.chlc.battapp.plist"), []byte(tmpl), 0644)
+	// if err != nil {
+	// 	return pkgerrors.Wrapf(err, "failed to create launch agent plist")
+	// }
+	//
+	// return nil
+
+}
+
+func addMenubar(app appkit.Application, apiClient *client.Client) {
+	// TODO: prevent homebrew version from using it
 	item := appkit.StatusBar_SystemStatusBar().StatusItemWithLength(appkit.VariableStatusItemLength)
 	objc.Retain(&item)
-	item.Button().SetImage(getMenubarImage(false, false))
+	item.Button().SetImage(getMenubarImage(false, false, false))
 
 	capable, err := apiClient.GetChargingControlCapable()
 	if err != nil {
-		item.Button().SetImage(getMenubarImage(false, false))
+		item.Button().SetImage(getMenubarImage(false, false, false))
 	} else {
-		item.Button().SetImage(getMenubarImage(true, capable))
+		daemonVersion, err := apiClient.GetVersion()
+		if err != nil || daemonVersion != version.Version {
+			item.Button().SetImage(getMenubarImage(true, capable, true))
+		}
 	}
 
 	menu := appkit.NewMenuWithTitle("batt")
 	menu.SetAutoenablesItems(false)
 
 	// ==================== INSTALL & STATES ====================
+
+	upgradeItem := appkit.NewMenuItemWithAction("Upgrade daemon...", "u", func(sender objc.Object) {
+
+	})
+	menu.AddItem(upgradeItem)
 
 	installItem := appkit.NewMenuItemWithAction("Install daemon...", "i", func(sender objc.Object) {
 		exe, err := os.Executable()
@@ -84,41 +126,19 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 			return
 		}
 
-		output := &bytes.Buffer{}
-
-		cmd := exec.Command("/usr/bin/osascript", "-e", fmt.Sprintf("do shell script \"%s install --allow-non-root-access && /bin/ln -sf %s %s\" with administrator privileges", exe, exe, battSymlinkLocation))
-		cmd.Stderr = output
-		cmd.Stdout = output
-		err = cmd.Run()
+		err = installDaemon(exe)
 		if err != nil {
-			showAlert("Failed to install daemon", output.String())
+			showAlert("Installation failed", err.Error())
 			return
 		}
 
-		// Make batt app start on boot
-		tmpl := strings.ReplaceAll(hack.LaunchAgentPlistTemplate, "/path/to/batt", exe)
-
-		home, err := os.UserHomeDir()
+		err = startAppAtBoot(exe)
 		if err != nil {
-			showAlert("Failed to get home directory", err.Error())
-			return
-		}
-		launchAgentsDir := filepath.Join(home, "Library/LaunchAgents")
-
-		// mkdir -p
-		err = os.MkdirAll(launchAgentsDir, 0755)
-		if err != nil {
-			showAlert("Failed to create launch agent directory", err.Error())
+			showAlert("Failed to start app at boot", err.Error())
 			return
 		}
 
-		err = os.WriteFile(path.Join(launchAgentsDir, "cc.chlc.battapp.plist"), []byte(tmpl), 0644)
-		if err != nil {
-			showAlert("Failed to create launch agent plist", err.Error())
-			return
-		}
-
-		item.Button().SetImage(getMenubarImage(true, true))
+		item.Button().SetImage(getMenubarImage(true, true, false))
 	})
 	menu.AddItem(installItem)
 
@@ -239,7 +259,8 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 			return
 		}
 
-		app.Terminate(nil)
+		item.Button().SetImage(getMenubarImage(false, true, false))
+
 	})
 	advancedMenu.AddItem(uninstallItem)
 
@@ -265,27 +286,28 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 
 	// ==================== CALLBACKS ====================
 
-	toggleMenusRequiringInstall := func(battInstalled bool, capable bool) {
-		item.Button().SetImage(getMenubarImage(battInstalled, capable))
+	toggleMenusRequiringInstall := func(battInstalled bool, capable, needUpgrade bool) {
+		item.Button().SetImage(getMenubarImage(battInstalled, capable, needUpgrade))
 
 		installItem.SetHidden(battInstalled)
+		upgradeItem.SetHidden(!(needUpgrade && battInstalled))
 		stateItem.SetHidden(!battInstalled)
 		currentLimitItem.SetHidden(!battInstalled)
 
-		quickLimitsItem.SetHidden(!battInstalled)
-		set50Item.SetHidden(!battInstalled)
-		set60Item.SetHidden(!battInstalled)
-		set70Item.SetHidden(!battInstalled)
-		set80Item.SetHidden(!battInstalled)
-		set90Item.SetHidden(!battInstalled)
+		quickLimitsItem.SetHidden(!(battInstalled && !needUpgrade))
+		set50Item.SetHidden(!(battInstalled && !needUpgrade))
+		set60Item.SetHidden(!(battInstalled && !needUpgrade))
+		set70Item.SetHidden(!(battInstalled && !needUpgrade))
+		set80Item.SetHidden(!(battInstalled && !needUpgrade))
+		set90Item.SetHidden(!(battInstalled && !needUpgrade))
 
 		advancedSubMenuItem.SetHidden(!battInstalled)
-		controlMagSafeLEDItem.SetHidden(!battInstalled)
-		preventIdleSleepItem.SetHidden(!battInstalled)
-		disableChargingPreSleepItem.SetHidden(!battInstalled)
+		controlMagSafeLEDItem.SetHidden(!(battInstalled && !needUpgrade))
+		preventIdleSleepItem.SetHidden(!(battInstalled && !needUpgrade))
+		disableChargingPreSleepItem.SetHidden(!(battInstalled && !needUpgrade))
 		uninstallItem.SetHidden(!battInstalled)
 
-		disableItem.SetHidden(!battInstalled)
+		disableItem.SetHidden(!(battInstalled && !needUpgrade))
 	}
 
 	menuDelegate := &appkit.MenuDelegate{}
@@ -294,15 +316,21 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		// Get current information from the API
 		rawConfig, err := apiClient.GetConfig()
 		if err != nil {
-			toggleMenusRequiringInstall(false, false)
+			toggleMenusRequiringInstall(false, false, false)
 			return
 		}
 		capable, err := apiClient.GetChargingControlCapable()
 		if err != nil {
-			toggleMenusRequiringInstall(false, false)
+			toggleMenusRequiringInstall(true, false, false)
 			return
 		}
-		toggleMenusRequiringInstall(true, capable)
+		daemonVersion, err := apiClient.GetVersion()
+		if err != nil {
+			toggleMenusRequiringInstall(true, capable, true)
+		} else {
+			toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
+		}
+
 		isCharging, err := apiClient.GetCharging()
 		if err != nil {
 			stateItem.SetTitle("State: Error")
@@ -357,12 +385,15 @@ func showAlert(msg, body string) {
 	alert.RunModal()
 }
 
-func getMenubarImage(installed bool, capable bool) appkit.Image {
+func getMenubarImage(installed, capable, needUpgrade bool) appkit.Image {
 	if !installed {
 		return appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("batteryblock.slash", "batt not installed")
 	}
 	if !capable {
 		return appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("minus.plus.batteryblock.exclamationmark", "batt error")
+	}
+	if needUpgrade {
+		return appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("fluid.batteryblock", "batt needs upgrade")
 	}
 	return appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("minus.plus.batteryblock", "batt icon")
 }

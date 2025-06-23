@@ -113,6 +113,14 @@ func (c *Client) GetConfig() (*config.RawFileConfig, error) {
 	return &conf, nil
 }
 
+func (c *Client) GetVersion() (string, error) {
+	ret, err := c.Get("/version")
+	if err != nil {
+		return "", pkgerrors.Wrapf(err, "failed to get version")
+	}
+	return ret, nil
+}
+
 func parseBoolResponse(resp string) (bool, error) {
 	switch resp {
 	case "true":

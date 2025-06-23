@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/version"
 )
 
 func getConfig(c *gin.Context) {
@@ -289,4 +290,8 @@ func getPluggedIn(c *gin.Context) {
 
 func getChargingControlCapable(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, smcConn.IsChargingControlCapable())
+}
+
+func getVersion(c *gin.Context) {
+	c.IndentedJSON(http.StatusOK, version.Version)
 }

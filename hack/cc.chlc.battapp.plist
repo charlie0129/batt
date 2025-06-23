@@ -8,6 +8,11 @@
         <array>
             <string>/path/to/batt</string>
         </array>
+        <key>EnvironmentVariables</key>
+        <dict>
+            <key>BATT_RUN_GUI</key>
+            <string>1</string>
+        </dict>
         <key>ProcessType</key>
         <string>Interactive</string>
         <key>RunAtLoad</key>
