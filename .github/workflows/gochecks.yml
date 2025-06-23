@@ -54,7 +54,7 @@ jobs:
           git diff --exit-code
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
           version: ${{ env.GOLANGCI_VERSION }}
           verify: false
