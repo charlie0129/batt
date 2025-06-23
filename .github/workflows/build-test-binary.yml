@@ -31,22 +31,22 @@ jobs:
 
   build:
     name: Build Binary
-    runs-on: macos-14
+    runs-on: macos-15
     needs: detect-noop
     if: needs.detect-noop.outputs.noop != 'true'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23
+          go-version: 1.24
 
       - name: Build
-        run: make build-darwin_arm64
+        run: make
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4

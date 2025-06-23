@@ -14,7 +14,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  GOLANGCI_VERSION: "v1.60.1"
+  GOLANGCI_VERSION: "v2.1.6"
 
 jobs:
   detect-noop:
@@ -34,17 +34,19 @@ jobs:
 
   checks:
     name: Check Go Code
-    runs-on: macos-14
+    runs-on: macos-15
     needs: detect-noop
     if: needs.detect-noop.outputs.noop != 'true'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23
+          go-version: 1.24
 
       - name: Go mod
         run: |
@@ -52,7 +54,7 @@ jobs:
           git diff --exit-code
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
           version: ${{ env.GOLANGCI_VERSION }}
           verify: false

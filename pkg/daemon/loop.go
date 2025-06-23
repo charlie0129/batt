@@ -1,4 +1,4 @@
-package main
+package daemon
 
 import (
 	"reflect"
@@ -223,9 +223,8 @@ func maintainLoopForced() bool {
 }
 
 func maintainLoopInner(ignoreMissedLoops bool) bool {
-	upper := config.Limit
-	delta := config.LowerLimitDelta
-	lower := upper - delta
+	upper := conf.UpperLimit()
+	lower := conf.LowerLimit()
 	maintain := upper < 100
 
 	isChargingEnabled, err := smcConn.IsChargingEnabled()
@@ -244,7 +243,7 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 				logrus.Errorf("EnableCharging failed: %v", err)
 				return false
 			}
-			if config.ControlMagSafeLED {
+			if conf.ControlMagSafeLED() {
 				batteryCharge, err := smcConn.GetBatteryCharge()
 				if err == nil {
 					_ = smcConn.SetMagSafeCharging(batteryCharge < 100)
@@ -289,7 +288,6 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 					"batteryCharge":             batteryCharge,
 					"lower":                     lower,
 					"upper":                     upper,
-					"delta":                     delta,
 					"maintainLoopCount":         maintainLoopCount,
 					"expectedMaintainLoopCount": expectedMaintainLoopCount,
 					"minMaintainLoopCount":      minMaintainLoopCount,
@@ -303,7 +301,6 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 			"batteryCharge": batteryCharge,
 			"lower":         lower,
 			"upper":         upper,
-			"delta":         delta,
 		}).Infof("Battery charge is below lower limit, enabling charging")
 		err = smcConn.EnableCharging()
 		if err != nil {
@@ -319,7 +316,6 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 			"batteryCharge": batteryCharge,
 			"lower":         lower,
 			"upper":         upper,
-			"delta":         delta,
 		}).Infof("Battery charge is above upper limit, disabling charging")
 		err = smcConn.DisableCharging()
 		if err != nil {
@@ -330,7 +326,7 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 		maintainedChargingInProgress = false
 	}
 
-	if config.ControlMagSafeLED {
+	if conf.ControlMagSafeLED() {
 		updateMagSafeLed(isChargingEnabled)
 	}
 

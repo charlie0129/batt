@@ -57,7 +57,7 @@ func (c *AppleSMC) Read(key string) (gosmc.SMCVal, error) {
 	logrus.WithFields(logrus.Fields{
 		"key": key,
 		"val": v,
-	}).Trace("Read from SMC succeed")
+	}).Trace("Load from SMC succeed")
 
 	return v, nil
 }

@@ -1,4 +1,4 @@
-package main
+package daemon
 
 import (
 	"context"
@@ -13,22 +13,24 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
+	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
 var (
-	smcConn        *smc.AppleSMC
-	unixSocketPath = "/var/run/batt.sock"
+	smcConn *smc.AppleSMC
+	conf    config.Config
 )
 
 func setupRoutes() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
+	// TODO: unify these ugly handlers
+
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(ginLogger(logrus.StandardLogger()))
 	router.GET("/config", getConfig)
-	router.PUT("/config", setConfig) // Should not be called by user.
 	router.GET("/limit", getLimit)
 	router.PUT("/limit", setLimit)
 	router.PUT("/lower-limit-delta", setLowerLimitDelta)
@@ -45,34 +47,27 @@ func setupRoutes() *gin.Engine {
 	return router
 }
 
-var (
-	alwaysAllowNonRootAccess = false
-)
-
-func runDaemon() {
+func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	router := setupRoutes()
 
-	err := loadConfig()
+	var err error
+	conf, err = config.NewFile(configPath)
 	if err != nil {
 		logrus.Fatalf("failed to parse config during startup: %v", err)
 	}
-	logrus.Infof("config loaded: %#v", config)
-
-	if alwaysAllowNonRootAccess {
-		config.AllowNonRootAccess = true
-		logrus.Info("alwaysAllowNonRootAccess is set to true, allowing non-root access")
-	}
+	logrus.Infof("config loaded")
 
 	// Receive SIGHUP to reload config
 	go func() {
 		sigc := make(chan os.Signal, 1)
 		signal.Notify(sigc, syscall.SIGHUP)
 		for range sigc {
-			err := loadConfig()
+			err := conf.Load()
 			if err != nil {
 				logrus.Errorf("failed to reload config: %v", err)
+				continue
 			}
-			logrus.Infof("config reloaded: %#v", config)
+			logrus.Infof("config reloaded")
 		}
 	}()
 
@@ -84,15 +79,13 @@ func runDaemon() {
 	l, err := net.Listen("unix", unixSocketPath)
 	if err != nil {
 		logrus.Fatal(err)
-		return
 	}
 
-	if config.AllowNonRootAccess {
+	if conf.AllowNonRootAccess() || allowNonRoot {
 		logrus.Infof("non-root access is allowed, chaning permissions of %s to 0777", unixSocketPath)
 		err = os.Chmod(unixSocketPath, 0777)
 		if err != nil {
 			logrus.Fatal(err)
-			return
 		}
 	}
 
@@ -151,12 +144,6 @@ func runDaemon() {
 		logrus.Errorf("failed to close smc connection: %v", err)
 	}
 
-	logrus.Info("saving config")
-	err = saveConfig()
-	if err != nil {
-		logrus.Errorf("failed to save config: %v", err)
-	}
-
 	logrus.Info("exiting")
-	os.Exit(0)
+	return nil
 }

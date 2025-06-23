@@ -17,7 +17,7 @@ include makefiles/common.mk
 
 # Settings for this subproject
 # Entry file, containing func main
-ENTRY           := .
+ENTRY           := ./cmd/batt
 # All supported platforms for binary distribution
 BIN_PLATFORMS   := darwin/arm64
 # Binary basename (.exe will be automatically added when building for Windows)
