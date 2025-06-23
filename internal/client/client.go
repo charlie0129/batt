@@ -1,5 +1,7 @@
 package client
 
+// TODO: make this package public, so other clients can call it
+
 import (
 	"context"
 	"fmt"

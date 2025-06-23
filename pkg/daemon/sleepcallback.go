@@ -1,4 +1,4 @@
-package main
+package daemon
 
 /*
 #cgo LDFLAGS: -framework IOKit
@@ -37,7 +37,7 @@ func canSystemSleepCallback() {
 	*/
 	logrus.Debugln("received kIOMessageCanSystemSleep notification, idle sleep is about to kick in")
 
-	if !config.PreventIdleSleep {
+	if !conf.PreventIdleSleep() {
 		logrus.Debugln("PreventIdleSleep is disabled, allow idle sleep")
 		C.AllowPowerChange()
 		return
@@ -77,7 +77,7 @@ func systemWillSleepCallback() {
 	*/
 	logrus.Debugln("received kIOMessageSystemWillSleep notification, system will go to sleep")
 
-	if !config.DisableChargingPreSleep {
+	if !conf.DisableChargingPreSleep() {
 		logrus.Debugln("DisableChargingPreSleep is disabled, allow sleep")
 		C.AllowPowerChange()
 		return
@@ -90,7 +90,7 @@ func systemWillSleepCallback() {
 	// charging will not cause any problem.
 	// By always disabling charging before sleep (if charge limit is enabled), we can prevent
 	// some rare cases.
-	if config.Limit < 100 {
+	if conf.UpperLimit() < 100 {
 		logrus.Infof("charge limit is enabled, disabling charging, and allowing sleep")
 		// Delay next loop to prevent charging to be re-enabled after we disabled it.
 		// macOS will wait 30s before going to sleep, there is a chance that a maintain loop is
@@ -109,7 +109,7 @@ func systemWillSleepCallback() {
 			logrus.Errorf("DisableCharging failed: %v", err)
 			return
 		}
-		if config.ControlMagSafeLED {
+		if conf.ControlMagSafeLED() {
 			err = smcConn.SetMagSafeLedState(smc.LEDOff)
 			if err != nil {
 				logrus.Errorf("SetMagSafeLedState failed: %v", err)
@@ -133,11 +133,11 @@ func systemHasPoweredOnCallback() {
 	logrus.Debugln("received kIOMessageSystemHasPoweredOn notification, system has finished waking up")
 	lastWakeTime = time.Now()
 
-	if config.Limit < 100 {
+	if conf.UpperLimit() < 100 {
 		logrus.Debugf("delaying next loop by %d seconds", postSleepLoopDelaySeconds)
 		wg.Add(1)
 		go func() {
-			if config.DisableChargingPreSleep && config.ControlMagSafeLED {
+			if conf.DisableChargingPreSleep() && conf.ControlMagSafeLED() {
 				err := smcConn.SetMagSafeLedState(smc.LEDOff)
 				if err != nil {
 					logrus.Errorf("SetMagSafeLedState failed: %v", err)

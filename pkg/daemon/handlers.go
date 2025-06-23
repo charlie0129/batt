@@ -1,4 +1,4 @@
-package main
+package daemon
 
 import (
 	"errors"
@@ -8,44 +8,21 @@ import (
 	"github.com/distatus/battery"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+
+	"github.com/charlie0129/batt/pkg/config"
 )
 
 func getConfig(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, config)
-}
-
-func setConfig(c *gin.Context) {
-	var cfg Config
-	if err := c.BindJSON(&cfg); err != nil {
-		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		_ = c.AbortWithError(http.StatusBadRequest, err)
-		return
-	}
-
-	if cfg.Limit < 10 || cfg.Limit > 100 {
-		err := fmt.Errorf("limit must be between 10 and 100, got %d", cfg.Limit)
-		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		_ = c.AbortWithError(http.StatusBadRequest, err)
-		return
-	}
-
-	config = cfg
-	if err := saveConfig(); err != nil {
-		logrus.Errorf("saveConfig failed: %v", err)
-		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+	fc, err := config.NewRawFileConfigFromConfig(conf)
+	if err != nil {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-
-	logrus.Infof("set config: %#v", cfg)
-
-	// Immediate single maintain loop, to avoid waiting for the next loop
-	maintainLoopForced()
-	c.IndentedJSON(http.StatusCreated, "ok")
+	c.IndentedJSON(http.StatusOK, fc)
 }
 
 func getLimit(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, config.Limit)
+	c.IndentedJSON(http.StatusOK, conf.UpperLimit())
 }
 
 func setLimit(c *gin.Context) {
@@ -63,15 +40,15 @@ func setLimit(c *gin.Context) {
 		return
 	}
 
-	if l-config.LowerLimitDelta < 10 {
-		err := fmt.Errorf("limit must be at least %d, got %d", 10+config.LowerLimitDelta, l)
+	if delta := conf.UpperLimit() - conf.LowerLimit(); l-delta <= 10 {
+		err := fmt.Errorf("upper limit must be greater than lower limit + 10, got %d", l-delta)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	config.Limit = l
-	if err := saveConfig(); err != nil {
+	conf.SetUpperLimit(l)
+	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -83,10 +60,10 @@ func setLimit(c *gin.Context) {
 	var msg string
 	charge, err := smcConn.GetBatteryCharge()
 	if err != nil {
-		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", l, l-config.LowerLimitDelta)
+		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", conf.UpperLimit(), conf.LowerLimit())
 	} else {
-		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", l, l-config.LowerLimitDelta, charge)
-		if charge > config.Limit {
+		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", conf.UpperLimit(), conf.LowerLimit(), charge)
+		if charge > conf.UpperLimit() {
 			msg += ". Current charge is above the limit, so your computer will use power from the wall only. Battery charge will remain the same."
 		}
 	}
@@ -109,8 +86,8 @@ func setPreventIdleSleep(c *gin.Context) {
 		return
 	}
 
-	config.PreventIdleSleep = p
-	if err := saveConfig(); err != nil {
+	conf.SetPreventIdleSleep(p)
+	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -130,8 +107,8 @@ func setDisableChargingPreSleep(c *gin.Context) {
 		return
 	}
 
-	config.DisableChargingPreSleep = d
-	if err := saveConfig(); err != nil {
+	conf.SetDisableChargingPreSleep(d)
+	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -235,22 +212,22 @@ func setLowerLimitDelta(c *gin.Context) {
 		return
 	}
 
-	if config.Limit-d < 10 {
+	if conf.UpperLimit()-d < 10 {
 		err := fmt.Errorf("lower limit delta must be less than limit - 10, got %d", d)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	config.LowerLimitDelta = d
-	if err := saveConfig(); err != nil {
+	conf.SetLowerLimit(conf.UpperLimit() - d)
+	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	ret := fmt.Sprintf("set lower limit delta to %d, current upper/lower limit is %d%%/%d%%", d, config.Limit, config.Limit-config.LowerLimitDelta)
+	ret := fmt.Sprintf("set lower limit delta to %d, current upper/lower limit is %d%%/%d%%", d, conf.UpperLimit(), conf.LowerLimit())
 	logrus.Info(ret)
 
 	c.IndentedJSON(http.StatusCreated, ret)
@@ -273,8 +250,8 @@ func setControlMagSafeLED(c *gin.Context) {
 		return
 	}
 
-	config.ControlMagSafeLED = d
-	if err := saveConfig(); err != nil {
+	conf.SetControlMagSafeLED(d)
+	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
