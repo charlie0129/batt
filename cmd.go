@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/charlie0129/batt/internal/client"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
@@ -26,6 +27,83 @@ var (
 		gAdvanced,
 	}
 )
+
+type statusData struct {
+	charging      bool
+	pluggedIn     bool
+	adapter       bool
+	currentCharge int
+	batteryInfo   *battery.Battery
+	config        *Config
+}
+
+var apiClient = client.NewClient("/var/run/batt.sock")
+
+// fetchStatusData gathers all data required for the status command from the daemon.
+func fetchStatusData() (*statusData, error) {
+	ret, err := apiClient.Get("/charging")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get charging status: %w", err)
+	}
+	charging, err := strconv.ParseBool(ret)
+	if err != nil {
+		return nil, err
+	}
+
+	ret, err = apiClient.Get("/plugged-in")
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if you are plugged in: %w", err)
+	}
+	pluggedIn, err := strconv.ParseBool(ret)
+	if err != nil {
+		return nil, err
+	}
+
+	ret, err = apiClient.Get("/adapter")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get power adapter status: %w", err)
+	}
+	adapter, err := strconv.ParseBool(ret)
+	if err != nil {
+		return nil, err
+	}
+
+	ret, err = apiClient.Get("/current-charge")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current charge: %w", err)
+	}
+	currentCharge, err := strconv.Atoi(ret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal current charge: %w", err)
+	}
+
+	ret, err = apiClient.Get("/battery-info")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get battery info: %w", err)
+	}
+	var bat battery.Battery
+	if err := json.Unmarshal([]byte(ret), &bat); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal battery info: %w", err)
+	}
+
+	ret, err = apiClient.Get("/config")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get config: %w", err)
+	}
+	var conf Config
+	if err := json.Unmarshal([]byte(ret), &conf); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	return &statusData{
+		charging:      charging,
+		pluggedIn:     pluggedIn,
+		adapter:       adapter,
+		currentCharge: currentCharge,
+		batteryInfo:   &bat,
+		config:        &conf,
+	}, nil
+}
 
 // NewCommand .
 func NewCommand() *cobra.Command {
@@ -119,7 +197,7 @@ Setting the limit to 10-99 will enable the battery charge limit. However, settin
 				return fmt.Errorf("invalid number of arguments")
 			}
 
-			ret, err := put("/limit", args[0])
+			ret, err := apiClient.Put("/limit", args[0])
 			if err != nil {
 				return fmt.Errorf("failed to set limit: %v", err)
 			}
@@ -145,7 +223,7 @@ func NewDisableCommand() *cobra.Command {
 
 Stop batt from controlling battery charging. This will allow your Mac to charge to 100%.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ret, err := put("/limit", "100")
+			ret, err := apiClient.Put("/limit", "100")
 			if err != nil {
 				return fmt.Errorf("failed to disable batt: %v", err)
 			}
@@ -181,7 +259,7 @@ However, this options does not prevent manual sleep (limitation of macOS). For e
 			Use:   "enable",
 			Short: "Prevent idle sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/prevent-idle-sleep", "true")
+				ret, err := apiClient.Put("/prevent-idle-sleep", "true")
 				if err != nil {
 					return fmt.Errorf("failed to set prevent idle sleep: %v", err)
 				}
@@ -199,7 +277,7 @@ However, this options does not prevent manual sleep (limitation of macOS). For e
 			Use:   "disable",
 			Short: "Do not prevent idle sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/prevent-idle-sleep", "false")
+				ret, err := apiClient.Put("/prevent-idle-sleep", "false")
 				if err != nil {
 					return fmt.Errorf("failed to set prevent idle sleep: %v", err)
 				}
@@ -234,7 +312,7 @@ As described in preventing-idle-sleep, batt will be paused by macOS when your co
 			Use:   "enable",
 			Short: "Disable charging before sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/disable-charging-pre-sleep", "true")
+				ret, err := apiClient.Put("/disable-charging-pre-sleep", "true")
 				if err != nil {
 					return fmt.Errorf("failed to set disable charging pre sleep: %v", err)
 				}
@@ -252,7 +330,7 @@ As described in preventing-idle-sleep, batt will be paused by macOS when your co
 			Use:   "disable",
 			Short: "Do not disable charging before sleep during a charging session",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/disable-charging-pre-sleep", "false")
+				ret, err := apiClient.Put("/disable-charging-pre-sleep", "false")
 				if err != nil {
 					return fmt.Errorf("failed to set disable charging pre sleep: %v", err)
 				}
@@ -277,7 +355,7 @@ func NewAdapterCommand() *cobra.Command {
 		Use:     "adapter",
 		Short:   "Enable or disable power input",
 		GroupID: gBasic,
-		Long: `Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in. 
+		Long: `Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in.
 
 This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.
 
@@ -289,7 +367,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			Use:   "disable",
 			Short: "Disable power adapter",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/adapter", "false")
+				ret, err := apiClient.Put("/adapter", "false")
 				if err != nil {
 					return fmt.Errorf("failed to disable power adapter: %v", err)
 				}
@@ -307,7 +385,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			Use:   "enable",
 			Short: "Enable power adapter",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/adapter", "true")
+				ret, err := apiClient.Put("/adapter", "true")
 				if err != nil {
 					return fmt.Errorf("failed to enable power adapter: %v", err)
 				}
@@ -325,7 +403,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			Use:   "status",
 			Short: "Get the current status of power adapter",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := get("/adapter")
+				ret, err := apiClient.Get("/adapter")
 				if err != nil {
 					return fmt.Errorf("failed to get power adapter status: %v", err)
 				}
@@ -356,90 +434,38 @@ func NewStatusCommand() *cobra.Command {
 		Long:    `Get batt status, battery info, and configuration.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Get various info first.
-			ret, err := get("/charging")
-			if err != nil {
-				return fmt.Errorf("failed to get charging status: %v", err)
-			}
-			charging, err := strconv.ParseBool(ret)
+			data, err := fetchStatusData()
 			if err != nil {
 				return err
-			}
-
-			ret, err = get("/plugged-in")
-			if err != nil {
-				return fmt.Errorf("failed to check if you are plugged in: %v", err)
-			}
-			pluggedIn, err := strconv.ParseBool(ret)
-			if err != nil {
-				return err
-			}
-
-			ret, err = get("/adapter")
-			if err != nil {
-				return fmt.Errorf("failed to get power adapter status: %v", err)
-			}
-			adapter, err := strconv.ParseBool(ret)
-			if err != nil {
-				return err
-			}
-
-			ret, err = get("/current-charge")
-			if err != nil {
-				return fmt.Errorf("failed to get current charge: %v", err)
-			}
-			currentCharge, err := strconv.Atoi(ret)
-			if err != nil {
-				return fmt.Errorf("failed to unmarshal current charge: %v", err)
-			}
-
-			ret, err = get("/battery-info")
-			if err != nil {
-				return fmt.Errorf("failed to get battery info: %v", err)
-			}
-			var bat battery.Battery
-			err = json.Unmarshal([]byte(ret), &bat)
-			if err != nil {
-				return fmt.Errorf("failed to unmarshal battery info: %v", err)
-			}
-
-			ret, err = get("/config")
-			if err != nil {
-				return fmt.Errorf("failed to get config: %v", err)
-			}
-
-			conf := Config{}
-			err = json.Unmarshal([]byte(ret), &conf)
-			if err != nil {
-				return fmt.Errorf("failed to unmarshal config: %v", err)
 			}
 
 			// Charging status.
 			cmd.Println(bold("Charging status:"))
 
 			additionalMsg := " (refreshes can take up to 2 minutes)"
-			if charging {
+			if data.charging {
 				cmd.Println("  Allow charging: " + bool2Text(true) + additionalMsg)
 				cmd.Print("    Your Mac will charge")
-				if !pluggedIn {
+				if !data.pluggedIn {
 					cmd.Print(", but you are not plugged in yet.") // not plugged in but charging is allowed.
 				} else {
 					cmd.Print(".") // plugged in and charging is allowed.
 				}
 				cmd.Println()
-			} else if conf.Limit < 100 {
+			} else if data.config.Limit < 100 {
 				cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
 				cmd.Print("    Your Mac will not charge")
-				if pluggedIn {
+				if data.pluggedIn {
 					cmd.Print(" even if you plug in")
 				}
-				low := conf.Limit - conf.LowerLimitDelta
-				if currentCharge >= conf.Limit {
+				low := config.Limit - config.LowerLimitDelta
+				if data.currentCharge >= config.Limit {
 					cmd.Print(", because your current charge is above the limit.")
-				} else if currentCharge < conf.Limit && currentCharge >= low {
+				} else if data.currentCharge < config.Limit && data.currentCharge >= low {
 					cmd.Print(", because your current charge is above the lower limit. Charging will be allowed after current charge drops below the lower limit.")
 				}
-				if pluggedIn && currentCharge < low {
-					if adapter {
+				if data.pluggedIn && data.currentCharge < low {
+					if data.adapter {
 						cmd.Print(". However, if no manual intervention is involved, charging should be allowed soon. Wait 2 minutes and come back.")
 					} else {
 						cmd.Print(", because adapter is disabled.")
@@ -448,7 +474,7 @@ func NewStatusCommand() *cobra.Command {
 				cmd.Println()
 			}
 
-			if adapter {
+			if data.adapter {
 				cmd.Println("  Use power adapter: " + bool2Text(true))
 				cmd.Println("    Your Mac will use power from the wall (to operate or charge), if it is plugged in.")
 			} else {
@@ -461,10 +487,28 @@ func NewStatusCommand() *cobra.Command {
 			// Battery Info.
 			cmd.Println(bold("Battery status:"))
 
-			cmd.Printf("  Current charge: %s\n", bold("%d%%", currentCharge))
+			cmd.Printf("  Current charge: %s\n", bold("%d%%", data.currentCharge))
+
+			if data.batteryInfo.State == battery.Charging && data.config.Limit < 100 && data.currentCharge < data.config.Limit {
+				designCapacityWh := data.batteryInfo.Design / 1000.0
+				chargeRateW := data.batteryInfo.ChargeRate / 1000.0
+
+				targetCapacityWh := float64(data.config.Limit) / 100.0 * designCapacityWh
+				currentCapacityWh := float64(data.currentCharge) / 100.0 * designCapacityWh
+				capacityToChargeWh := targetCapacityWh - currentCapacityWh
+
+				if chargeRateW > 0 && capacityToChargeWh > 0 {
+					timeToLimitHours := capacityToChargeWh / chargeRateW
+					timeToLimitMinutes := float64(timeToLimitHours * 60)
+
+					if timeToLimitMinutes > 0.00 {
+						cmd.Printf("  Time to limit (%d%%): %s\n", data.config.Limit, bold("~%d minutes", int(timeToLimitMinutes)))
+					}
+				}
+			}
 
 			state := "not charging"
-			switch bat.State {
+			switch data.batteryInfo.State {
 			case battery.Charging:
 				state = color.GreenString("charging")
 			case battery.Discharging:
@@ -473,24 +517,24 @@ func NewStatusCommand() *cobra.Command {
 				state = "full"
 			}
 			cmd.Printf("  State: %s\n", bold("%s", state))
-			cmd.Printf("  Full capacity: %s\n", bold("%.1f Wh", bat.Design/1e3))
-			cmd.Printf("  Charge rate: %s\n", bold("%.1f W", bat.ChargeRate/1e3))
-			cmd.Printf("  Voltage: %s\n", bold("%.2f V", bat.DesignVoltage))
+			cmd.Printf("  Full capacity: %s\n", bold("%.1f Wh", data.batteryInfo.Design/1e3))
+			cmd.Printf("  Charge rate: %s\n", bold("%.1f W", data.batteryInfo.ChargeRate/1e3))
+			cmd.Printf("  Voltage: %s\n", bold("%.2f V", data.batteryInfo.DesignVoltage))
 
 			cmd.Println()
 
 			// Config.
-			cmd.Println(bold("Batt configuration:"))
-			if conf.Limit < 100 {
-				cmd.Printf("  Upper limit: %s\n", bold("%d%%", conf.Limit))
-				cmd.Printf("  Lower limit: %s (%d-%d)\n", bold("%d%%", conf.Limit-conf.LowerLimitDelta), conf.Limit, conf.LowerLimitDelta)
+			cmd.Println(bold("Battery configuration:"))
+			if data.config.Limit < 100 {
+				cmd.Printf("  Upper limit: %s\n", bold("%d%%", data.config.Limit))
+				cmd.Printf("  Lower limit: %s (%d-%d)\n", bold("%d%%", data.config.Limit-data.config.LowerLimitDelta), data.config.Limit, data.config.LowerLimitDelta)
 			} else {
 				cmd.Printf("  Charge limit: %s\n", bold("100%% (batt disabled)"))
 			}
-			cmd.Printf("  Prevent idle-sleep when charging: %s\n", bool2Text(conf.PreventIdleSleep))
-			cmd.Printf("  Disable charging before sleep if charge limit is enabled: %s\n", bool2Text(conf.DisableChargingPreSleep))
-			cmd.Printf("  Allow non-root users to access the daemon: %s\n", bool2Text(conf.AllowNonRootAccess))
-			cmd.Printf("  Control MagSafe LED: %s\n", bool2Text(conf.ControlMagSafeLED))
+			cmd.Printf("  Prevent idle-sleep when charging: %s\n", bool2Text(data.config.PreventIdleSleep))
+			cmd.Printf("  Disable charging before sleep if charge limit is enabled: %s\n", bool2Text(data.config.DisableChargingPreSleep))
+			cmd.Printf("  Allow non-root users to access the daemon: %s\n", bool2Text(data.config.AllowNonRootAccess))
+			cmd.Printf("  Control MagSafe LED: %s\n", bool2Text(data.config.ControlMagSafeLED))
 			return nil
 		},
 	}
@@ -519,7 +563,7 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 				return fmt.Errorf("invalid delta: %v", err)
 			}
 
-			ret, err := put("/lower-limit-delta", strconv.Itoa(delta))
+			ret, err := apiClient.Put("/lower-limit-delta", strconv.Itoa(delta))
 			if err != nil {
 				return fmt.Errorf("failed to set lower limit delta: %v", err)
 			}
@@ -543,7 +587,7 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 		Use:     "magsafe-led",
 		Short:   "Control MagSafe LED according to battery charging status",
 		GroupID: gAdvanced,
-		Long: `This option can make the MagSafe LED on your MacBook change color according to the charging status. For example: 
+		Long: `This option can make the MagSafe LED on your MacBook change color according to the charging status. For example:
 
 - Green: charge limit is reached and charging is stopped.
 - Orange: charging is in progress.
@@ -557,7 +601,7 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`,
 			Use:   "enable",
 			Short: "Control MagSafe LED according to battery charging status",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/magsafe-led", "true")
+				ret, err := apiClient.Put("/magsafe-led", "true")
 				if err != nil {
 					return fmt.Errorf("failed to set magsafe: %v", err)
 				}
@@ -575,7 +619,7 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`,
 			Use:   "disable",
 			Short: "Do not control MagSafe LED",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := put("/magsafe-led", "false")
+				ret, err := apiClient.Put("/magsafe-led", "false")
 				if err != nil {
 					return fmt.Errorf("failed to set magsafe: %v", err)
 				}
