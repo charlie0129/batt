@@ -16,6 +16,7 @@ import (
 )
 
 func init() {
+	// Only non-homebrew version has install and uninstall commands.
 	commandGroups = append(commandGroups, gInstallation)
 }
 

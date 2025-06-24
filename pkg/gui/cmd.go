@@ -17,14 +17,14 @@ import (
 	"github.com/charlie0129/batt/pkg/version"
 )
 
-func NewGUICommand(unixSocketPath string) *cobra.Command {
+func NewGUICommand(unixSocketPath string, groupID string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "gui",
-		Short:  "Start the batt GUI",
-		Hidden: true,
+		Use:     "gui",
+		Short:   "Start the batt GUI (debug)",
+		GroupID: groupID,
 		Long: `Start the batt GUI.
 
-The GUI should be started by launchd. This command is for testing purposes only and should not be called by end users.`,
+This command should not be called directly by user. Users should use the .app bundle to start the GUI.`,
 		Run: func(_ *cobra.Command, _ []string) {
 			Run(unixSocketPath)
 		},

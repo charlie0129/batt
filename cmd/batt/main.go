@@ -55,6 +55,11 @@ func handleCmdError(err error) {
 }
 
 func main() {
+	// Reduce the number of CPUs used by the batt.
+	// batt does not need to use much.
+	if os.Getenv("GOMAXPROCS") == "" {
+		runtime.GOMAXPROCS(2)
+	}
 	runtime.LockOSThread()
 
 	cmd := NewCommand()
@@ -73,11 +78,6 @@ func NewCommand() *cobra.Command {
 Website: https://github.com/charlie0129/batt`,
 		SilenceUsage: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			// Reduce the number of CPUs used by the batt.
-			// batt does not need use much.
-			if os.Getenv("GOMAXPROCS") == "" {
-				runtime.GOMAXPROCS(2)
-			}
 			return setupLogger()
 		},
 	}
@@ -113,7 +113,7 @@ Website: https://github.com/charlie0129/batt`,
 		NewSetControlMagSafeLEDCommand(),
 		NewInstallCommand(),
 		NewUninstallCommand(),
-		gui.NewGUICommand(unixSocketPath),
+		gui.NewGUICommand(unixSocketPath, ""),
 	)
 
 	return cmd
