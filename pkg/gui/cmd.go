@@ -49,6 +49,7 @@ func Run(unixSocketPath string) {
 	app.Run()
 }
 
+//nolint:gocyclo
 func addMenubar(app appkit.Application, apiClient *client.Client) {
 	menubarIcon := appkit.StatusBar_SystemStatusBar().StatusItemWithLength(appkit.VariableStatusItemLength)
 	objc.Retain(&menubarIcon)
@@ -206,6 +207,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 
 	// ==================== CALLBACKS ====================
 
+	//nolint:staticcheck // the boolean conditions are intentionally written this way
 	toggleMenusRequiringInstall := func(battInstalled bool, capable, needUpgrade bool) {
 		setMenubarImage(menubarIcon, battInstalled, capable, needUpgrade)
 

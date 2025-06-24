@@ -98,10 +98,9 @@ func isDaemonInstalled() bool {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false
-		} else {
-			logrus.Warnf("Failed to check if %s exists: %s", plistPath, err)
-			return false
 		}
+		logrus.Warnf("Failed to check if %s exists: %s", plistPath, err)
+		return false
 	}
 	return true
 }
