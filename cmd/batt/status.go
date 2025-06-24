@@ -1,15 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/distatus/battery"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
-	"github.com/charlie0129/batt/internal/client"
+	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
 )
 
@@ -26,58 +24,34 @@ var apiClient = client.NewClient("/var/run/batt.sock")
 
 // fetchStatusData gathers all data required for the status command from the daemon.
 func fetchStatusData() (*statusData, error) {
-	ret, err := apiClient.Get("/charging")
+	charging, err := apiClient.GetCharging()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get charging status: %w", err)
 	}
-	charging, err := strconv.ParseBool(ret)
-	if err != nil {
-		return nil, err
-	}
 
-	ret, err = apiClient.Get("/plugged-in")
+	pluggedIn, err := apiClient.GetPluggedIn()
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if you are plugged in: %w", err)
 	}
-	pluggedIn, err := strconv.ParseBool(ret)
-	if err != nil {
-		return nil, err
-	}
 
-	ret, err = apiClient.Get("/adapter")
+	adapter, err := apiClient.GetAdapter()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get power adapter status: %w", err)
 	}
-	adapter, err := strconv.ParseBool(ret)
-	if err != nil {
-		return nil, err
-	}
 
-	ret, err = apiClient.Get("/current-charge")
+	currentCharge, err := apiClient.GetCurrentCharge()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current charge: %w", err)
 	}
-	currentCharge, err := strconv.Atoi(ret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal current charge: %w", err)
-	}
 
-	ret, err = apiClient.Get("/battery-info")
+	bat, err := apiClient.GetBatteryInfo()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get battery info: %w", err)
 	}
-	var bat battery.Battery
-	if err := json.Unmarshal([]byte(ret), &bat); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal battery info: %w", err)
-	}
 
-	ret, err = apiClient.Get("/config")
+	conf, err := apiClient.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config: %w", err)
-	}
-	var conf config.RawFileConfig
-	if err := json.Unmarshal([]byte(ret), &conf); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	return &statusData{
@@ -85,8 +59,8 @@ func fetchStatusData() (*statusData, error) {
 		pluggedIn:     pluggedIn,
 		adapter:       adapter,
 		currentCharge: currentCharge,
-		batteryInfo:   &bat,
-		config:        &conf,
+		batteryInfo:   bat,
+		config:        conf,
 	}, nil
 }
 

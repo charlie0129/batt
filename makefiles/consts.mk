@@ -20,13 +20,6 @@ GO_VERSION       := $(shell grep -E '^go [[:digit:]]{1,3}\.[[:digit:]]{1,3}$$' g
 # Local Go release version (only supports go1.16 and later)
 LOCAL_GO_VERSION := $(shell go env GOVERSION 2>/dev/null | grep -oE "go[[:digit:]]{1,3}\.[[:digit:]]{1,3}" || echo "none")
 
-# Warn if local go release version is different from what is specified in go.mod.
-ifneq (none, $(LOCAL_GO_VERSION))
-  ifneq (go$(GO_VERSION), $(LOCAL_GO_VERSION))
-    $(warning Your local Go release ($(LOCAL_GO_VERSION)) is different from the one that this go module assumes (go$(GO_VERSION)).)
-  endif
-endif
-
 # Set DEBUG to 1 to optimize binary for debugging, otherwise for release
 DEBUG ?=
 

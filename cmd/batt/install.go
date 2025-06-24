@@ -5,17 +5,14 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/charlie0129/batt/hack"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/smc"
+	daemonutils "github.com/charlie0129/batt/pkg/utils/daemon"
 )
 
 func init() {
@@ -48,7 +45,7 @@ By default, only root user is allowed to access the batt daemon for security rea
 				logrus.Info("only root user is allowed to access the batt daemon.")
 			}
 
-			err = installDaemon()
+			err = daemonutils.Install()
 			if err != nil {
 				// check if current user is root
 				if os.Geteuid() != 0 {
@@ -79,7 +76,9 @@ By default, only root user is allowed to access the batt daemon for security rea
 
 // NewUninstallCommand .
 func NewUninstallCommand() *cobra.Command {
-	return &cobra.Command{
+	noResetCharging := false
+
+	cmd := &cobra.Command{
 		Use:     "uninstall",
 		Short:   "Uninstall batt (system-wide)",
 		GroupID: gInstallation,
@@ -89,7 +88,7 @@ This stops batt and removes it from launchd.
 
 You must run this command as root.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			err := uninstallDaemon()
+			err := daemonutils.Uninstall()
 			if err != nil {
 				// check if current user is root
 				if os.Geteuid() != 0 {
@@ -98,27 +97,29 @@ You must run this command as root.`,
 				return fmt.Errorf("failed to uninstall daemon: %v", err)
 			}
 
+			if !noResetCharging {
+				// Open Apple SMC for read/writing
+				smcC := smc.New()
+				if err := smcC.Open(); err != nil {
+					return fmt.Errorf("failed to open SMC: %v", err)
+				}
+
+				err = smcC.EnableCharging()
+				if err != nil {
+					return fmt.Errorf("failed to enable charging: %v", err)
+				}
+
+				err = smcC.EnableAdapter()
+				if err != nil {
+					return fmt.Errorf("failed to enable adapter: %v", err)
+				}
+
+				if err := smcC.Close(); err != nil {
+					return fmt.Errorf("failed to close SMC: %v", err)
+				}
+			}
+
 			logrus.Infof("resetting charge limits")
-
-			// Open Apple SMC for read/writing
-			smcC := smc.New()
-			if err := smcC.Open(); err != nil {
-				return fmt.Errorf("failed to open SMC: %v", err)
-			}
-
-			err = smcC.EnableCharging()
-			if err != nil {
-				return fmt.Errorf("failed to enable charging: %v", err)
-			}
-
-			err = smcC.EnableAdapter()
-			if err != nil {
-				return fmt.Errorf("failed to enable adapter: %v", err)
-			}
-
-			if err := smcC.Close(); err != nil {
-				return fmt.Errorf("failed to close SMC: %v", err)
-			}
 
 			fmt.Println("successfully uninstalled")
 
@@ -127,101 +128,8 @@ You must run this command as root.`,
 			return nil
 		},
 	}
-}
 
-var (
-	plistPath = "/Library/LaunchDaemons/cc.chlc.batt.plist"
-)
+	cmd.Flags().BoolVar(&noResetCharging, "no-reset-charging", false, "Do not reset charging limits after uninstalling. This is useful if you want to keep the current charging limits for future use.")
 
-func installDaemon() error {
-	// Get the path to the current executable
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get the path to the current executable: %w", err)
-	}
-	exePath, err = filepath.Abs(exePath)
-	if err != nil {
-		return fmt.Errorf("failed to get the absolute path to the current executable: %w", err)
-	}
-
-	err = os.Chmod(exePath, 0755)
-	if err != nil {
-		return fmt.Errorf("failed to chmod the current executable to 0755: %w", err)
-	}
-
-	logrus.Infof("current executable path: %s", exePath)
-
-	tmpl := strings.ReplaceAll(hack.PlistTemplate, "/path/to/batt", exePath)
-
-	logrus.Infof("writing launch daemon to /Library/LaunchDaemons")
-
-	// mkdir -p
-	err = os.MkdirAll("/Library/LaunchDaemons", 0755)
-	if err != nil {
-		return fmt.Errorf("failed to create /Library/LaunchDaemons: %w", err)
-	}
-
-	// warn if the file already exists
-	_, err = os.Stat(plistPath)
-	if err == nil {
-		logrus.Errorf("%s already exists", plistPath)
-		return fmt.Errorf("%s already exists. This is often caused by an incorrect installation. Did you forget to uninstall batt before installing it again? Please uninstall it first, by running 'sudo batt uninstall'. If you already removed batt, you can solve this problem by 'sudo rm %s'", plistPath, plistPath)
-	}
-
-	err = os.WriteFile(plistPath, []byte(tmpl), 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write %s: %w", plistPath, err)
-	}
-
-	// chown root:wheel
-	err = os.Chown(plistPath, 0, 0)
-	if err != nil {
-		return fmt.Errorf("failed to chown %s: %w", plistPath, err)
-	}
-
-	logrus.Infof("starting batt")
-
-	// run launchctl load /Library/LaunchDaemons/cc.chlc.batt.plist
-	err = exec.Command(
-		"/bin/launchctl",
-		"load",
-		plistPath,
-	).Run()
-	if err != nil {
-		return fmt.Errorf("failed to load %s: %w", plistPath, err)
-	}
-
-	return nil
-}
-
-func uninstallDaemon() error {
-	logrus.Infof("stopping batt")
-
-	// run launchctl unload /Library/LaunchDaemons/cc.chlc.batt.plist
-	err := exec.Command(
-		"/bin/launchctl",
-		"unload",
-		plistPath,
-	).Run()
-	if err != nil {
-		return fmt.Errorf("failed to unload %s: %w. Are you root?", plistPath, err)
-	}
-
-	logrus.Infof("removing launch daemon")
-
-	// if the file doesn't exist, we don't need to remove it
-	_, err = os.Stat(plistPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("failed to stat %s: %w", plistPath, err)
-	}
-
-	err = os.Remove(plistPath)
-	if err != nil {
-		return fmt.Errorf("failed to remove %s: %w. Are you root?", plistPath, err)
-	}
-
-	return nil
+	return cmd
 }

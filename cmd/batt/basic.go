@@ -35,7 +35,12 @@ Setting the limit to 10-99 will enable the battery charge limit. However, settin
 				return fmt.Errorf("invalid number of arguments")
 			}
 
-			ret, err := apiClient.Put("/limit", args[0])
+			limit, err := strconv.Atoi(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid limit: %v", err)
+			}
+
+			ret, err := apiClient.SetLimit(limit)
 			if err != nil {
 				return fmt.Errorf("failed to set limit: %v", err)
 			}
@@ -60,7 +65,7 @@ func NewDisableCommand() *cobra.Command {
 
 Stop batt from controlling battery charging. This will allow your Mac to charge to 100%.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ret, err := apiClient.Put("/limit", "100")
+			ret, err := apiClient.SetLimit(100)
 			if err != nil {
 				return fmt.Errorf("failed to disable batt: %v", err)
 			}
@@ -93,7 +98,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			Use:   "disable",
 			Short: "Disable power adapter",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.Put("/adapter", "false")
+				ret, err := apiClient.SetAdapter(false)
 				if err != nil {
 					return fmt.Errorf("failed to disable power adapter: %v", err)
 				}
@@ -111,7 +116,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			Use:   "enable",
 			Short: "Enable power adapter",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.Put("/adapter", "true")
+				ret, err := apiClient.SetAdapter(true)
 				if err != nil {
 					return fmt.Errorf("failed to enable power adapter: %v", err)
 				}
@@ -129,18 +134,15 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			Use:   "status",
 			Short: "Get the current status of power adapter",
 			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.Get("/adapter")
+				ret, err := apiClient.GetAdapter()
 				if err != nil {
 					return fmt.Errorf("failed to get power adapter status: %v", err)
 				}
 
-				switch ret {
-				case "true":
+				if ret {
 					logrus.Infof("power adapter is enabled")
-				case "false":
+				} else {
 					logrus.Infof("power adapter is disabled")
-				default:
-					logrus.Errorf("unknown power adapter status")
 				}
 
 				return nil
@@ -173,7 +175,7 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 				return fmt.Errorf("invalid delta: %v", err)
 			}
 
-			ret, err := apiClient.Put("/lower-limit-delta", strconv.Itoa(delta))
+			ret, err := apiClient.SetLowerLimitDelta(delta)
 			if err != nil {
 				return fmt.Errorf("failed to set lower limit delta: %v", err)
 			}

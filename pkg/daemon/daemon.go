@@ -43,6 +43,8 @@ func setupRoutes() *gin.Engine {
 	router.PUT("/magsafe-led", setControlMagSafeLED)
 	router.GET("/current-charge", getCurrentCharge)
 	router.GET("/plugged-in", getPluggedIn)
+	router.GET("/charging-control-capable", getChargingControlCapable)
+	router.GET("/version", getVersion)
 
 	return router
 }
@@ -55,7 +57,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	if err != nil {
 		logrus.Fatalf("failed to parse config during startup: %v", err)
 	}
-	logrus.Infof("config loaded")
+	logrus.WithFields(conf.LogrusFields()).Infof("config loaded")
 
 	// Receive SIGHUP to reload config
 	go func() {

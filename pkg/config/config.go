@@ -1,5 +1,9 @@
 package config
 
+import (
+	"github.com/sirupsen/logrus"
+)
+
 type Config interface {
 	UpperLimit() int
 	LowerLimit() int
@@ -14,6 +18,8 @@ type Config interface {
 	SetDisableChargingPreSleep(bool)
 	SetAllowNonRootAccess(bool)
 	SetControlMagSafeLED(bool)
+
+	LogrusFields() logrus.Fields
 
 	// Load reads the configuration from the source.
 	Load() error

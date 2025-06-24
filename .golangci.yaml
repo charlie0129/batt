@@ -65,6 +65,9 @@ linters:
           - revive
         text: 'exported: exported'
       - linters:
+          - revive
+        text: 'unused-parameter'
+      - linters:
           - gosec
         text: 'G101:'
       - linters:

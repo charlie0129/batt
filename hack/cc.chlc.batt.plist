@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-	<key>KeepAlive</key>
-	<true/>
-	<key>Label</key>
-	<string>cc.chlc.batt</string>
-	<!-- Make it interactive to avoid batt being stopped by macOS, which could cause malfunctions of batt. -->
-	<key>ProcessType</key>
-	<string>Interactive</string>
-	<key>ProgramArguments</key>
-	<array>
-		<string>/path/to/batt</string>
-		<string>daemon</string>
-		<string>--log-level=debug</string>
-	</array>
-	<key>RunAtLoad</key>
-	<true/>
-	<key>StandardErrorPath</key>
-	<string>/tmp/batt.log</string>
-	<key>StandardOutPath</key>
-	<string>/tmp/batt.log</string>
-</dict>
+    <dict>
+        <key>KeepAlive</key>
+        <true/>
+        <key>Label</key>
+        <string>cc.chlc.batt</string>
+        <!-- Make it interactive to avoid batt being stopped by macOS, which could cause malfunctions of batt. -->
+        <key>ProcessType</key>
+        <string>Interactive</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/path/to/batt</string>
+            <string>daemon</string>
+            <string>--log-level=debug</string>
+        </array>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>StandardErrorPath</key>
+        <string>/tmp/batt.log</string>
+        <key>StandardOutPath</key>
+        <string>/tmp/batt.log</string>
+    </dict>
 </plist>
