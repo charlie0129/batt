@@ -1,25 +1,20 @@
 package gui
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
-	"runtime"
+	"runtime/debug"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/progrium/darwinkit/macos/foundation"
 	"github.com/progrium/darwinkit/objc"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/version"
-)
-
-var (
-	battSymlinkLocation = "/usr/local/bin/batt"
 )
 
 func NewGUICommand(unixSocketPath string) *cobra.Command {
@@ -39,87 +34,31 @@ The GUI should be started by launchd. This command is for testing purposes only 
 }
 
 func Run(unixSocketPath string) {
-	runtime.LockOSThread()
+	debug.PrintStack()
 
 	apiClient := client.NewClient(unixSocketPath)
 
 	app := appkit.Application_SharedApplication()
 	delegate := &appkit.ApplicationDelegate{}
 	delegate.SetApplicationDidFinishLaunching(func(notification foundation.Notification) {
+		logrus.WithField("version", version.Version).WithField("gitCommit", version.GitCommit).Info("batt gui")
 		addMenubar(app, apiClient)
-	})
-	delegate.SetApplicationWillFinishLaunching(func(foundation.Notification) {
-
 	})
 
 	app.SetDelegate(delegate)
 	app.Run()
 }
 
-func installDaemon(exe string) error {
-	output := &bytes.Buffer{}
-	cmd := exec.Command("/usr/bin/osascript", "-e", fmt.Sprintf("do shell script \"%s install --allow-non-root-access && /bin/ln -sf %s %s\" with administrator privileges", exe, exe, battSymlinkLocation))
-	cmd.Stderr = output
-	cmd.Stdout = output
-	err := cmd.Run()
-	if err != nil {
-		return pkgerrors.Wrapf(err, "failed to install batt daemon: %s", output.String())
-	}
-
-	return nil
-}
-
-func startAppAtBoot(exe string) error {
-	// tmpl := strings.ReplaceAll(hack.LaunchAgentPlistTemplate, "/path/to/batt", exe)
-	//
-	// home, err := os.UserHomeDir()
-	// if err != nil {
-	// 	return pkgerrors.Wrapf(err, "failed to get home directory")
-	// }
-	// launchAgentsDir := filepath.Join(home, "Library/LaunchAgents")
-	//
-	// // mkdir -p
-	// err = os.MkdirAll(launchAgentsDir, 0755)
-	// if err != nil {
-	// 	return pkgerrors.Wrapf(err, "failed to create launch agent directory")
-	// }
-	//
-	// err = os.WriteFile(path.Join(launchAgentsDir, "cc.chlc.battapp.plist"), []byte(tmpl), 0644)
-	// if err != nil {
-	// 	return pkgerrors.Wrapf(err, "failed to create launch agent plist")
-	// }
-	//
-	// return nil
-
-}
-
 func addMenubar(app appkit.Application, apiClient *client.Client) {
-	// TODO: prevent homebrew version from using it
-	item := appkit.StatusBar_SystemStatusBar().StatusItemWithLength(appkit.VariableStatusItemLength)
-	objc.Retain(&item)
-	item.Button().SetImage(getMenubarImage(false, false, false))
-
-	capable, err := apiClient.GetChargingControlCapable()
-	if err != nil {
-		item.Button().SetImage(getMenubarImage(false, false, false))
-	} else {
-		daemonVersion, err := apiClient.GetVersion()
-		if err != nil || daemonVersion != version.Version {
-			item.Button().SetImage(getMenubarImage(true, capable, true))
-		}
-	}
-
+	menubarIcon := appkit.StatusBar_SystemStatusBar().StatusItemWithLength(appkit.VariableStatusItemLength)
+	objc.Retain(&menubarIcon)
+	setMenubarImage(menubarIcon, false, false, false)
 	menu := appkit.NewMenuWithTitle("batt")
 	menu.SetAutoenablesItems(false)
 
 	// ==================== INSTALL & STATES ====================
 
-	upgradeItem := appkit.NewMenuItemWithAction("Upgrade daemon...", "u", func(sender objc.Object) {
-
-	})
-	menu.AddItem(upgradeItem)
-
-	installItem := appkit.NewMenuItemWithAction("Install daemon...", "i", func(sender objc.Object) {
+	unintallOrUpgrade := func(sender objc.Object) {
 		exe, err := os.Executable()
 		if err != nil {
 			showAlert("Failed to get executable path", err.Error())
@@ -132,14 +71,19 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 			return
 		}
 
-		err = startAppAtBoot(exe)
+		err = startAppAtBoot()
 		if err != nil {
 			showAlert("Failed to start app at boot", err.Error())
 			return
 		}
 
-		item.Button().SetImage(getMenubarImage(true, true, false))
-	})
+		setMenubarImage(menubarIcon, true, true, false)
+	}
+
+	upgradeItem := appkit.NewMenuItemWithAction("Upgrade daemon...", "u", unintallOrUpgrade)
+	menu.AddItem(upgradeItem)
+
+	installItem := appkit.NewMenuItemWithAction("Install daemon...", "i", unintallOrUpgrade)
 	menu.AddItem(installItem)
 
 	stateItem := appkit.NewMenuItemWithAction("Loading...", "", func(sender objc.Object) {})
@@ -157,47 +101,18 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	quickLimitsItem.SetEnabled(false)
 	menu.AddItem(quickLimitsItem)
 
-	// TODO: move them into a for loop. I am too lazy to do it right now.
-	set50Item := appkit.NewMenuItemWithAction("Set 50% Limit", "5", func(sender objc.Object) {
-		ret, err := apiClient.SetLimit(50)
-		if err != nil {
-			showAlert("Failed to set limit", ret+err.Error())
-			return
-		}
-	})
-	menu.AddItem(set50Item)
-	set60Item := appkit.NewMenuItemWithAction("Set 60% Limit", "6", func(sender objc.Object) {
-		ret, err := apiClient.SetLimit(60)
-		if err != nil {
-			showAlert("Failed to set limit", ret+err.Error())
-			return
-		}
-	})
-	menu.AddItem(set60Item)
-	set70Item := appkit.NewMenuItemWithAction("Set 70% Limit", "7", func(sender objc.Object) {
-		ret, err := apiClient.SetLimit(70)
-		if err != nil {
-			showAlert("Failed to set limit", ret+err.Error())
-			return
-		}
-	})
-	menu.AddItem(set70Item)
-	set80Item := appkit.NewMenuItemWithAction("Set 80% Limit", "8", func(sender objc.Object) {
-		ret, err := apiClient.SetLimit(80)
-		if err != nil {
-			showAlert("Failed to set limit", ret+err.Error())
-			return
-		}
-	})
-	menu.AddItem(set80Item)
-	set90Item := appkit.NewMenuItemWithAction("Set 90% Limit", "9", func(sender objc.Object) {
-		ret, err := apiClient.SetLimit(90)
-		if err != nil {
-			showAlert("Failed to set limit", ret+err.Error())
-			return
-		}
-	})
-	menu.AddItem(set90Item)
+	setQuickLimitsItems := map[int]appkit.MenuItem{}
+
+	for _, i := range []int{50, 60, 70, 80, 90} {
+		setQuickLimitsItems[i] = appkit.NewMenuItemWithAction(fmt.Sprintf("Set %d%% Limit", i), fmt.Sprintf("%d", i), func(sender objc.Object) {
+			ret, err := apiClient.SetLimit(i)
+			if err != nil {
+				showAlert("Failed to set limit", ret+err.Error())
+				return
+			}
+		})
+		menu.AddItem(setQuickLimitsItems[i])
+	}
 
 	// ==================== ADVANCED ====================
 
@@ -241,6 +156,10 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 
 	advancedMenu.AddItem(appkit.MenuItem_SeparatorItem())
 
+	versionItem := appkit.NewMenuItemWithAction("Version: "+version.Version, "", func(sender objc.Object) {})
+	versionItem.SetEnabled(false)
+	advancedMenu.AddItem(versionItem)
+
 	uninstallItem := appkit.NewMenuItemWithAction("Uninstall daemon...", "", func(sender objc.Object) {
 		exe, err := os.Executable()
 		if err != nil {
@@ -248,19 +167,19 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 			return
 		}
 
-		output := &bytes.Buffer{}
-
-		cmd := exec.Command("/usr/bin/osascript", "-e", fmt.Sprintf("do shell script \"%s uninstall && rm -f %s\" with administrator privileges", exe, battSymlinkLocation))
-		cmd.Stderr = output
-		cmd.Stdout = output
-		err = cmd.Run()
+		err = uninstallDaemon(exe)
 		if err != nil {
-			showAlert("Failed to uninstall daemon", output.String())
+			showAlert("Failed to uninstall daemon", err.Error())
 			return
 		}
 
-		item.Button().SetImage(getMenubarImage(false, true, false))
+		err = UnregisterLoginItem()
+		if err != nil {
+			showAlert("Failed to unregister login item", err.Error())
+			return
+		}
 
+		setMenubarImage(menubarIcon, false, true, false)
 	})
 	advancedMenu.AddItem(uninstallItem)
 
@@ -278,36 +197,35 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	menu.AddItem(disableItem)
 	// Quit
 	quitItem := appkit.NewMenuItemWithAction("Quit", "q", func(sender objc.Object) {
+		logrus.Info("Quitting client")
 		app.Terminate(nil)
 	})
 	menu.AddItem(quitItem)
 
-	item.SetMenu(menu)
+	menubarIcon.SetMenu(menu)
 
 	// ==================== CALLBACKS ====================
 
 	toggleMenusRequiringInstall := func(battInstalled bool, capable, needUpgrade bool) {
-		item.Button().SetImage(getMenubarImage(battInstalled, capable, needUpgrade))
+		setMenubarImage(menubarIcon, battInstalled, capable, needUpgrade)
 
-		installItem.SetHidden(battInstalled)
-		upgradeItem.SetHidden(!(needUpgrade && battInstalled))
-		stateItem.SetHidden(!battInstalled)
-		currentLimitItem.SetHidden(!battInstalled)
+		installItem.SetHidden(!(!battInstalled))
+		upgradeItem.SetHidden(!(battInstalled && (needUpgrade || !capable)))
+		stateItem.SetHidden(!(battInstalled && capable))
+		currentLimitItem.SetHidden(!(battInstalled && capable))
 
-		quickLimitsItem.SetHidden(!(battInstalled && !needUpgrade))
-		set50Item.SetHidden(!(battInstalled && !needUpgrade))
-		set60Item.SetHidden(!(battInstalled && !needUpgrade))
-		set70Item.SetHidden(!(battInstalled && !needUpgrade))
-		set80Item.SetHidden(!(battInstalled && !needUpgrade))
-		set90Item.SetHidden(!(battInstalled && !needUpgrade))
+		quickLimitsItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
+		for _, quickLimitItem := range setQuickLimitsItems {
+			quickLimitItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
+		}
 
 		advancedSubMenuItem.SetHidden(!battInstalled)
-		controlMagSafeLEDItem.SetHidden(!(battInstalled && !needUpgrade))
-		preventIdleSleepItem.SetHidden(!(battInstalled && !needUpgrade))
-		disableChargingPreSleepItem.SetHidden(!(battInstalled && !needUpgrade))
+		controlMagSafeLEDItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
+		preventIdleSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
+		disableChargingPreSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		uninstallItem.SetHidden(!battInstalled)
 
-		disableItem.SetHidden(!(battInstalled && !needUpgrade))
+		disableItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 	}
 
 	menuDelegate := &appkit.MenuDelegate{}
@@ -316,20 +234,24 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		// Get current information from the API
 		rawConfig, err := apiClient.GetConfig()
 		if err != nil {
+			logrus.WithError(err).Warnf("Failed to get config")
 			toggleMenusRequiringInstall(false, false, false)
 			return
 		}
 		capable, err := apiClient.GetChargingControlCapable()
 		if err != nil {
+			logrus.WithError(err).Warnf("Failed to get charging capablility")
 			toggleMenusRequiringInstall(true, false, false)
 			return
 		}
 		daemonVersion, err := apiClient.GetVersion()
 		if err != nil {
+			logrus.WithError(err).Warnf("Failed to get version")
 			toggleMenusRequiringInstall(true, capable, true)
 		} else {
 			toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
 		}
+		logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
 
 		isCharging, err := apiClient.GetCharging()
 		if err != nil {
@@ -348,8 +270,12 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		}
 
 		conf := config.NewFileFromConfig(rawConfig, "")
+		logrus.WithFields(conf.LogrusFields()).Info("Got config")
 
 		currentLimitItem.SetTitle(fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
+		for limit, quickLimitItem := range setQuickLimitsItems {
+			setCheckboxItem(quickLimitItem, limit == conf.UpperLimit())
+		}
 
 		if isCharging {
 			// Charging
@@ -375,6 +301,37 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		setCheckboxItem(disableChargingPreSleepItem, conf.DisableChargingPreSleep())
 	})
 	menu.SetDelegate(menuDelegate)
+
+	// Update icon onstart up
+	{
+		logrus.Info("Getting config")
+		rawConfig, err := apiClient.GetConfig()
+		if err != nil {
+			logrus.WithError(err).Warnf("Failed to get config")
+			toggleMenusRequiringInstall(false, false, false)
+			return
+		}
+		conf := config.NewFileFromConfig(rawConfig, "")
+		logrus.WithFields(conf.LogrusFields()).Info("Got config")
+		logrus.Info("Getting charging control capability")
+		capable, err := apiClient.GetChargingControlCapable()
+		if err != nil {
+			logrus.WithError(err).Warnf("Failed to get charging capablility")
+			toggleMenusRequiringInstall(true, false, false)
+			return
+		}
+		logrus.WithField("capable", capable).Info("Got charging control capability")
+		logrus.Info("Getting daemon version")
+		daemonVersion, err := apiClient.GetVersion()
+		if err != nil {
+			logrus.WithError(err).Warnf("Failed to get version")
+			toggleMenusRequiringInstall(true, capable, true)
+		} else {
+			toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
+		}
+		logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
+	}
+
 }
 
 func showAlert(msg, body string) {
@@ -385,17 +342,20 @@ func showAlert(msg, body string) {
 	alert.RunModal()
 }
 
-func getMenubarImage(installed, capable, needUpgrade bool) appkit.Image {
-	if !installed {
-		return appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("batteryblock.slash", "batt not installed")
+func setMenubarImage(menubarStatusItem appkit.StatusItem, daemonInstalled, capable, needUpgrade bool) {
+	if !daemonInstalled {
+		menubarStatusItem.Button().SetImage(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("batteryblock.slash", "batt daemin not installed"))
+		return
 	}
 	if !capable {
-		return appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("minus.plus.batteryblock.exclamationmark", "batt error")
+		menubarStatusItem.Button().SetImage(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("minus.plus.batteryblock.exclamationmark", "You machine cannot run batt"))
+		return
 	}
 	if needUpgrade {
-		return appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("fluid.batteryblock", "batt needs upgrade")
+		menubarStatusItem.Button().SetImage(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("fluid.batteryblock", "batt needs upgrade"))
+		return
 	}
-	return appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("minus.plus.batteryblock", "batt icon")
+	menubarStatusItem.Button().SetImage(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("minus.plus.batteryblock", "batt icon"))
 }
 
 func checkBoxItem(title, charCode string, cb func(checked bool)) appkit.MenuItem {

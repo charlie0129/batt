@@ -349,3 +349,18 @@ func (f *File) Save() error {
 
 	return nil
 }
+
+func (f *File) LogrusFields() logrus.Fields {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	return logrus.Fields{
+		"upperLimit":              f.UpperLimit(),
+		"lowerLimit":              f.LowerLimit(),
+		"preventIdleSleep":        f.PreventIdleSleep(),
+		"disableChargingPreSleep": f.DisableChargingPreSleep(),
+		"allowNonRootAccess":      f.AllowNonRootAccess(),
+		"controlMagsafeLed":       f.ControlMagSafeLED(),
+	}
+}

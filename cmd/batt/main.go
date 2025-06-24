@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"runtime"
 
 	"github.com/sirupsen/logrus"
@@ -54,6 +55,8 @@ func handleCmdError(err error) {
 }
 
 func main() {
+	runtime.LockOSThread()
+
 	cmd := NewCommand()
 	if err := cmd.Execute(); err != nil {
 		handleCmdError(err)
@@ -79,7 +82,7 @@ Website: https://github.com/charlie0129/batt`,
 		},
 	}
 
-	if os.Getenv("BATT_RUN_GUI") != "" {
+	if os.Getenv("BATT_RUN_GUI") != "" || path.Base(os.Args[0]) == "batt-gui" {
 		cmd.Run = func(_ *cobra.Command, _ []string) {
 			gui.Run(unixSocketPath)
 		}

@@ -118,6 +118,8 @@ func (c *Client) GetVersion() (string, error) {
 	if err != nil {
 		return "", pkgerrors.Wrapf(err, "failed to get version")
 	}
+	// Remove "" around JSON string. I don't want to use a JSON decoder just for this.
+	ret = ret[1 : len(ret)-1] // remove the surrounding quotes
 	return ret, nil
 }
 

@@ -57,7 +57,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	if err != nil {
 		logrus.Fatalf("failed to parse config during startup: %v", err)
 	}
-	logrus.Infof("config loaded")
+	logrus.WithFields(conf.LogrusFields()).Infof("config loaded")
 
 	// Receive SIGHUP to reload config
 	go func() {
