@@ -38,3 +38,6 @@ build-gui: build
 	export version=$$(echo "$(VERSION)" | sed 's/v//g') && sed -i '' "s|BATT_VERSION|$$version|g" bin/batt.app/Contents/Info.plist
 	mkdir -p bin/batt.app/Contents/MacOS
 	cp bin/batt bin/batt.app/Contents/MacOS/batt
+
+dmg: build-gui
+	cd bin && create-dmg --volname batt --app-drop-link 360 130 --icon batt 130 130 --format ULFO "batt-$(VERSION).dmg" batt.app
