@@ -98,7 +98,7 @@ func (f *File) UpperLimit() int {
 
 	var limit int
 
-	if f.c != nil {
+	if f.c.Limit != nil {
 		limit = *f.c.Limit
 	} else {
 		limit = *defaultFileConfig.Limit

@@ -131,7 +131,7 @@ set -e
 		// Uninstall it first.
 		shellScript += fmt.Sprintf(`
 "%s" uninstall
-/bin/rm -f "%s"
+/bin/rm -f "%s" || true
 `, exe, battSymlinkLocation)
 	}
 
@@ -157,13 +157,13 @@ set -e
 		// Uninstall it first.
 		shellScript += fmt.Sprintf(`
 "%s" uninstall --no-reset-charging
-/bin/rm -f "%s"
+/bin/rm -f "%s" || true
 `, exe, battSymlinkLocation)
 	}
 
 	shellScript += fmt.Sprintf(`
 "%s" install --allow-non-root-access
-/bin/ln -sf "%s" "%s"
+/bin/ln -sf "%s" "%s" || true
 `, exe, exe, battSymlinkLocation)
 
 	logrus.WithField("script", shellScript).Info("Installing daemon")

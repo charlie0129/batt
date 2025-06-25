@@ -81,10 +81,10 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		setMenubarImage(menubarIcon, true, true, false)
 	}
 
-	upgradeItem := appkit.NewMenuItemWithAction("Upgrade daemon...", "u", unintallOrUpgrade)
+	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", unintallOrUpgrade)
 	menu.AddItem(upgradeItem)
 
-	installItem := appkit.NewMenuItemWithAction("Install daemon...", "i", unintallOrUpgrade)
+	installItem := appkit.NewMenuItemWithAction("Install Daemon...", "i", unintallOrUpgrade)
 	menu.AddItem(installItem)
 
 	stateItem := appkit.NewMenuItemWithAction("Loading...", "", func(sender objc.Object) {})
@@ -135,7 +135,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	})
 	advancedMenu.AddItem(controlMagSafeLEDItem)
 
-	preventIdleSleepItem := checkBoxItem("Prevent idle sleep", "", func(checked bool) {
+	preventIdleSleepItem := checkBoxItem("Prevent Idle Sleep when Charging", "", func(checked bool) {
 		// Perform action based on new state
 		_, err := apiClient.SetPreventIdleSleep(checked)
 		if err != nil {
@@ -145,7 +145,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	})
 	advancedMenu.AddItem(preventIdleSleepItem)
 
-	disableChargingPreSleepItem := checkBoxItem("Disable charging before sleep", "", func(checked bool) {
+	disableChargingPreSleepItem := checkBoxItem("Disable Charging before Sleep", "", func(checked bool) {
 		// Perform action based on new state
 		_, err := apiClient.SetDisableChargingPreSleep(checked)
 		if err != nil {
@@ -161,7 +161,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	versionItem.SetEnabled(false)
 	advancedMenu.AddItem(versionItem)
 
-	uninstallItem := appkit.NewMenuItemWithAction("Uninstall daemon...", "", func(sender objc.Object) {
+	uninstallItem := appkit.NewMenuItemWithAction("Uninstall Daemon...", "", func(sender objc.Object) {
 		exe, err := os.Executable()
 		if err != nil {
 			showAlert("Failed to get executable path", err.Error())
@@ -282,19 +282,19 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		if isCharging {
 			// Charging
 			if isPluggedIn {
-				stateItem.SetTitle("State: charging")
+				stateItem.SetTitle("State: Charging")
 			} else {
-				stateItem.SetTitle("State: will charge if plugged in")
+				stateItem.SetTitle("State: Will Charge if Plugged in")
 			}
 		} else {
 			// Not charging
 			if conf.UpperLimit() < 100 { // Limit enabled
-				stateItem.SetTitle("State: not charging")
+				stateItem.SetTitle("State: Not Charging")
 				if isPluggedIn && currentCharge < conf.LowerLimit() {
-					stateItem.SetTitle("State: about to charge")
+					stateItem.SetTitle("State: Will Charge Soon")
 				}
 			} else { // Limit disabled
-				stateItem.SetTitle("State: full")
+				stateItem.SetTitle("State: Limit Disabled")
 			}
 		}
 
@@ -333,7 +333,6 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		}
 		logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
 	}
-
 }
 
 func showAlert(msg, body string) {
