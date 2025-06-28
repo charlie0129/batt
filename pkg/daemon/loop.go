@@ -183,6 +183,24 @@ func infiniteLoop() {
 // maintainLoop maintains the battery charge. It has the logic to
 // prevent parallel runs. So if one maintain loop is already running,
 // the next one will need to wait until the first one finishes.
+func checkMissedMaintainLoops() bool {
+	maintainLoopCount := loopRecorder.GetRecordsIn(continuousLoopThreshold)
+	expectedMaintainLoopCount := int(continuousLoopThreshold / loopInterval)
+	minMaintainLoopCount := expectedMaintainLoopCount - 1
+	relativeTimes := loopRecorder.GetLastRecords(continuousLoopThreshold)
+
+	if maintainLoopCount < minMaintainLoopCount {
+		logrus.WithFields(logrus.Fields{
+			"maintainLoopCount":         maintainLoopCount,
+			"expectedMaintainLoopCount": expectedMaintainLoopCount,
+			"minMaintainLoopCount":      minMaintainLoopCount,
+			"recentRecords":             formatRelativeTimes(relativeTimes),
+		}).Infof("Possibly missed maintain loop")
+		return true
+	}
+	return false
+}
+
 func maintainLoop() bool {
 	maintainLoopLock.Lock()
 	defer maintainLoopLock.Unlock()
@@ -195,21 +213,7 @@ func maintainLoop() bool {
 		logrus.Debugf("this maintain loop waited %d seconds after being initiated, now ready to execute", int(tsAfterWait.Sub(tsBeforeWait).Seconds()))
 	}
 
-	// TODO: put it in a function (and the similar code in maintainLoopForced)
-	maintainLoopCount := loopRecorder.GetRecordsIn(continuousLoopThreshold)
-	expectedMaintainLoopCount := int(continuousLoopThreshold / loopInterval)
-	minMaintainLoopCount := expectedMaintainLoopCount - 1
-	relativeTimes := loopRecorder.GetLastRecords(continuousLoopThreshold)
-	// If maintain loop is missed too many times, we assume the system is in a rapid sleep/wake loop, or macOS
-	// haven't sent the sleep notification but the system is actually sleep/waking up. In either case, log it.
-	if maintainLoopCount < minMaintainLoopCount {
-		logrus.WithFields(logrus.Fields{
-			"maintainLoopCount":         maintainLoopCount,
-			"expectedMaintainLoopCount": expectedMaintainLoopCount,
-			"minMaintainLoopCount":      minMaintainLoopCount,
-			"recentRecords":             formatRelativeTimes(relativeTimes),
-		}).Infof("Possibly missed maintain loop")
-	}
+	checkMissedMaintainLoops()
 
 	loopRecorder.AddRecordNow()
 	return maintainLoopInner(false)
@@ -222,79 +226,39 @@ func maintainLoopForced() bool {
 	return maintainLoopInner(true)
 }
 
-func maintainLoopInner(ignoreMissedLoops bool) bool {
-	upper := conf.UpperLimit()
-	lower := conf.LowerLimit()
-	maintain := upper < 100
-
-	isChargingEnabled, err := smcConn.IsChargingEnabled()
-	if err != nil {
-		logrus.Errorf("IsChargingEnabled failed: %v", err)
-		return false
-	}
-
-	// If maintain is disabled, we don't care about the battery charge, enable charging anyway.
-	if !maintain {
-		logrus.Debug("limit set to 100%, maintain loop disabled")
-		if !isChargingEnabled {
-			logrus.Debug("charging disabled, enabling")
-			err = smcConn.EnableCharging()
-			if err != nil {
-				logrus.Errorf("EnableCharging failed: %v", err)
-				return false
-			}
-			if conf.ControlMagSafeLED() {
-				batteryCharge, err := smcConn.GetBatteryCharge()
-				if err == nil {
-					_ = smcConn.SetMagSafeCharging(batteryCharge < 100)
-				}
+func handleNoMaintain(isChargingEnabled bool) bool {
+	logrus.Debug("limit set to 100%, maintain loop disabled")
+	if !isChargingEnabled {
+		logrus.Debug("charging disabled, enabling")
+		err := smcConn.EnableCharging()
+		if err != nil {
+			logrus.Errorf("EnableCharging failed: %v", err)
+			return false
+		}
+		if conf.ControlMagSafeLED() {
+			batteryCharge, err := smcConn.GetBatteryCharge()
+			if err == nil {
+				_ = smcConn.SetMagSafeCharging(batteryCharge < 100)
 			}
 		}
-		maintainedChargingInProgress = false
-		return true
 	}
+	maintainedChargingInProgress = false
+	return true
+}
 
-	batteryCharge, err := smcConn.GetBatteryCharge()
-	if err != nil {
-		logrus.Errorf("GetBatteryCharge failed: %v", err)
-		return false
-	}
-
-	isPluggedIn, err := smcConn.IsPluggedIn()
-	if err != nil {
-		logrus.Errorf("IsPluggedIn failed: %v", err)
-		return false
-	}
-
+func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool, batteryCharge, lower, upper int) bool {
 	maintainedChargingInProgress = isChargingEnabled && isPluggedIn
 
 	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress)
 
 	if batteryCharge < lower && !isChargingEnabled {
-		if !ignoreMissedLoops {
-			maintainLoopCount := loopRecorder.GetRecordsIn(continuousLoopThreshold)
-			expectedMaintainLoopCount := int(continuousLoopThreshold / loopInterval)
-			minMaintainLoopCount := expectedMaintainLoopCount - 1
-			relativeTimes := loopRecorder.GetLastRecords(continuousLoopThreshold)
-			// If maintain loop is missed too many times, we assume the system is in a rapid sleep/wake loop, or macOS
-			// haven't sent the sleep notification but the system is actually sleep/waking up. In either case, we should
-			// not enable charging, which will cause unexpected charging.
-			//
-			// This is a workaround for the issue that macOS sometimes doesn't send the sleep notification.
-			//
-			// We allow at most 1 missed maintain loop.
-			if maintainLoopCount < minMaintainLoopCount {
-				logrus.WithFields(logrus.Fields{
-					"batteryCharge":             batteryCharge,
-					"lower":                     lower,
-					"upper":                     upper,
-					"maintainLoopCount":         maintainLoopCount,
-					"expectedMaintainLoopCount": expectedMaintainLoopCount,
-					"minMaintainLoopCount":      minMaintainLoopCount,
-					"recentRecords":             formatRelativeTimes(relativeTimes),
-				}).Infof("Battery charge is below lower limit, but too many missed maintain loops are missed. Will wait until maintain loops are stable")
-				return true
-			}
+		if !ignoreMissedLoops && checkMissedMaintainLoops() {
+			logrus.WithFields(logrus.Fields{
+				"batteryCharge": batteryCharge,
+				"lower":         lower,
+				"upper":         upper,
+			}).Infof("Battery charge is below lower limit, but too many missed maintain loops are missed. Will wait until maintain loops are stable")
+			return true
 		}
 
 		logrus.WithFields(logrus.Fields{
@@ -302,7 +266,7 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 			"lower":         lower,
 			"upper":         upper,
 		}).Infof("Battery charge is below lower limit, enabling charging")
-		err = smcConn.EnableCharging()
+		err := smcConn.EnableCharging()
 		if err != nil {
 			logrus.Errorf("EnableCharging failed: %v", err)
 			return false
@@ -317,7 +281,7 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 			"lower":         lower,
 			"upper":         upper,
 		}).Infof("Battery charge is above upper limit, disabling charging")
-		err = smcConn.DisableCharging()
+		err := smcConn.DisableCharging()
 		if err != nil {
 			logrus.Errorf("DisableCharging failed: %v", err)
 			return false
@@ -334,6 +298,37 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 	// do nothing, keep as-is
 
 	return true
+}
+
+func maintainLoopInner(ignoreMissedLoops bool) bool {
+	upper := conf.UpperLimit()
+	lower := conf.LowerLimit()
+	maintain := upper < 100
+
+	isChargingEnabled, err := smcConn.IsChargingEnabled()
+	if err != nil {
+		logrus.Errorf("IsChargingEnabled failed: %v", err)
+		return false
+	}
+
+	// If maintain is disabled, we don't care about the battery charge, enable charging anyway.
+	if !maintain {
+		return handleNoMaintain(isChargingEnabled)
+	}
+
+	batteryCharge, err := smcConn.GetBatteryCharge()
+	if err != nil {
+		logrus.Errorf("GetBatteryCharge failed: %v", err)
+		return false
+	}
+
+	isPluggedIn, err := smcConn.IsPluggedIn()
+	if err != nil {
+		logrus.Errorf("IsPluggedIn failed: %v", err)
+		return false
+	}
+
+	return handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn, batteryCharge, lower, upper)
 }
 
 func updateMagSafeLed(isChargingEnabled bool) {

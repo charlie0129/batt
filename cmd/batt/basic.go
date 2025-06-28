@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -31,13 +30,9 @@ This is a percentage from 10 to 100.
 
 Setting the limit to 10-99 will enable the battery charge limit. However, setting the limit to 100 will disable the battery charge limit, which is the default behavior of macOS.`,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return fmt.Errorf("invalid number of arguments")
-			}
-
-			limit, err := strconv.Atoi(args[0])
+			limit, err := parseIntArg(args, "limit")
 			if err != nil {
-				return fmt.Errorf("invalid limit: %v", err)
+				return err
 			}
 
 			ret, err := apiClient.SetLimit(limit)
@@ -49,7 +44,7 @@ Setting the limit to 10-99 will enable the battery charge limit. However, settin
 				logrus.Infof("daemon responded: %s", ret)
 			}
 
-			logrus.Infof("successfully set battery charge limit to %s%%", args[0])
+			logrus.Infof("successfully set battery charge limit to %d%%", limit)
 
 			return nil
 		},
@@ -166,13 +161,9 @@ batt have similar features. The charge limit you have set (using 'batt limit') w
 
 For example, if you want to set the lower limit to be 5% less than the upper limit, run 'sudo batt lower-limit-delta 5'. By doing this, if you have your charge (upper) limit set to 60%, the lower limit will be 55%.`,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return fmt.Errorf("invalid number of arguments")
-			}
-
-			delta, err := strconv.Atoi(args[0])
+			delta, err := parseIntArg(args, "delta")
 			if err != nil {
-				return fmt.Errorf("invalid delta: %v", err)
+				return err
 			}
 
 			ret, err := apiClient.SetLowerLimitDelta(delta)
