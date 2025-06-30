@@ -155,6 +155,16 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	})
 	advancedMenu.AddItem(disableChargingPreSleepItem)
 
+	preventSystemSleepItem := checkBoxItem("Prevent System Sleep when Charging", "", func(checked bool) {
+		// Perform action based on new state
+		_, err := apiClient.SetPreventSystemSleep(checked)
+		if err != nil {
+			showAlert("Failed to set prevent system sleep", err.Error())
+			return
+		}
+	})
+	advancedMenu.AddItem(preventSystemSleepItem)
+
 	advancedMenu.AddItem(appkit.MenuItem_SeparatorItem())
 
 	versionItem := appkit.NewMenuItemWithAction("Version: "+version.Version, "", func(sender objc.Object) {})
@@ -225,6 +235,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		controlMagSafeLEDItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		preventIdleSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		disableChargingPreSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
+		preventSystemSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		uninstallItem.SetHidden(!battInstalled)
 
 		disableItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
@@ -301,6 +312,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		setCheckboxItem(controlMagSafeLEDItem, conf.ControlMagSafeLED())
 		setCheckboxItem(preventIdleSleepItem, conf.PreventIdleSleep())
 		setCheckboxItem(disableChargingPreSleepItem, conf.DisableChargingPreSleep())
+		setCheckboxItem(preventSystemSleepItem, conf.PreventSystemSleep())
 	})
 	menu.SetDelegate(menuDelegate)
 

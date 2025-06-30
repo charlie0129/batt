@@ -10,8 +10,8 @@ import (
 
 var (
 	maintainedChargingInProgress = false
-	maintainLoopLock             = &sync.Mutex{}
-	// mg is used to skip several loops when system woke up or before sleep
+	maintainLoopInnerLock        = &sync.Mutex{}
+	// wg is used to skip several loops when system woke up or before sleep
 	wg                      = &sync.WaitGroup{}
 	loopInterval            = time.Duration(10) * time.Second
 	loopRecorder            = NewTimeSeriesRecorder(60)
@@ -184,9 +184,6 @@ func infiniteLoop() {
 // prevent parallel runs. So if one maintain loop is already running,
 // the next one will need to wait until the first one finishes.
 func maintainLoop() bool {
-	maintainLoopLock.Lock()
-	defer maintainLoopLock.Unlock()
-
 	// See wg.Add() in sleepcallback.go for why we need to wait.
 	tsBeforeWait := time.Now()
 	wg.Wait()
@@ -223,6 +220,9 @@ func maintainLoopForced() bool {
 }
 
 func maintainLoopInner(ignoreMissedLoops bool) bool {
+	maintainLoopInnerLock.Lock()
+	defer maintainLoopInnerLock.Unlock()
+
 	upper := conf.UpperLimit()
 	lower := conf.LowerLimit()
 	maintain := upper < 100
@@ -328,6 +328,20 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 
 	if conf.ControlMagSafeLED() {
 		updateMagSafeLed(isChargingEnabled)
+	}
+
+	if conf.PreventSystemSleep() {
+		if isChargingEnabled {
+			err = PreventSleepOnAC()
+			if err != nil {
+				logrus.Errorf("PreventSleepOnAC failed: %v", err)
+			}
+		} else {
+			err = AllowSleepOnAC()
+			if err != nil {
+				logrus.Errorf("AllowSleepOnAC failed: %v", err)
+			}
+		}
 	}
 
 	// batteryCharge >= upper - delta && batteryCharge < upper

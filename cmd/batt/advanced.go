@@ -115,6 +115,56 @@ As described in preventing-idle-sleep, batt will be paused by macOS when your co
 	return cmd
 }
 
+func NewSetPreventSystemSleepCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "prevent-system-sleep",
+		Short:   "Set whether to prevent system sleep during a charging session",
+		GroupID: gAdvanced,
+		Long:    `TODO - explain`,
+	}
+
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "enable",
+			Short: "Prevent system sleep during a charging session",
+			RunE: func(_ *cobra.Command, _ []string) error {
+				ret, err := apiClient.SetPreventSystemSleep(true)
+				if err != nil {
+					return fmt.Errorf("failed to set prevent system sleep: %v", err)
+				}
+
+				if ret != "" {
+					logrus.Infof("daemon responded: %s", ret)
+				}
+
+				logrus.Infof("successfully enabled system sleep prevention")
+
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "disable",
+			Short: "Do not prevent system sleep during a charging session",
+			RunE: func(_ *cobra.Command, _ []string) error {
+				ret, err := apiClient.SetPreventSystemSleep(false)
+				if err != nil {
+					return fmt.Errorf("failed to set prevent system sleep: %v", err)
+				}
+
+				if ret != "" {
+					logrus.Infof("daemon responded: %s", ret)
+				}
+
+				logrus.Infof("successfully disabled system sleep prevention")
+
+				return nil
+			},
+		},
+	)
+
+	return cmd
+}
+
 func NewSetControlMagSafeLEDCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "magsafe-led",
