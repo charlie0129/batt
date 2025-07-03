@@ -6,7 +6,7 @@ import "github.com/sirupsen/logrus"
 func (c *AppleSMC) IsAdapterEnabled() (bool, error) {
 	logrus.Tracef("IsAdapterEnabled called")
 
-	v, err := c.Read(AdapterKey)
+	v, err := c.Read(AdapterKey1)
 	if err != nil {
 		return false, err
 	}
@@ -21,12 +21,12 @@ func (c *AppleSMC) IsAdapterEnabled() (bool, error) {
 func (c *AppleSMC) EnableAdapter() error {
 	logrus.Tracef("EnableAdapter called")
 
-	return c.Write(AdapterKey, []byte{0x0})
+	return c.Write(AdapterKey1, []byte{0x0})
 }
 
 // DisableAdapter disables the adapter.
 func (c *AppleSMC) DisableAdapter() error {
 	logrus.Tracef("DisableAdapter called")
 
-	return c.Write(AdapterKey, []byte{0x1})
+	return c.Write(AdapterKey1, []byte{0x1})
 }
