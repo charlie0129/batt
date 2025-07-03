@@ -392,7 +392,7 @@ func (f *File) LogrusFields() logrus.Fields {
 		"lowerLimit":              f.LowerLimit(),
 		"preventIdleSleep":        f.PreventIdleSleep(),
 		"disableChargingPreSleep": f.DisableChargingPreSleep(),
-		"preventSystemSleep":      f.PreventIdleSleep(),
+		"preventSystemSleep":      f.PreventSystemSleep(),
 		"allowNonRootAccess":      f.AllowNonRootAccess(),
 		"controlMagsafeLed":       f.ControlMagSafeLED(),
 	}
