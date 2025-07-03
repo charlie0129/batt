@@ -12,6 +12,7 @@ import (
 
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/gui"
+	"github.com/charlie0129/batt/pkg/utils/osver"
 )
 
 var (
@@ -55,6 +56,11 @@ func handleCmdError(err error) {
 }
 
 func main() {
+	if !osver.IsAtLeast(11, 0, 0) {
+		fmt.Fprintln(os.Stderr, "batt requires macOS 11.0 or later")
+		os.Exit(1)
+	}
+
 	// Reduce the number of CPUs used by the batt.
 	// batt does not need to use much.
 	if os.Getenv("GOMAXPROCS") == "" {

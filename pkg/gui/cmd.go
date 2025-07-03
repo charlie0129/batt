@@ -24,7 +24,7 @@ func NewGUICommand(unixSocketPath string, groupID string) *cobra.Command {
 		GroupID: groupID,
 		Long: `Start the batt GUI.
 
-This command should not be called directly by user. Users should use the .app bundle to start the GUI.`,
+This command should not be called directly by the user. Users should use the .app bundle to start the GUI.`,
 		Run: func(_ *cobra.Command, _ []string) {
 			Run(unixSocketPath)
 		},
