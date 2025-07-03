@@ -6,6 +6,19 @@ const (
 	ACPowerKey       = "AC-W"
 	ChargingKey1     = "CH0B"
 	ChargingKey2     = "CH0C"
-	AdapterKey       = "CH0I" // CH0K on Intel, if we need it later
+	ChargingKey3     = "CHTE"
+	AdapterKey1      = "CH0I"
+	AdapterKey2      = "CH0J"
 	BatteryChargeKey = "BUIC"
 )
+
+var allKeys = []string{
+	MagSafeLedKey,
+	ACPowerKey,
+	ChargingKey1,
+	ChargingKey2,
+	ChargingKey3,
+	AdapterKey1,
+	AdapterKey2,
+	BatteryChargeKey,
+}

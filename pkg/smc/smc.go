@@ -8,12 +8,16 @@ import (
 // AppleSMC is a wrapper of gosmc.Connection.
 type AppleSMC struct {
 	conn gosmc.Connection
+	// capabilities is a map of SMC keys and their availability. Cached
+	// after Open() call to avoid unnecessary SMC reads.
+	capabilities map[string]bool
 }
 
 // New returns a new AppleSMC.
 func New() *AppleSMC {
 	return &AppleSMC{
-		conn: gosmc.New(),
+		conn:         gosmc.New(),
+		capabilities: make(map[string]bool),
 	}
 }
 
@@ -33,9 +37,18 @@ func NewMock(prefillValues map[string][]byte) *AppleSMC {
 	}
 }
 
-// Open opens the connection.
+// Open opens the connection and checks capabilities.
 func (c *AppleSMC) Open() error {
-	return c.conn.Open()
+	err := c.conn.Open()
+	if err != nil {
+		return err
+	}
+
+	for _, key := range allKeys {
+		c.capabilities[key] = c.test(key)
+	}
+
+	return nil
 }
 
 // Close closes the connection.
@@ -60,6 +73,12 @@ func (c *AppleSMC) Read(key string) (gosmc.SMCVal, error) {
 	}).Trace("Load from SMC succeed")
 
 	return v, nil
+}
+
+// test tells whether the key exists in SMC.
+func (c *AppleSMC) test(key string) bool {
+	_, err := c.Read(key)
+	return err == nil
 }
 
 // Write writes a value to SMC.
