@@ -1,4 +1,4 @@
-Note: use table of contents of quickly navigate to the section you want. 👆↗
+Note: Use table of contents of quickly navigate to the section you want, e.g., `Installation`. 👆↗
 
 # batt
 
@@ -42,17 +42,51 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 `batt` can make sure your computer does exactly what you want. You can set a maximum charge level, and it will stop charging when the battery reaches that level. Therefore, it is recommended to disable macOS's optimized charging when using `batt`.
 
-## Installation
+## Compatibility Matrix
 
-> [!WARNING] 
-> macOS Tahoe 26 is not supported because Apple has removed the functionality that batt relies on to control the battery. Once a MacBook is upgraded to macOS Tahoe, this functionality is _almost_ permanently removed, even if macOS is downgraded afterwards. As such, until a new battery controlling method is found, we don't recommend upgrading to macOS Tahoe.
->
-> You can read the issue comment for details: https://github.com/charlie0129/batt/issues/34#issuecomment-2958535441
+|                     | GUI | CLI (Prebuilt) | CLI (Build from Source) |
+| ------------------- |-----| -------------- | ----------------------- |
+| macOS Big Sur (11)  | ❌   | ❌              | ✅                       |
+| macOS Monterey (12) | ❌   | ✅              | ✅                       |
+| macOS Ventura (13)  | ✅   | ✅              | ✅                       |
+| macOS Sonoma (14)   | ✅   | ✅              | ✅                       |
+| macOS Sequoia (15)  | ✅   | ✅              | ✅                       |
+| macOS Tahoe (26)    | ⚠️  | ⚠️              | ⚠️                       |
 
-> FYI: You are reading the instructions for `batt`, which is a commandline-only (CLI-only) application. There are some great 3rd-party GUI frontends built around `batt` by amazing opensource developers. If you find the commandline intimidating, you can use these GUI versions instead. Check out them:
+- ❌: Unsupported
+- ✅: Supported
+- ⚠️: Partially supported, more tests are needed to verify the compatibility. Read [#34](https://github.com/charlie0129/batt/issues/34) for details.
+
+If you want to know which MacBooks I personally developed it on, I am using it on all my personal MacBooks every single day, including MacBook Air M1 2020 (A2337), MacBook Air M2 2022 (A2681), MacBook Pro 14' M1 Pro 2021 (A2442), MacBook Pro 16' M1 Max 2021 (A2485).
+
+If you encounter any incompatibility, please raise an issue with your MacBook model and macOS version.
+
+## Installation (GUI Version)
+
+GUI version is a native macOS menubar app. It's not as feature-complete as the command-line version, but it is a good choice if you are not comfortable with the command-line. The command-line version is also included if you have the GUI version.
+
+1. Download `.dmg` file from [Releases](https://github.com/charlie0129/batt/releases) and open it (right-click open if macOS says it's damaged)
+2. Drag `batt.app` to `Applications`
+3. macOS may say it's damaged when you try to run it (it's NOT) and wants you to move it to trash. To fix it, run this in Terminal: `sudo xattr -r -d com.apple.quarantine /Applications/batt.app`.
+4. Run `batt.app`. 
+5. Follow the MenuBar UI to install or upgrade.
+6. It is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Trun OFF `Optimized Battery Charging`
+
+<img width="191" alt="SCR-20250624-lbmb-3" src="https://github.com/user-attachments/assets/4bef52d7-8483-49bd-b579-736b87c81a52" />
+<img width="206" alt="SCR-20250624-lbmb-2" src="https://github.com/user-attachments/assets/f3731a00-d973-4d67-8b4a-d57595e3842f" />
+<img width="450" alt="SCR-20250624-lbmb-4" src="https://github.com/user-attachments/assets/a9d3c2eb-5d41-400e-b042-b79f6e8decd0" />
+
+> [!TIP]
+> There are 3rd-party GUI versions built around `batt` by some amazing opensource developers:
 > 1. [BattGUI](https://github.com/clzoc/BattGUI) by [@clzoc](https://github.com/clzoc)
 
-You have two choices to install `batt`:
+
+## Installation (Command-Line Version)
+
+> [!NOTE]
+> Command-Line version is already included if you have installed the GUI version. You can run `batt` in Terminal to use it.
+
+You have two choices to install the CLI version of `batt`:
 
 1. Homebrew (If you prefer a package manager) [Docs](#homebrew)
 2. Installation Script (Recommended) [Docs](#installation-script)
@@ -84,7 +118,7 @@ You can choose either one. Please do not use both at the same time to avoid conf
 
 - Test if it works by running `sudo batt status`. If you see your battery status, you are good to go!
 - Time to customize. By default `batt` will set a charge limit to 60%. For example, to set the charge limit to 80%, run `sudo batt limit 80`.
-- As said before, it is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open _System Settings_ -> _Battery_ -> _Battery Health_ -> _i_ -> Trun OFF _Optimized Battery Charging_
+- As said before, it is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Trun OFF `Optimized Battery Charging`
 - If your current charge is above the limit, your computer will just stop charging and use power from the wall. It will stay at your current charge level, which is by design. You can use your battery until it is below the limit to see the effects.
 - You can refer to [Usage](#usage) for additional configurations. Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
 - To disable the charge limit, run `batt disable` or `batt limit 100`.
@@ -106,6 +140,9 @@ To customize charge limit, see `batt limit`. For example,to set the limit to 80%
 
 ### Enable/disable power adapter
 
+> [!NOTE]  
+> This feature is CLI-only and is not available in the GUI version.
+
 Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in. 
 
 This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.
@@ -115,6 +152,9 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 To enable/disable power adapter, see `batt adapter`. For example, to disable the power adapter, run `sudo batt adapter disable`. To enable the power adapter, run `sudo batt adapter enable`.
 
 ### Check status
+
+> [!NOTE]  
+> This feature is CLI-only and is not available in the GUI version.
 
 Check the current config, battery info, and charging status.
 
@@ -145,6 +185,9 @@ As described in [Preventing idle sleep](#preventing-idle-sleep), batt will be pa
 To enable this feature, run `sudo batt disable-charging-pre-sleep enable`. To disable, run `sudo batt disable-charging-pre-sleep disable`.
 
 ### Upper and lower charge limit
+
+> [!NOTE]  
+> This feature is CLI-only and is not available in the GUI version.
 
 When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
 
@@ -178,17 +221,9 @@ Simply running `make` in this repo should build the binary into `./bin/batt`. Yo
 
 ## Architecture
 
-You can think of `batt` like `docker`. It has a daemon that runs in the background, and a client that communicates with the daemon. They communicate through unix domain socket as a way of IPC. The daemon does the actual heavy-lifting, and is responsible for controlling battery charging. The client is responsible for sending users' requirements to the daemon.
+You can think of `batt` like `docker`. It has a daemon that runs in the background, and a client (CLI or GUI) that communicates with the daemon. They communicate through unix domain socket as a way of IPC. The daemon does the actual heavy-lifting, and is responsible for controlling battery charging. The client is responsible for sending users' requirements to the daemon.
 
 For example, when you run `sudo batt limit 80`, the client will send the requirement to the daemon, and the daemon will do its job to keep the charge limit to 80%.
-
-## Compatibility
-
-batt should be compatible with _any_ Apple Silicon MacBook (not desktop Macs), running macOS Monterey and later.
-
-If you want to know which MacBooks I personally developed it on, I am using it on all my personal MacBooks every single day, including MacBook Air M1 2020 (A2337), MacBook Air M2 2022 (A2681), MacBook Pro 14' M1 Pro 2021 (A2442), MacBook Pro 16' M1 Max 2021 (A2485).
-
-If you encounter any incompatibility, please raise an issue with your MacBook model and macOS version.
 
 ## Motivation
 
@@ -203,6 +238,15 @@ I want a _simple_ tool that does just one thing, and **does it well** -- limitin
 ## FAQ
 
 ### How to uninstall?
+
+#### GUI version
+
+Click `Uninstall Daemon...` to uninstall. After the daemon is uninstalled, you can remove the `batt.app` from your `Applications` folder.
+
+<img width="528" alt="SCR-20250710-mjrd" src="https://github.com/user-attachments/assets/901c7840-bae7-4111-af07-4fc1b39444d0" />
+
+
+#### CLI version
 
 Note that you should choose the same method as you used to install `batt` to uninstall it.
 
@@ -222,6 +266,14 @@ Homebrew-installed:
 4. Remove the config by `sudo rm /opt/homebrew/etc/batt.json`.
 
 ### How to upgrade?
+
+#### GUI version
+
+Just follow the installation steps again. After you open the new version of batt.app, click `Upgrade Daemon...` upgrade to the new daemon.
+
+<img width="206" alt="SCR-20250624-lbmb-2" src="https://github.com/user-attachments/assets/f3731a00-d973-4d67-8b4a-d57595e3842f" />
+
+#### CLI version
 
 Note that you should choose the same method as you used to install `batt` to upgrade it.
 
@@ -308,6 +360,7 @@ If you absolutely need to charge your Mac _immediately_ after waking up from sle
 - [hholtmann/smcFanControl](https://github.com/hholtmann/smcFanControl) for its C code to read/write SMC, which inspires [charlie0129/gosmc](https://github.com/charlie0129/gosmc).
 - [Apple](https://developer.apple.com/library/archive/qa/qa1340/_index.html) for its guide to register and unregister sleep and wake notifications.
 - [@exidler](https://github.com/exidler) for building the MagSafe LED controlling logic.
+- [@pichxyaponn](https://github.com/pichxyaponn) for the initial version of GUI.
 
 ## Star History
 

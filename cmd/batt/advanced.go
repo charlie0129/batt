@@ -38,9 +38,9 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 		"Control MagSafe LED according to battery charging status",
 		`This option can make the MagSafe LED on your MacBook change color according to the charging status. For example:
 
-- Green: charge limit is reached and charging is stopped.
-- Orange: charging is in progress.
-- Off: just woken up from sleep, charing is disabled and batt is waiting before controlling charging.
+- Green: Charge limit is reached and charging is stopped.
+- Orange: Charging is in progress.
+- Off: Just woken up from sleep, charging is disabled and batt is waiting before controlling charging.
 
 Note that you must have a MagSafe LED on your MacBook to use this feature.`,
 		func() (string, error) { return apiClient.SetControlMagSafeLED(true) },

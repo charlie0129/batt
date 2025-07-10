@@ -82,9 +82,11 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	}
 
 	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", unintallOrUpgrade)
+	upgradeItem.SetToolTip(`Your batt daemon is not compatible with this client version and needs to be upgraded. This is usually caused by a new client version that requires a new daemon version. You can upgrade the batt daemon by running this command.`)
 	menu.AddItem(upgradeItem)
 
 	installItem := appkit.NewMenuItemWithAction("Install Daemon...", "i", unintallOrUpgrade)
+	installItem.SetToolTip(`Install the batt daemon. batt daemon is a component that controls charging. You must enter your password to install it because controlling charging is a privileged action.`)
 	menu.AddItem(installItem)
 
 	stateItem := appkit.NewMenuItemWithAction("Loading...", "", func(sender objc.Object) {})
@@ -133,6 +135,13 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 			return
 		}
 	})
+	controlMagSafeLEDItem.SetToolTip(`This option can make the MagSafe LED on your MacBook change color according to the charging status. For example:
+
+- Green: Charge limit is reached and charging is stopped.
+- Orange: Charging is in progress.
+- Off: Just woken up from sleep, charging is disabled and batt is waiting before controlling charging.
+
+Note that you must have a MagSafe LED on your MacBook to use this feature.`)
 	advancedMenu.AddItem(controlMagSafeLEDItem)
 
 	preventIdleSleepItem := checkBoxItem("Prevent Idle Sleep when Charging", "", func(checked bool) {
@@ -143,6 +152,13 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 			return
 		}
 	})
+	preventIdleSleepItem.SetToolTip(`Set whether to prevent idle sleep during a charging session.
+
+Due to macOS limitations, batt will be paused when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, there is no way for batt to stop charging (since batt is paused by macOS) and the battery will charge to 100%. This option, together with "Disable Charging before Sleep", will prevent this from happening.
+
+This option tells macOS NOT to go to sleep when the computer is in a charging session, so batt can continue to work until charging is finished. Note that it will only prevent **idle** sleep, when 1) charging is active 2) battery charge limit is enabled. So your computer can go to sleep as soon as a charging session is completed.
+
+However, this options does not prevent manual sleep (limitation of macOS). For example, if you manually put your computer to sleep (by choosing the Sleep option in the top-left Apple menu) or close the lid, batt will still be paused and the issue mentioned above will still happen. This is where "Disable Charging before Sleep" comes in.`)
 	advancedMenu.AddItem(preventIdleSleepItem)
 
 	disableChargingPreSleepItem := checkBoxItem("Disable Charging before Sleep", "", func(checked bool) {
@@ -153,6 +169,9 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 			return
 		}
 	})
+	disableChargingPreSleepItem.SetToolTip(`Set whether to disable charging before sleep if charge limit is enabled.
+
+As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS when your computer goes to sleep, and there is no way for batt to continue controlling battery charging. This option will disable charging just before sleep, so your computer will not overcharge during sleep, even if the battery charge is below the limit.`)
 	advancedMenu.AddItem(disableChargingPreSleepItem)
 
 	advancedMenu.AddItem(appkit.MenuItem_SeparatorItem())
@@ -201,6 +220,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		logrus.Info("Quitting client")
 		app.Terminate(nil)
 	})
+	quitItem.SetToolTip("Quit the batt client. Note that this does not stop the batt daemon, which will continue to run in the background. To stop the batt daemon, you can use the \"Disable Charging Limit\" command.")
 	menu.AddItem(quitItem)
 
 	menubarIcon.SetMenu(menu)
@@ -345,7 +365,7 @@ func showAlert(msg, body string) {
 
 func setMenubarImage(menubarStatusItem appkit.StatusItem, daemonInstalled, capable, needUpgrade bool) {
 	if !daemonInstalled {
-		menubarStatusItem.Button().SetImage(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("batteryblock.slash", "batt daemin not installed"))
+		menubarStatusItem.Button().SetImage(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("batteryblock.slash", "batt daemon not installed"))
 		return
 	}
 	if !capable {
