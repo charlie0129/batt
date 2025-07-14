@@ -44,18 +44,21 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 ## Compatibility Matrix
 
-|                     | GUI | CLI (Prebuilt) | CLI (Build from Source) |
-| ------------------- |-----| -------------- | ----------------------- |
-| macOS Big Sur (11)  | ❌   | ❌              | ✅                       |
-| macOS Monterey (12) | ❌   | ✅              | ✅                       |
-| macOS Ventura (13)  | ✅   | ✅              | ✅                       |
-| macOS Sonoma (14)   | ✅   | ✅              | ✅                       |
-| macOS Sequoia (15)  | ✅   | ✅              | ✅                       |
-| macOS Tahoe (26)    | ⚠️  | ⚠️              | ⚠️                       |
+| Firmware Version        | GUI | CLI (Prebuilt) | CLI (Build from Source) |
+|-------------------------|-----| -------------- | ----------------------- |
+| `6723.x.x`              | ❌   | ❌              | ✅                       |
+| `7429.x.x` / `7459.x.x` | ❌   | ✅              | ✅                       |
+| `8419.x.x` / `8422.x.x` | ✅   | ✅              | ✅                       |
+| `10151.x.x`             | ✅   | ✅              | ✅                       |
+| `11881.x.x`             | ✅   | ✅              | ✅                       |
+| `13822+`                | ⚠️  | ⚠️              | ⚠️                       |
 
 - ❌: Unsupported
 - ✅: Supported
 - ⚠️: Partially supported, more tests are needed to verify the compatibility. Read [#34](https://github.com/charlie0129/batt/issues/34) for details.
+
+> [!NOTE]
+> Firmware version is different from macOS version. You can check your firmware version by running `system_profiler SPHardwareDataType | grep -i firmware` in Terminal.
 
 If you want to know which MacBooks I personally developed it on, I am using it on all my personal MacBooks every single day, including MacBook Air M1 2020 (A2337), MacBook Air M2 2022 (A2681), MacBook Pro 14' M1 Pro 2021 (A2442), MacBook Pro 16' M1 Max 2021 (A2485).
 
