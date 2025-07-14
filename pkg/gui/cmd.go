@@ -3,8 +3,9 @@ package gui
 import (
 	"fmt"
 	"os"
-	"runtime/debug"
 
+	"github.com/distatus/battery"
+	"github.com/fatih/color"
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/progrium/darwinkit/macos/foundation"
@@ -34,8 +35,6 @@ This command should not be called directly by the user. Users should use the .ap
 }
 
 func Run(unixSocketPath string) {
-	debug.PrintStack()
-
 	apiClient := client.NewClient(unixSocketPath)
 
 	app := appkit.Application_SharedApplication()
@@ -62,18 +61,21 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	unintallOrUpgrade := func(sender objc.Object) {
 		exe, err := os.Executable()
 		if err != nil {
+			logrus.WithError(err).Error("Failed to get executable path")
 			showAlert("Failed to get executable path", err.Error())
 			return
 		}
 
 		err = installDaemon(exe)
 		if err != nil {
+			logrus.WithError(err).Error("Failed to install daemon")
 			showAlert("Installation failed", err.Error())
 			return
 		}
 
 		err = startAppAtBoot()
 		if err != nil {
+			logrus.WithError(err).Error("Failed to start app at boot")
 			showAlert("Failed to start app at boot", err.Error())
 			return
 		}
@@ -110,6 +112,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		setQuickLimitsItems[i] = appkit.NewMenuItemWithAction(fmt.Sprintf("Set %d%% Limit", i), fmt.Sprintf("%d", i), func(sender objc.Object) {
 			ret, err := apiClient.SetLimit(i)
 			if err != nil {
+				logrus.WithError(err).Error("Failed to set limit")
 				showAlert("Failed to set limit", ret+err.Error())
 				return
 			}
@@ -131,6 +134,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		// Perform action based on new state
 		_, err := apiClient.SetControlMagSafeLED(checked)
 		if err != nil {
+			logrus.WithError(err).Error("Failed to set control mag safe LED")
 			showAlert("Failed to set MagSafe LED control", err.Error())
 			return
 		}
@@ -148,6 +152,7 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`)
 		// Perform action based on new state
 		_, err := apiClient.SetPreventIdleSleep(checked)
 		if err != nil {
+			logrus.WithError(err).Error("Failed to set prevent idle sleep")
 			showAlert("Failed to set prevent idle sleep", err.Error())
 			return
 		}
@@ -165,6 +170,7 @@ However, this options does not prevent manual sleep (limitation of macOS). For e
 		// Perform action based on new state
 		_, err := apiClient.SetDisableChargingPreSleep(checked)
 		if err != nil {
+			logrus.WithError(err).Error("Failed to set disable charging pre sleep")
 			showAlert("Failed to set prevent idle sleep", err.Error())
 			return
 		}
@@ -173,6 +179,30 @@ However, this options does not prevent manual sleep (limitation of macOS). For e
 
 As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS when your computer goes to sleep, and there is no way for batt to continue controlling battery charging. This option will disable charging just before sleep, so your computer will not overcharge during sleep, even if the battery charge is below the limit.`)
 	advancedMenu.AddItem(disableChargingPreSleepItem)
+
+	forceDischargeItem := checkBoxItem("Force Discharge...", "", func(checked bool) {
+		if checked {
+			alert := appkit.NewAlert()
+			alert.SetIcon(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("note.text", "notes"))
+			alert.SetAlertStyle(appkit.AlertStyleInformational)
+			alert.SetMessageText("Precautions")
+			alert.SetInformativeText(`1. The lid of your MacBook MUST be open, otherwise your Mac will go to sleep immediately.
+2. Be sure to come back and disable "Force Discharge" when you are done, otherwise the battery of your Mac will drain completely.`)
+			alert.RunModal()
+		}
+
+		_, err := apiClient.SetAdapter(!checked)
+		if err != nil {
+			showAlert("Failed to set force discharge", err.Error())
+			return
+		}
+	})
+	forceDischargeItem.SetToolTip(`Cut power from the wall. This has the same effect as unplugging the power adapter, even if the adapter is physically plugged in.
+
+This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.
+
+NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.`)
+	advancedMenu.AddItem(forceDischargeItem)
 
 	advancedMenu.AddItem(appkit.MenuItem_SeparatorItem())
 
@@ -183,18 +213,21 @@ As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS
 	uninstallItem := appkit.NewMenuItemWithAction("Uninstall Daemon...", "", func(sender objc.Object) {
 		exe, err := os.Executable()
 		if err != nil {
+			logrus.WithError(err).Error("Failed to get executable path")
 			showAlert("Failed to get executable path", err.Error())
 			return
 		}
 
 		err = uninstallDaemon(exe)
 		if err != nil {
+			logrus.WithError(err).Error("Failed to uninstall daemon")
 			showAlert("Failed to uninstall daemon", err.Error())
 			return
 		}
 
 		err = UnregisterLoginItem()
 		if err != nil {
+			logrus.WithError(err).Error("Failed to unregister login item")
 			showAlert("Failed to unregister login item", err.Error())
 			return
 		}
@@ -229,6 +262,10 @@ As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS
 
 	//nolint:staticcheck // the boolean conditions are intentionally written this way
 	toggleMenusRequiringInstall := func(battInstalled bool, capable, needUpgrade bool) {
+		if v := os.Getenv("BATT_GUI_NO_COMPATIBILITY_CHECK"); v == "1" || v == "true" {
+			return
+		}
+
 		setMenubarImage(menubarIcon, battInstalled, capable, needUpgrade)
 
 		installItem.SetHidden(!(!battInstalled))
@@ -245,6 +282,7 @@ As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS
 		controlMagSafeLEDItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		preventIdleSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		disableChargingPreSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
+		forceDischargeItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		uninstallItem.SetHidden(!battInstalled)
 
 		disableItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
@@ -256,19 +294,19 @@ As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS
 		// Get current information from the API
 		rawConfig, err := apiClient.GetConfig()
 		if err != nil {
-			logrus.WithError(err).Warnf("Failed to get config")
+			logrus.WithError(err).Error("Failed to get config")
 			toggleMenusRequiringInstall(false, false, false)
 			return
 		}
 		capable, err := apiClient.GetChargingControlCapable()
 		if err != nil {
-			logrus.WithError(err).Warnf("Failed to get charging capablility")
+			logrus.WithError(err).Error("Failed to get charging capablility")
 			toggleMenusRequiringInstall(true, false, false)
 			return
 		}
 		daemonVersion, err := apiClient.GetVersion()
 		if err != nil {
-			logrus.WithError(err).Warnf("Failed to get version")
+			logrus.WithError(err).Error("Failed to get version")
 			toggleMenusRequiringInstall(true, capable, true)
 		} else {
 			toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
@@ -277,16 +315,25 @@ As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS
 
 		isCharging, err := apiClient.GetCharging()
 		if err != nil {
+			logrus.WithError(err).Error("Failed to get charging state")
 			stateItem.SetTitle("State: Error")
 			return
 		}
 		isPluggedIn, err := apiClient.GetPluggedIn()
 		if err != nil {
+			logrus.WithError(err).Error("Failed to get plugged in state")
 			stateItem.SetTitle("State: Error")
 			return
 		}
 		currentCharge, err := apiClient.GetCurrentCharge()
 		if err != nil {
+			logrus.WithError(err).Error("Failed to get current charge")
+			stateItem.SetTitle("State: Error")
+			return
+		}
+		batteryInfo, err := apiClient.GetBatteryInfo()
+		if err != nil {
+			logrus.WithError(err).Error("Failed to get battery info")
 			stateItem.SetTitle("State: Error")
 			return
 		}
@@ -299,28 +346,30 @@ As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS
 			setCheckboxItem(quickLimitItem, limit == conf.UpperLimit())
 		}
 
-		if isCharging {
-			// Charging
-			if isPluggedIn {
-				stateItem.SetTitle("State: Charging")
-			} else {
-				stateItem.SetTitle("State: Will Charge if Plugged in")
-			}
-		} else {
-			// Not charging
-			if conf.UpperLimit() < 100 { // Limit enabled
-				stateItem.SetTitle("State: Not Charging")
-				if isPluggedIn && currentCharge < conf.LowerLimit() {
-					stateItem.SetTitle("State: Will Charge Soon")
-				}
-			} else { // Limit disabled
-				stateItem.SetTitle("State: Limit Disabled")
-			}
+		state := "Not Charging"
+		switch batteryInfo.State {
+		case battery.Charging:
+			state = color.GreenString("Charging")
+		case battery.Discharging:
+			state = color.RedString("Discharging")
+		case battery.Full:
+			state = "Full"
+		}
+		stateItem.SetTitle("State: " + state)
+
+		if !isCharging && isPluggedIn && conf.UpperLimit() < 100 && currentCharge < conf.LowerLimit() {
+			stateItem.SetTitle("State: Will Charge Soon")
 		}
 
 		setCheckboxItem(controlMagSafeLEDItem, conf.ControlMagSafeLED())
 		setCheckboxItem(preventIdleSleepItem, conf.PreventIdleSleep())
 		setCheckboxItem(disableChargingPreSleepItem, conf.DisableChargingPreSleep())
+		if adapter, err := apiClient.GetAdapter(); err == nil {
+			setCheckboxItem(forceDischargeItem, !adapter)
+		} else {
+			logrus.WithError(err).Error("Failed to get adapter")
+			forceDischargeItem.SetEnabled(false)
+		}
 	})
 	menu.SetDelegate(menuDelegate)
 
@@ -358,6 +407,7 @@ As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS
 func showAlert(msg, body string) {
 	alert := appkit.NewAlert()
 	alert.SetIcon(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("exclamationmark.triangle", "s"))
+	alert.SetAlertStyle(appkit.AlertStyleWarning)
 	alert.SetMessageText(msg)
 	alert.SetInformativeText(body)
 	alert.RunModal()
