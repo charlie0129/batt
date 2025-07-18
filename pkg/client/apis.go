@@ -39,6 +39,10 @@ func (c *Client) SetDisableChargingPreSleep(enabled bool) (string, error) {
 	return c.Put("/disable-charging-pre-sleep", strconv.FormatBool(enabled))
 }
 
+func (c *Client) SetPreventSystemSleep(enabled bool) (string, error) {
+	return c.Put("/prevent-system-sleep", strconv.FormatBool(enabled))
+}
+
 func (c *Client) SetControlMagSafeLED(enabled bool) (string, error) {
 	return c.Put("/magsafe-led", strconv.FormatBool(enabled))
 }

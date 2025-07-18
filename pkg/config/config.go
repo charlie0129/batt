@@ -9,6 +9,7 @@ type Config interface {
 	LowerLimit() int
 	PreventIdleSleep() bool
 	DisableChargingPreSleep() bool
+	PreventSystemSleep() bool
 	AllowNonRootAccess() bool
 	ControlMagSafeLED() bool
 
@@ -16,6 +17,7 @@ type Config interface {
 	SetLowerLimit(int)
 	SetPreventIdleSleep(bool)
 	SetDisableChargingPreSleep(bool)
+	SetPreventSystemSleep(bool)
 	SetAllowNonRootAccess(bool)
 	SetControlMagSafeLED(bool)
 
