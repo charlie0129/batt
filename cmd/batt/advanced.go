@@ -33,53 +33,20 @@ As described in preventing-idle-sleep, batt will be paused by macOS when your co
 }
 
 func NewSetPreventSystemSleepCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "prevent-system-sleep",
-		Short:   "Set whether to prevent system sleep during a charging session",
-		GroupID: gAdvanced,
-		Long:    `TODO - explain`,
-	}
+	return newEnableDisableCommand(
+		"prevent-system-sleep",
+		"Set whether to prevent system sleep during a charging session",
+		`This option tells macOS to create power assertion, which prevents sleep, when all conditions are met:
 
-	cmd.AddCommand(
-		&cobra.Command{
-			Use:   "enable",
-			Short: "Prevent system sleep during a charging session",
-			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.SetPreventSystemSleep(true)
-				if err != nil {
-					return fmt.Errorf("failed to set prevent system sleep: %v", err)
-				}
+1) charging is active
+2) battery charge limit is enabled
+3) computer is connected to charger.
+So your computer can go to sleep as soon as a charging session is completed / charger disconnected.
 
-				if ret != "" {
-					logrus.Infof("daemon responded: %s", ret)
-				}
-
-				logrus.Infof("successfully enabled system sleep prevention")
-
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:   "disable",
-			Short: "Do not prevent system sleep during a charging session",
-			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.SetPreventSystemSleep(false)
-				if err != nil {
-					return fmt.Errorf("failed to set prevent system sleep: %v", err)
-				}
-
-				if ret != "" {
-					logrus.Infof("daemon responded: %s", ret)
-				}
-
-				logrus.Infof("successfully disabled system sleep prevention")
-
-				return nil
-			},
-		},
+Does similar thing to prevent-idle-sleep, but works for manual sleep too.`,
+		func() (string, error) { return apiClient.SetPreventSystemSleep(true) },
+		func() (string, error) { return apiClient.SetPreventSystemSleep(false) },
 	)
-
-	return cmd
 }
 
 func NewSetControlMagSafeLEDCommand() *cobra.Command {
