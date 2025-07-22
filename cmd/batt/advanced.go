@@ -35,7 +35,7 @@ As described in preventing-idle-sleep, batt will be paused by macOS when your co
 func NewSetPreventSystemSleepCommand() *cobra.Command {
 	return newEnableDisableCommand(
 		"prevent-system-sleep",
-		"Set whether to prevent system sleep during a charging session",
+		"Set whether to prevent system sleep during a charging session (experimental)",
 		`This option tells macOS to create power assertion, which prevents sleep, when all conditions are met:
 
 1) charging is active
