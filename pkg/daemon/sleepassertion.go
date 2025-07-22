@@ -25,12 +25,12 @@ func createAssertionSystemSleep(name, details string) (C.IOPMAssertionID, error)
 
 	cfName := C.CFStringCreateWithCString(
 		C.kCFAllocatorDefault,
-		(*C.char)(cname),
+		cname,
 		C.kCFStringEncodingUTF8,
 	)
 	cfDetails := C.CFStringCreateWithCString(
 		C.kCFAllocatorDefault,
-		(*C.char)(cdetail),
+		cdetail,
 		C.kCFStringEncodingUTF8,
 	)
 	defer C.CFRelease(C.CFTypeRef(cfName))
