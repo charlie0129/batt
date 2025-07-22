@@ -180,7 +180,7 @@ However, this options does not prevent manual sleep (limitation of macOS). For e
 As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS when your computer goes to sleep, and there is no way for batt to continue controlling battery charging. This option will disable charging just before sleep, so your computer will not overcharge during sleep, even if the battery charge is below the limit.`)
 	advancedMenu.AddItem(disableChargingPreSleepItem)
 
-	preventSystemSleepItem := checkBoxItem("Prevent System Sleep when Charging", "", func(checked bool) {
+	preventSystemSleepItem := checkBoxItem("Prevent System Sleep when Charging (Experimental)", "", func(checked bool) {
 		// Perform action based on new state
 		_, err := apiClient.SetPreventSystemSleep(checked)
 		if err != nil {
