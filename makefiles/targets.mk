@@ -28,6 +28,7 @@ build: build-dirs
 	    VERSION="$(VERSION)"         \
 	    GIT_COMMIT="$(GIT_COMMIT)"   \
 	    DEBUG="$(DEBUG)"             \
+	    MACOSX_DEPLOYMENT_TARGET="$(MACOSX_DEPLOYMENT_TARGET)" \
 	    bash build/build.sh $(ENTRY)
 	echo "# BUILD linking $(DIST)/$(BIN_BASENAME) <==> $(OUTPUT) ..."
 	ln -f "$(OUTPUT)" "$(DIST)/$(BIN_BASENAME)"
