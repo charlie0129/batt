@@ -13,6 +13,14 @@ const (
 	// AdapterKey3 is used for Tahoe firmware versions.
 	AdapterKey3      = "CHIE"
 	BatteryChargeKey = "BUIC"
+
+	// Power Telemetry Keys
+	DcinCurrentKey    = "ID0R"
+	DcinVoltageKey    = "VD0R"
+	DcinPowerKey      = "PDTR"
+	BatteryCurrentKey = "B0AC"
+	BatteryVoltageKey = "B0AV"
+	BatteryPowerKey   = "PPBR"
 )
 
 var allKeys = []string{
@@ -25,4 +33,10 @@ var allKeys = []string{
 	AdapterKey2,
 	AdapterKey3,
 	BatteryChargeKey,
+	DcinCurrentKey,
+	DcinVoltageKey,
+	DcinPowerKey,
+	BatteryCurrentKey,
+	BatteryVoltageKey,
+	BatteryPowerKey,
 }
