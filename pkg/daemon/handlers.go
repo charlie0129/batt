@@ -4,12 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os/exec"
+	"regexp"
+	"strconv"
 
 	"github.com/distatus/battery"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/types"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
@@ -315,4 +319,66 @@ func getChargingControlCapable(c *gin.Context) {
 
 func getVersion(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, version.Version)
+}
+
+func getPowerTelemetry(c *gin.Context) {
+	telemetry, err := smcConn.GetPowerTelemetry()
+	if err != nil {
+		logrus.Errorf("getPowerTelemetry failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, telemetry)
+}
+
+// getBatteryHealthFromProfiler fetches Condition, MaximumCapacity, and CycleCount from system_profiler in one call.
+func getBatteryHealthFromProfiler() (condition string, maxCapacity int, cycleCount int) {
+	// Default values in case of an error
+	condition = "Unknown"
+	maxCapacity = 0
+	cycleCount = 0
+
+	cmd := exec.Command("system_profiler", "SPPowerDataType", "-xml")
+	out, err := cmd.Output()
+	if err != nil {
+		logrus.WithError(err).Warn("Could not run system_profiler to get battery health")
+		return
+	}
+	xmlOutput := string(out)
+
+	// Regex to find: <key>sppower_battery_health</key><string></string>
+	reCondition := regexp.MustCompile(`<key>sppower_battery_health</key>\s*<string>(.*)</string>`)
+	if matches := reCondition.FindStringSubmatch(xmlOutput); len(matches) > 1 {
+		condition = matches[1]
+	}
+
+	// Regex to find: <key>sppower_battery_health_maximum_capacity</key><string></string>
+	reMaxCap := regexp.MustCompile(`<key>sppower_battery_health_maximum_capacity</key>\s*<string>(\d+).*</string>`)
+	if matches := reMaxCap.FindStringSubmatch(xmlOutput); len(matches) > 1 {
+		maxCapacity, _ = strconv.Atoi(matches[1])
+	}
+
+	// Regex to find: <key>sppower_battery_cycle_count</key><integer></integer>
+	reCycleCount := regexp.MustCompile(`<key>sppower_battery_cycle_count</key>\s*<integer>(\d+)</integer>`)
+	if matches := reCycleCount.FindStringSubmatch(xmlOutput); len(matches) > 1 {
+		cycleCount, _ = strconv.Atoi(matches[1])
+	}
+
+	return
+}
+
+func getDetailedBatteryInfo(c *gin.Context) {
+	// Get all battery health info from system_profiler in one efficient call.
+	condition, maxCapacity, cycleCount := getBatteryHealthFromProfiler()
+
+	// Create our response struct
+	detailedInfo := &types.DetailedBatteryInfo{
+		CycleCount:      cycleCount,
+		Condition:       condition,
+		MaximumCapacity: float64(maxCapacity),
+	}
+
+	c.IndentedJSON(http.StatusOK, detailedInfo)
 }

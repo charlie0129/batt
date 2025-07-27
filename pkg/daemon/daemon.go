@@ -46,6 +46,8 @@ func setupRoutes() *gin.Engine {
 	router.GET("/plugged-in", getPluggedIn)
 	router.GET("/charging-control-capable", getChargingControlCapable)
 	router.GET("/version", getVersion)
+	router.GET("/power-telemetry", getPowerTelemetry)
+	router.GET("/detailed-battery-info", getDetailedBatteryInfo)
 
 	return router
 }

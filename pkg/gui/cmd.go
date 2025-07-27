@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/distatus/battery"
@@ -55,6 +56,90 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	setMenubarImage(menubarIcon, false, false, false)
 	menu := appkit.NewMenuWithTitle("batt")
 	menu.SetAutoenablesItems(false)
+
+	// ==================== POWER FLOW ====================
+	powerFlowMenu := appkit.NewMenuWithTitle("Power Flow")
+	powerFlowMenu.SetAutoenablesItems(false)
+	powerFlowSubMenuItem := appkit.NewSubMenuItem(powerFlowMenu)
+	powerFlowSubMenuItem.SetTitle("Power Flow")
+	menu.AddItem(powerFlowSubMenuItem)
+
+	acPowerMenuItem := appkit.NewMenuItem()
+	acPowerMenuItem.SetEnabled(true)
+	powerFlowMenu.AddItem(acPowerMenuItem)
+
+	batteryPowerMenuItem := appkit.NewMenuItem()
+	batteryPowerMenuItem.SetEnabled(true)
+	powerFlowMenu.AddItem(batteryPowerMenuItem)
+
+	powerFlowMenu.AddItem(appkit.MenuItem_SeparatorItem())
+
+	systemPowerMenuItem := appkit.NewMenuItem()
+	systemPowerMenuItem.SetEnabled(true)
+	powerFlowMenu.AddItem(systemPowerMenuItem)
+
+	var powerFlowUpdateTimer foundation.Timer
+	powerFlowMenuDelegate := &appkit.MenuDelegate{}
+
+	powerFlowMenuDelegate.SetMenuWillOpen(func(menu appkit.Menu) {
+		updatePowerFlow := func() {
+			telemetry, err := apiClient.GetPowerTelemetry()
+			if err != nil {
+				logrus.WithError(err).Error("Failed to get power telemetry")
+				acPowerMenuItem.SetAttributedTitle(foundation.NewAttributedStringWithString("AC Power: Error"))
+				batteryPowerMenuItem.SetAttributedTitle(foundation.NewAttributedStringWithString("Battery Power: Error"))
+				systemPowerMenuItem.SetAttributedTitle(foundation.NewAttributedStringWithString("System Power: Error"))
+				return
+			}
+
+			battInfo, err := apiClient.GetDetailedBatteryInfo()
+			if err != nil {
+				logrus.WithError(err).Warn("Failed to get detailed battery info")
+			}
+
+			systemPower := telemetry.ACPower - telemetry.BatteryPower
+
+			acPowerMenuItem.SetAttributedTitle(formatPowerString("AC", telemetry.ACPower))
+			batteryPowerMenuItem.SetAttributedTitle(formatPowerString("Battery", telemetry.BatteryPower))
+			systemPowerMenuItem.SetAttributedTitle(formatPowerString("System", systemPower))
+
+			acTooltipText := fmt.Sprintf(
+				"Voltage: %.2fV\nAmperage: %.2fA",
+				telemetry.ACVoltage,
+				telemetry.ACAmperage,
+			)
+			acPowerMenuItem.SetToolTip(acTooltipText)
+
+			if err != nil {
+				batteryPowerMenuItem.SetToolTip("Could not load battery details.")
+			} else {
+				batteryTooltipText := fmt.Sprintf(
+					"Cycle Count: %d\nCondition: %s\nMaximum Capacity: %.0f%%",
+					battInfo.CycleCount,
+					battInfo.Condition,
+					battInfo.MaximumCapacity,
+				)
+				batteryPowerMenuItem.SetToolTip(batteryTooltipText)
+			}
+		}
+
+		updatePowerFlow()
+
+		powerFlowUpdateTimer = foundation.Timer_TimerWithTimeIntervalRepeatsBlock(3, true, func(timer foundation.Timer) {
+			updatePowerFlow()
+		})
+
+		foundation.RunLoop_CurrentRunLoop().AddTimerForMode(powerFlowUpdateTimer, foundation.RunLoopMode("NSEventTrackingRunLoopMode"))
+	})
+
+	powerFlowMenuDelegate.SetMenuDidClose(func(menu appkit.Menu) {
+		// Stop timer when the submenu is closed
+		if powerFlowUpdateTimer.IsValid() {
+			powerFlowUpdateTimer.Invalidate()
+		}
+	})
+
+	powerFlowMenu.SetDelegate(powerFlowMenuDelegate)
 
 	// ==================== INSTALL & STATES ====================
 
@@ -290,7 +375,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 
 		setMenubarImage(menubarIcon, battInstalled, capable, needUpgrade)
 
-		installItem.SetHidden(!(!battInstalled))
+		installItem.SetHidden(battInstalled)
 		upgradeItem.SetHidden(!(battInstalled && (needUpgrade || !capable)))
 		stateItem.SetHidden(!(battInstalled && capable))
 		currentLimitItem.SetHidden(!(battInstalled && capable))
@@ -474,4 +559,62 @@ func setCheckboxItem(menuItem appkit.MenuItem, checked bool) {
 	} else {
 		menuItem.SetState(appkit.ControlStateValueOff)
 	}
+}
+
+func formatPowerString(label string, value float64) foundation.AttributedString {
+	var color appkit.Color
+	sign := " " // Default to a space for alignment. This is crucial.
+
+	if label == "System" {
+		color = appkit.Color_LabelColor()
+		// Keep the space sign for alignment, even though system power is always positive here.
+		// `value` is already absolute for "System" from the calling function, but we'll use Abs() again for safety.
+	} else {
+		if value > 0 {
+			color = appkit.Color_SystemGreenColor()
+			sign = "+"
+		} else if value < 0 {
+			color = appkit.Color_SystemRedColor()
+			sign = "-"
+		} else { // value == 0
+			color = appkit.Color_LabelColor()
+			// sign is already a space
+		}
+	}
+
+	// Use a monospaced font for alignment.
+	font := appkit.Font_MonospacedSystemFontOfSizeWeight(12, appkit.FontWeightRegular)
+
+	// Format the string with padding for alignment.
+	// %-8s  : The label, left-aligned and padded to 8 characters.
+	// %s    : Our sign character (+, -, or space).
+	// %7.2f : The numeric value, formatted to be 7 characters wide with 2 decimal places.
+	//         This pads smaller numbers (like 5.25) with a space to align with larger ones (like 15.25).
+	//         Using math.Abs() is critical to prevent a double negative sign.
+	fullString := fmt.Sprintf("%-8s %s%7.2fW", label+":", sign, math.Abs(value))
+
+	attrStr := foundation.NewMutableAttributedStringWithString(fullString)
+
+	// Define the range for the label (e.g., "System: ")
+	// The location where the value starts is now fixed because of our padding.
+	// Padded label (8) + space (1) = 9.
+	valueLocation := 9
+	labelRange := foundation.Range{
+		Location: 0,
+		Length:   uint64(valueLocation),
+	}
+	// Define the range for the value (e.g., "+  5.25W")
+	valueRange := foundation.Range{
+		Location: uint64(valueLocation),
+		Length:   uint64(len(fullString) - valueLocation),
+	}
+
+	// Set the label part to the standard secondary gray color.
+	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSColor"), appkit.Color_SecondaryLabelColor(), labelRange)
+	// Set the value part to its specific color (green, red, or white).
+	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSColor"), color, valueRange)
+
+	// Apply the monospaced font to the entire string.
+	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSFont"), font, foundation.Range{Location: 0, Length: uint64(len(fullString))})
+	return attrStr.AttributedString
 }

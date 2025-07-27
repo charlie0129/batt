@@ -9,6 +9,7 @@ import (
 	pkgerrors "github.com/pkg/errors"
 
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/types"
 )
 
 func (c *Client) SetLimit(l int) (string, error) {
@@ -125,6 +126,34 @@ func (c *Client) GetVersion() (string, error) {
 	// Remove "" around JSON string. I don't want to use a JSON decoder just for this.
 	ret = ret[1 : len(ret)-1] // remove the surrounding quotes
 	return ret, nil
+}
+
+func (c *Client) GetPowerTelemetry() (*types.PowerTelemetry, error) {
+	ret, err := c.Get("/power-telemetry")
+	if err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to get power telemetry")
+	}
+
+	var telemetry types.PowerTelemetry
+	if err := json.Unmarshal([]byte(ret), &telemetry); err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to unmarshal power telemetry")
+	}
+
+	return &telemetry, nil
+}
+
+func (c *Client) GetDetailedBatteryInfo() (*types.DetailedBatteryInfo, error) {
+	ret, err := c.Get("/detailed-battery-info")
+	if err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to get detailed battery info")
+	}
+
+	var info types.DetailedBatteryInfo
+	if err := json.Unmarshal([]byte(ret), &info); err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to unmarshal detailed battery info")
+	}
+
+	return &info, nil
 }
 
 func parseBoolResponse(resp string) (bool, error) {
