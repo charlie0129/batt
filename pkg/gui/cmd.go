@@ -113,13 +113,13 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 			if err != nil {
 				batteryPowerMenuItem.SetToolTip("Could not load battery details.")
 			} else {
-				tooltipText := fmt.Sprintf(
+				batteryTooltipText := fmt.Sprintf(
 					"Cycle Count: %d\nCondition: %s\nMaximum Capacity: %.0f%%",
 					battInfo.CycleCount,
 					battInfo.Condition,
 					battInfo.MaximumCapacity,
 				)
-				batteryPowerMenuItem.SetToolTip(tooltipText)
+				batteryPowerMenuItem.SetToolTip(batteryTooltipText)
 			}
 		}
 
@@ -569,7 +569,6 @@ func formatPowerString(label string, value float64) foundation.AttributedString 
 
 	if label == "System" {
 		color = appkit.Color_LabelColor()
-		// ...
 	} else {
 		switch {
 		case value > 0:
@@ -580,7 +579,6 @@ func formatPowerString(label string, value float64) foundation.AttributedString 
 			sign = "-"
 		default: // value is 0
 			color = appkit.Color_LabelColor()
-			// sign is already a space
 		}
 	}
 

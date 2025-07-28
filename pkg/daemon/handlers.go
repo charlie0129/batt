@@ -368,12 +368,11 @@ func getDetailedBatteryInfo(c *gin.Context) {
 	// Find the battery information within the JSON report.
 	for _, item := range report.SPPowerDataType {
 		if item.Name == "spbattery_information" {
-			// Parse the number from the "95 %" string.
+			// Parse the number from the string.
 			var maxCapacityValue int
 			capacityStr := strings.TrimSpace(item.HealthInfo.MaxCapacity)
 			if _, err := fmt.Sscanf(capacityStr, "%d", &maxCapacityValue); err != nil {
 				logrus.WithError(err).Warn("Failed to parse max capacity string")
-				// maxCapacityValue will remain 0, which is acceptable.
 			}
 
 			// Create and send the response.
@@ -383,7 +382,7 @@ func getDetailedBatteryInfo(c *gin.Context) {
 				MaximumCapacity: float64(maxCapacityValue),
 			}
 			c.IndentedJSON(http.StatusOK, detailedInfo)
-			return // We're done.
+			return
 		}
 	}
 
