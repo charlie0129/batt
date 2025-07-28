@@ -1,12 +1,12 @@
 package daemon
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os/exec"
-	"regexp"
-	"strconv"
+	"strings"
 
 	"github.com/distatus/battery"
 	"github.com/gin-gonic/gin"
@@ -16,6 +16,21 @@ import (
 	"github.com/charlie0129/batt/pkg/types"
 	"github.com/charlie0129/batt/pkg/version"
 )
+
+type SystemProfilerPowerReport struct {
+	SPPowerDataType []PowerItem `json:"SPPowerDataType"`
+}
+
+type PowerItem struct {
+	Name       string            `json:"_name"`
+	HealthInfo BatteryHealthInfo `json:"sppower_battery_health_info"`
+}
+
+type BatteryHealthInfo struct {
+	CycleCount  int    `json:"sppower_battery_cycle_count"`
+	Condition   string `json:"sppower_battery_health"`
+	MaxCapacity string `json:"sppower_battery_health_maximum_capacity"`
+}
 
 func getConfig(c *gin.Context) {
 	fc, err := config.NewRawFileConfigFromConfig(conf)
@@ -333,52 +348,47 @@ func getPowerTelemetry(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, telemetry)
 }
 
-// getBatteryHealthFromProfiler fetches Condition, MaximumCapacity, and CycleCount from system_profiler in one call.
-func getBatteryHealthFromProfiler() (condition string, maxCapacity int, cycleCount int) {
-	// Default values in case of an error
-	condition = "Unknown"
-	maxCapacity = 0
-	cycleCount = 0
-
-	cmd := exec.Command("system_profiler", "SPPowerDataType", "-xml")
+func getDetailedBatteryInfo(c *gin.Context) {
+	// Execute system_profiler to get all battery data in one go.
+	cmd := exec.Command("system_profiler", "SPPowerDataType", "-json")
 	out, err := cmd.Output()
 	if err != nil {
 		logrus.WithError(err).Warn("Could not run system_profiler to get battery health")
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	xmlOutput := string(out)
 
-	// Regex to find: <key>sppower_battery_health</key><string></string>
-	reCondition := regexp.MustCompile(`<key>sppower_battery_health</key>\s*<string>(.*)</string>`)
-	if matches := reCondition.FindStringSubmatch(xmlOutput); len(matches) > 1 {
-		condition = matches[1]
+	var report SystemProfilerPowerReport
+	if err := json.Unmarshal(out, &report); err != nil {
+		logrus.WithError(err).Warn("Failed to unmarshal system_profiler JSON output")
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
 	}
 
-	// Regex to find: <key>sppower_battery_health_maximum_capacity</key><string></string>
-	reMaxCap := regexp.MustCompile(`<key>sppower_battery_health_maximum_capacity</key>\s*<string>(\d+).*</string>`)
-	if matches := reMaxCap.FindStringSubmatch(xmlOutput); len(matches) > 1 {
-		maxCapacity, _ = strconv.Atoi(matches[1])
+	// Find the battery information within the JSON report.
+	for _, item := range report.SPPowerDataType {
+		if item.Name == "spbattery_information" {
+			// Parse the number from the "95 %" string.
+			var maxCapacityValue int
+			capacityStr := strings.TrimSpace(item.HealthInfo.MaxCapacity)
+			if _, err := fmt.Sscanf(capacityStr, "%d", &maxCapacityValue); err != nil {
+				logrus.WithError(err).Warn("Failed to parse max capacity string")
+				// maxCapacityValue will remain 0, which is acceptable.
+			}
+
+			// Create and send the response.
+			detailedInfo := &types.DetailedBatteryInfo{
+				CycleCount:      item.HealthInfo.CycleCount,
+				Condition:       item.HealthInfo.Condition,
+				MaximumCapacity: float64(maxCapacityValue),
+			}
+			c.IndentedJSON(http.StatusOK, detailedInfo)
+			return // We're done.
+		}
 	}
 
-	// Regex to find: <key>sppower_battery_cycle_count</key><integer></integer>
-	reCycleCount := regexp.MustCompile(`<key>sppower_battery_cycle_count</key>\s*<integer>(\d+)</integer>`)
-	if matches := reCycleCount.FindStringSubmatch(xmlOutput); len(matches) > 1 {
-		cycleCount, _ = strconv.Atoi(matches[1])
-	}
-
-	return
-}
-
-func getDetailedBatteryInfo(c *gin.Context) {
-	// Get all battery health info from system_profiler in one efficient call.
-	condition, maxCapacity, cycleCount := getBatteryHealthFromProfiler()
-
-	// Create our response struct
-	detailedInfo := &types.DetailedBatteryInfo{
-		CycleCount:      cycleCount,
-		Condition:       condition,
-		MaximumCapacity: float64(maxCapacity),
-	}
-
-	c.IndentedJSON(http.StatusOK, detailedInfo)
+	// If we finished the loop and found nothing, return an error.
+	err = errors.New("could not find spbattery_information in system_profiler output")
+	logrus.Error(err)
+	_ = c.AbortWithError(http.StatusInternalServerError, err)
 }

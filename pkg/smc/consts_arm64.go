@@ -15,9 +15,9 @@ const (
 	BatteryChargeKey = "BUIC"
 
 	// Power Telemetry Keys
-	DcinCurrentKey    = "ID0R"
-	DcinVoltageKey    = "VD0R"
-	DcinPowerKey      = "PDTR"
+	DCInCurrentKey    = "ID0R"
+	DCInVoltageKey    = "VD0R"
+	DCInPowerKey      = "PDTR"
 	BatteryCurrentKey = "B0AC"
 	BatteryVoltageKey = "B0AV"
 	BatteryPowerKey   = "PPBR"
@@ -33,9 +33,9 @@ var allKeys = []string{
 	AdapterKey2,
 	AdapterKey3,
 	BatteryChargeKey,
-	DcinCurrentKey,
-	DcinVoltageKey,
-	DcinPowerKey,
+	DCInCurrentKey,
+	DCInVoltageKey,
+	DCInPowerKey,
 	BatteryCurrentKey,
 	BatteryVoltageKey,
 	BatteryPowerKey,

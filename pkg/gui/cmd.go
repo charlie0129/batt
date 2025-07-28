@@ -113,13 +113,13 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 			if err != nil {
 				batteryPowerMenuItem.SetToolTip("Could not load battery details.")
 			} else {
-				batteryTooltipText := fmt.Sprintf(
+				tooltipText := fmt.Sprintf(
 					"Cycle Count: %d\nCondition: %s\nMaximum Capacity: %.0f%%",
 					battInfo.CycleCount,
 					battInfo.Condition,
 					battInfo.MaximumCapacity,
 				)
-				batteryPowerMenuItem.SetToolTip(batteryTooltipText)
+				batteryPowerMenuItem.SetToolTip(tooltipText)
 			}
 		}
 
@@ -143,7 +143,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 
 	// ==================== INSTALL & STATES ====================
 
-	unintallOrUpgrade := func(sender objc.Object) {
+	uninstallOrUpgrade := func(sender objc.Object) {
 		exe, err := os.Executable()
 		if err != nil {
 			logrus.WithError(err).Error("Failed to get executable path")
@@ -168,11 +168,11 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		setMenubarImage(menubarIcon, true, true, false)
 	}
 
-	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", unintallOrUpgrade)
+	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", uninstallOrUpgrade)
 	upgradeItem.SetToolTip(`Your batt daemon is not compatible with this client version and needs to be upgraded. This is usually caused by a new client version that requires a new daemon version. You can upgrade the batt daemon by running this command.`)
 	menu.AddItem(upgradeItem)
 
-	installItem := appkit.NewMenuItemWithAction("Install Daemon...", "i", unintallOrUpgrade)
+	installItem := appkit.NewMenuItemWithAction("Install Daemon...", "i", uninstallOrUpgrade)
 	installItem.SetToolTip(`Install the batt daemon. batt daemon is a component that controls charging. You must enter your password to install it because controlling charging is a privileged action.`)
 	menu.AddItem(installItem)
 
@@ -375,6 +375,8 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 
 		setMenubarImage(menubarIcon, battInstalled, capable, needUpgrade)
 
+		powerFlowSubMenuItem.SetHidden(!(battInstalled && capable && !needUpgrade))
+
 		installItem.SetHidden(battInstalled)
 		upgradeItem.SetHidden(!(battInstalled && (needUpgrade || !capable)))
 		stateItem.SetHidden(!(battInstalled && capable))
@@ -567,16 +569,16 @@ func formatPowerString(label string, value float64) foundation.AttributedString 
 
 	if label == "System" {
 		color = appkit.Color_LabelColor()
-		// Keep the space sign for alignment, even though system power is always positive here.
-		// `value` is already absolute for "System" from the calling function, but we'll use Abs() again for safety.
+		// ...
 	} else {
-		if value > 0 {
+		switch {
+		case value > 0:
 			color = appkit.Color_SystemGreenColor()
 			sign = "+"
-		} else if value < 0 {
+		case value < 0:
 			color = appkit.Color_SystemRedColor()
 			sign = "-"
-		} else { // value == 0
+		default: // value is 0
 			color = appkit.Color_LabelColor()
 			// sign is already a space
 		}

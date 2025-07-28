@@ -11,11 +11,11 @@ import (
 // GetPowerTelemetry reads the raw SMC keys and returns calculated power metrics.
 func (c *AppleSMC) GetPowerTelemetry() (*types.PowerTelemetry, error) {
 	// Read all necessary keys first.
-	dcinCurrent, err := c.Read(DcinCurrentKey)
+	dcinCurrent, err := c.Read(DCInCurrentKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read dcin current")
 	}
-	dcinVoltage, err := c.Read(DcinVoltageKey)
+	dcinVoltage, err := c.Read(DCInVoltageKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read dcin voltage")
 	}
