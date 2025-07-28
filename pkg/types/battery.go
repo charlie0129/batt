@@ -1,4 +1,4 @@
-// File: pkg/types/battery.go
+// Package types holds shared data structures for the batt project.
 package types
 
 // DetailedBatteryInfo holds comprehensive battery data for the GUI.
