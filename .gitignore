@@ -72,3 +72,5 @@ vendor
 
 # C
 *.o
+
+repomix-output.xml
