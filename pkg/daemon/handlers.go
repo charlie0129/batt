@@ -1,36 +1,18 @@
 package daemon
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"os/exec"
-	"strings"
 
 	"github.com/distatus/battery"
 	"github.com/gin-gonic/gin"
+	"github.com/peterneutron/go-iokit-powertelemetry/power"
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/config"
-	"github.com/charlie0129/batt/pkg/types"
 	"github.com/charlie0129/batt/pkg/version"
 )
-
-type SystemProfilerPowerReport struct {
-	SPPowerDataType []PowerItem `json:"SPPowerDataType"`
-}
-
-type PowerItem struct {
-	Name       string            `json:"_name"`
-	HealthInfo BatteryHealthInfo `json:"sppower_battery_health_info"`
-}
-
-type BatteryHealthInfo struct {
-	CycleCount  int    `json:"sppower_battery_cycle_count"`
-	Condition   string `json:"sppower_battery_health"`
-	MaxCapacity string `json:"sppower_battery_health_maximum_capacity"`
-}
 
 func getConfig(c *gin.Context) {
 	fc, err := config.NewRawFileConfigFromConfig(conf)
@@ -337,57 +319,11 @@ func getVersion(c *gin.Context) {
 }
 
 func getPowerTelemetry(c *gin.Context) {
-	telemetry, err := smcConn.GetPowerTelemetry()
+	batteryInfo, err := power.GetBatteryInfo()
 	if err != nil {
-		logrus.Errorf("getPowerTelemetry failed: %v", err)
-		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		logrus.Errorf("getPowerTelemetry (from library) failed: %v", err)
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-
-	c.IndentedJSON(http.StatusOK, telemetry)
-}
-
-func getDetailedBatteryInfo(c *gin.Context) {
-	// Execute system_profiler to get all battery data in one go.
-	cmd := exec.Command("system_profiler", "SPPowerDataType", "-json")
-	out, err := cmd.Output()
-	if err != nil {
-		logrus.WithError(err).Warn("Could not run system_profiler to get battery health")
-		_ = c.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
-
-	var report SystemProfilerPowerReport
-	if err := json.Unmarshal(out, &report); err != nil {
-		logrus.WithError(err).Warn("Failed to unmarshal system_profiler JSON output")
-		_ = c.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
-
-	// Find the battery information within the JSON report.
-	for _, item := range report.SPPowerDataType {
-		if item.Name == "spbattery_information" {
-			// Parse the number from the string.
-			var maxCapacityValue int
-			capacityStr := strings.TrimSpace(item.HealthInfo.MaxCapacity)
-			if _, err := fmt.Sscanf(capacityStr, "%d", &maxCapacityValue); err != nil {
-				logrus.WithError(err).Warn("Failed to parse max capacity string")
-			}
-
-			// Create and send the response.
-			detailedInfo := &types.DetailedBatteryInfo{
-				CycleCount:      item.HealthInfo.CycleCount,
-				Condition:       item.HealthInfo.Condition,
-				MaximumCapacity: float64(maxCapacityValue),
-			}
-			c.IndentedJSON(http.StatusOK, detailedInfo)
-			return
-		}
-	}
-
-	// If we finished the loop and found nothing, return an error.
-	err = errors.New("could not find spbattery_information in system_profiler output")
-	logrus.Error(err)
-	_ = c.AbortWithError(http.StatusInternalServerError, err)
+	c.IndentedJSON(http.StatusOK, batteryInfo)
 }

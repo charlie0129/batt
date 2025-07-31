@@ -83,30 +83,21 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 
 	powerFlowMenuDelegate.SetMenuWillOpen(func(menu appkit.Menu) {
 		updatePowerFlow := func() {
-			telemetry, err := apiClient.GetPowerTelemetry()
-			if err != nil {
-				logrus.WithError(err).Error("Failed to get power telemetry")
-				acPowerMenuItem.SetAttributedTitle(foundation.NewAttributedStringWithString("AC Power: Error"))
-				batteryPowerMenuItem.SetAttributedTitle(foundation.NewAttributedStringWithString("Battery Power: Error"))
-				systemPowerMenuItem.SetAttributedTitle(foundation.NewAttributedStringWithString("System Power: Error"))
+			snapshot, err := apiClient.GetPowerTelemetry() // This now returns everything
+			if err != nil {                                // handle error
 				return
 			}
 
-			battInfo, err := apiClient.GetDetailedBatteryInfo()
-			if err != nil {
-				logrus.WithError(err).Warn("Failed to get detailed battery info")
-			}
+			systemPower := snapshot.Calculations.SystemPower
 
-			systemPower := telemetry.ACPower - telemetry.BatteryPower
-
-			acPowerMenuItem.SetAttributedTitle(formatPowerString("AC", telemetry.ACPower))
-			batteryPowerMenuItem.SetAttributedTitle(formatPowerString("Battery", telemetry.BatteryPower))
+			acPowerMenuItem.SetAttributedTitle(formatPowerString("AC", snapshot.Calculations.ACPower))
+			batteryPowerMenuItem.SetAttributedTitle(formatPowerString("Battery", snapshot.Calculations.BatteryPower))
 			systemPowerMenuItem.SetAttributedTitle(formatPowerString("System", systemPower))
 
 			acTooltipText := fmt.Sprintf(
 				"Voltage: %.2fV\nAmperage: %.2fA",
-				telemetry.ACVoltage,
-				telemetry.ACAmperage,
+				snapshot.Adapter.InputVoltage,
+				snapshot.Adapter.InputAmperage,
 			)
 			acPowerMenuItem.SetToolTip(acTooltipText)
 
@@ -114,10 +105,10 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 				batteryPowerMenuItem.SetToolTip("Could not load battery details.")
 			} else {
 				batteryTooltipText := fmt.Sprintf(
-					"Cycle Count: %d\nCondition: %s\nMaximum Capacity: %.0f%%",
-					battInfo.CycleCount,
-					battInfo.Condition,
-					battInfo.MaximumCapacity,
+					"Cycle Count: %d\nMaximum Capacity: %d%%",
+					snapshot.Battery.CycleCount,
+					//battInfo.Condition,
+					snapshot.Calculations.HealthByMaxCapacity,
 				)
 				batteryPowerMenuItem.SetToolTip(batteryTooltipText)
 			}
