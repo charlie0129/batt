@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/distatus/battery"
 	"github.com/fatih/color"
+	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/client"
@@ -12,41 +12,17 @@ import (
 )
 
 type statusData struct {
-	charging      bool
-	pluggedIn     bool
-	adapter       bool
-	currentCharge int
-	batteryInfo   *battery.Battery
-	config        *config.RawFileConfig
+	systemInfo *powerkit.SystemInfo
+	config     *config.RawFileConfig
 }
 
 var apiClient = client.NewClient("/var/run/batt.sock")
 
 // fetchStatusData gathers all data required for the status command from the daemon.
 func fetchStatusData() (*statusData, error) {
-	charging, err := apiClient.GetCharging()
+	sysInfo, err := apiClient.GetSystemInfo()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get charging status: %w", err)
-	}
-
-	pluggedIn, err := apiClient.GetPluggedIn()
-	if err != nil {
-		return nil, fmt.Errorf("failed to check if you are plugged in: %w", err)
-	}
-
-	adapter, err := apiClient.GetAdapter()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get power adapter status: %w", err)
-	}
-
-	currentCharge, err := apiClient.GetCurrentCharge()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current charge: %w", err)
-	}
-
-	bat, err := apiClient.GetBatteryInfo()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get battery info: %w", err)
+		return nil, fmt.Errorf("failed to get system info: %w", err)
 	}
 
 	conf, err := apiClient.GetConfig()
@@ -55,12 +31,8 @@ func fetchStatusData() (*statusData, error) {
 	}
 
 	return &statusData{
-		charging:      charging,
-		pluggedIn:     pluggedIn,
-		adapter:       adapter,
-		currentCharge: currentCharge,
-		batteryInfo:   bat,
-		config:        conf,
+		systemInfo: sysInfo,
+		config:     conf,
 	}, nil
 }
 
@@ -78,48 +50,25 @@ func NewStatusCommand() *cobra.Command {
 			}
 
 			config := config.NewFileFromConfig(data.config, "")
+			sysInfo := data.systemInfo
+
+			// Define states from both sources for clarity
+			isIOKitConnected := sysInfo.IOKit.State.IsConnected
+			isIOKitCharging := sysInfo.IOKit.State.IsCharging
+			currentCharge := sysInfo.IOKit.Battery.CurrentCharge
+			limit := config.UpperLimit()
 
 			// Charging status.
 			cmd.Println(bold("Charging status:"))
+			printAllowCharging(cmd, sysInfo, config)
 
-			additionalMsg := " (refreshes can take up to 2 minutes)"
-			if data.charging {
-				cmd.Println("  Allow charging: " + bool2Text(true) + additionalMsg)
-				cmd.Print("    Your Mac will charge")
-				if !data.pluggedIn {
-					cmd.Print(", but you are not plugged in yet.") // not plugged in but charging is allowed.
-				} else {
-					cmd.Print(".") // plugged in and charging is allowed.
-				}
-				cmd.Println()
-			} else if config.UpperLimit() < 100 {
-				cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
-				cmd.Print("    Your Mac will not charge")
-				if data.pluggedIn {
-					cmd.Print(" even if you plug in")
-				}
-				low := config.LowerLimit()
-				if data.currentCharge >= config.UpperLimit() {
-					cmd.Print(", because your current charge is above the limit.")
-				} else if data.currentCharge < config.UpperLimit() && data.currentCharge >= low {
-					cmd.Print(", because your current charge is above the lower limit. Charging will be allowed after current charge drops below the lower limit.")
-				}
-				if data.pluggedIn && data.currentCharge < low {
-					if data.adapter {
-						cmd.Print(". However, if no manual intervention is involved, charging should be allowed soon. Wait 2 minutes and come back.")
-					} else {
-						cmd.Print(", because adapter is disabled.")
-					}
-				}
-				cmd.Println()
-			}
-
-			if data.adapter {
-				cmd.Println("  Use power adapter: " + bool2Text(true))
-				cmd.Println("    Your Mac will use power from the wall (to operate or charge), if it is plugged in.")
+			cmd.Print("  Use power adapter: ")
+			if sysInfo.SMC.State.IsAdapterEnabled {
+				cmd.Println(bool2Text(true))
+				cmd.Println("    Your Mac will use power from the wall when plugged in.")
 			} else {
-				cmd.Println("  Use power adapter: " + bool2Text(false))
-				cmd.Println("    Your Mac will not use power from the wall (to operate or charge), even if it is plugged in.")
+				cmd.Println(bool2Text(false))
+				cmd.Println("    Your Mac is set to use the battery, even when plugged in (forced discharge).")
 			}
 
 			cmd.Println()
@@ -127,46 +76,37 @@ func NewStatusCommand() *cobra.Command {
 			// Battery Info.
 			cmd.Println(bold("Battery status:"))
 
-			cmd.Printf("  Current charge: %s\n", bold("%d%%", data.currentCharge))
+			cmd.Printf("  Current charge: %s\n", bold("%d%%", currentCharge))
 
-			if data.batteryInfo.State == battery.Charging && config.UpperLimit() < 100 && data.currentCharge < config.UpperLimit() {
-				designCapacityWh := data.batteryInfo.Design / 1000.0
-				chargeRateW := data.batteryInfo.ChargeRate / 1000.0
-
-				targetCapacityWh := float64(config.UpperLimit()) / 100.0 * designCapacityWh
-				currentCapacityWh := float64(data.currentCharge) / 100.0 * designCapacityWh
-				capacityToChargeWh := targetCapacityWh - currentCapacityWh
-
-				if chargeRateW > 0 && capacityToChargeWh > 0 {
-					timeToLimitHours := capacityToChargeWh / chargeRateW
-					timeToLimitMinutes := float64(timeToLimitHours * 60)
-
-					if timeToLimitMinutes > 0.00 {
-						cmd.Printf("  Time to limit (%d%%): %s\n", config.UpperLimit(), bold("~%d minutes", int(timeToLimitMinutes)))
-					}
+			if isIOKitCharging && limit < 100 && currentCharge < limit {
+				if sysInfo.IOKit.Battery.TimeToFull < 65535 {
+					cmd.Printf("  Time to limit (%d%%): %s\n", limit, bold("~%d minutes", sysInfo.IOKit.Battery.TimeToFull))
 				}
 			}
 
-			state := "not charging"
-			switch data.batteryInfo.State {
-			case battery.Charging:
-				state = color.GreenString("charging")
-			case battery.Discharging:
-				state = color.RedString("discharging")
-			case battery.Full:
-				state = "full"
+			state := "Not Charging"
+			if sysInfo.IOKit.State.FullyCharged {
+				state = "Full"
+			} else if isIOKitCharging {
+				state = color.GreenString("Charging")
+			} else if isIOKitConnected {
+				state = "Not Charging" // Plugged in but not charging (e.g., at limit)
+			} else {
+				state = color.RedString("Discharging")
 			}
 			cmd.Printf("  State: %s\n", bold("%s", state))
-			cmd.Printf("  Full capacity: %s\n", bold("%.1f Wh", data.batteryInfo.Design/1e3))
-			cmd.Printf("  Charge rate: %s\n", bold("%.1f W", data.batteryInfo.ChargeRate/1e3))
-			cmd.Printf("  Voltage: %s\n", bold("%.2f V", data.batteryInfo.DesignVoltage))
-
+			cmd.Printf("  Health: %s\n", bold("%d%%", sysInfo.IOKit.Calculations.HealthByMaxCapacity))
+			cmd.Printf("  Cycle Count: %s\n", bold("%d", sysInfo.IOKit.Battery.CycleCount))
+			cmd.Printf("  Temperature: %s\n", bold("%.2f °C", sysInfo.IOKit.Battery.Temperature))
+			cmd.Printf("  System Power: %s\n", bold("%.2f W", sysInfo.IOKit.Calculations.SystemPower))
+			cmd.Printf("  Battery Power: %s\n", bold("%.2f W", sysInfo.IOKit.Calculations.BatteryPower))
+			cmd.Printf("  AC Power: %s\n", bold("%.2f W", sysInfo.IOKit.Calculations.AdapterPower))
 			cmd.Println()
 
 			// Config.
 			cmd.Println(bold("Battery configuration:"))
-			if config.UpperLimit() < 100 {
-				cmd.Printf("  Upper limit: %s\n", bold("%d%%", config.UpperLimit()))
+			if limit < 100 {
+				cmd.Printf("  Upper limit: %s\n", bold("%d%%", limit))
 				cmd.Printf("  Lower limit: %s\n", bold("%d%%", config.LowerLimit()))
 			} else {
 				cmd.Printf("  Charge limit: %s\n", bold("100%% (batt disabled)"))
@@ -177,6 +117,48 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Printf("  Control MagSafe LED: %s\n", bool2Text(config.ControlMagSafeLED()))
 			return nil
 		},
+	}
+}
+
+func printAllowCharging(cmd *cobra.Command, sysInfo *powerkit.SystemInfo, conf config.Config) {
+	isPluggedIn := sysInfo.IOKit.State.IsConnected
+	isCharging := sysInfo.IOKit.State.IsCharging
+	limit := conf.UpperLimit()
+
+	cmd.Print("  Allow charging: ")
+	if limit >= 100 {
+		cmd.Println(bool2Text(true))
+		if isPluggedIn {
+			if isCharging {
+				cmd.Println("    Your Mac is currently charging.")
+			} else {
+				cmd.Println("    Your Mac is fully charged.")
+			}
+		} else {
+			cmd.Println("    Your Mac will charge when you plug it in.")
+		}
+		return
+	}
+
+	// Limit is enabled
+	if sysInfo.SMC.State.IsChargingEnabled {
+		cmd.Println(bool2Text(true))
+		if isPluggedIn {
+			if isCharging {
+				cmd.Printf("    Your Mac is charging up to %d%%.\n", limit)
+			} else {
+				cmd.Printf("    Your Mac is set to charge up to %d%%, but is not currently charging.\n", limit)
+			}
+		} else {
+			cmd.Printf("    Your Mac will charge up to %d%% when you plug it in.\n", limit)
+		}
+	} else {
+		cmd.Println(bool2Text(false))
+		if isPluggedIn {
+			cmd.Printf("    Charge limit is %d%%. Your Mac is not charging to preserve battery health.\n", limit)
+		} else {
+			cmd.Printf("    Charge limit is %d%%. Your Mac will not charge if you plug it in now.\n", limit)
+		}
 	}
 }
 

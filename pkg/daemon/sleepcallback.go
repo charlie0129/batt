@@ -10,9 +10,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 	"github.com/sirupsen/logrus"
-
-	"github.com/charlie0129/batt/pkg/smc"
 )
 
 var (
@@ -104,15 +103,15 @@ func systemWillSleepCallback() {
 			sleep(preSleepLoopDelaySeconds)
 			wg.Done()
 		}()
-		err := smcConn.DisableCharging()
+		err := powerkit.SetChargingState(powerkit.ChargingActionOn)
 		if err != nil {
-			logrus.Errorf("DisableCharging failed: %v", err)
+			logrus.Errorf("Enable charging failed: %v", err)
 			return
 		}
 		if conf.ControlMagSafeLED() {
-			err = smcConn.SetMagSafeLedState(smc.LEDOff)
+			err = powerkit.SetMagsafeLEDColor(powerkit.LEDOff)
 			if err != nil {
-				logrus.Errorf("SetMagSafeLedState failed: %v", err)
+				logrus.Errorf("SetMagsafeLEDColor failed: %v", err)
 			}
 		}
 	} else {
@@ -138,9 +137,9 @@ func systemHasPoweredOnCallback() {
 		wg.Add(1)
 		go func() {
 			if conf.DisableChargingPreSleep() && conf.ControlMagSafeLED() {
-				err := smcConn.SetMagSafeLedState(smc.LEDOff)
+				err := powerkit.SetMagsafeLEDColor(powerkit.LEDOff)
 				if err != nil {
-					logrus.Errorf("SetMagSafeLedState failed: %v", err)
+					logrus.Errorf("SetMagsafeLEDColor failed: %v", err)
 				}
 			}
 

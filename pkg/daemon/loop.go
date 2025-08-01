@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 	"github.com/sirupsen/logrus"
 )
 
@@ -229,16 +230,17 @@ func maintainLoopForced() bool {
 func handleNoMaintain(isChargingEnabled bool) bool {
 	logrus.Debug("limit set to 100%, maintain loop disabled")
 	if !isChargingEnabled {
-		logrus.Debug("charging disabled, enabling")
-		err := smcConn.EnableCharging()
+		logrus.Debug("Charging is disabled, enabling")
+		err := powerkit.SetChargingState(powerkit.ChargingActionOn)
 		if err != nil {
-			logrus.Errorf("EnableCharging failed: %v", err)
+			logrus.Errorf("Enable charging failed: %v", err)
 			return false
 		}
 		if conf.ControlMagSafeLED() {
-			batteryCharge, err := smcConn.GetBatteryCharge()
+			sysInfo, err := powerkit.GetSystemInfo()
 			if err == nil {
-				_ = smcConn.SetMagSafeCharging(batteryCharge < 100)
+				isCharging := !sysInfo.IOKit.State.FullyCharged
+				updateMagSafeLed(isCharging)
 			}
 		}
 	}
@@ -247,57 +249,64 @@ func handleNoMaintain(isChargingEnabled bool) bool {
 }
 
 func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool, batteryCharge, lower, upper int) bool {
-	maintainedChargingInProgress = isChargingEnabled && isPluggedIn
 
-	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress)
-
+	// Arming Logic (runs regardless of AC power)
 	if batteryCharge < lower && !isChargingEnabled {
-		if !ignoreMissedLoops && checkMissedMaintainLoops() {
+		// The stability check is only relevant if we are plugged in, as that's when
+		// charging would start immediately. We don't want to enable charging right
+		// after waking from sleep if the power adapter is connected.
+		if isPluggedIn && !ignoreMissedLoops && checkMissedMaintainLoops() {
 			logrus.WithFields(logrus.Fields{
 				"batteryCharge": batteryCharge,
 				"lower":         lower,
 				"upper":         upper,
 			}).Infof("Battery charge is below lower limit, but too many missed maintain loops are missed. Will wait until maintain loops are stable")
-			return true
+			return true // Bail out and wait for the next loop
 		}
 
 		logrus.WithFields(logrus.Fields{
 			"batteryCharge": batteryCharge,
 			"lower":         lower,
 			"upper":         upper,
-		}).Infof("Battery charge is below lower limit, enabling charging")
-		err := smcConn.EnableCharging()
+		}).Infof("Battery charge is below lower limit, enabling charging.")
+		err := powerkit.SetChargingState(powerkit.ChargingActionOn)
 		if err != nil {
-			logrus.Errorf("EnableCharging failed: %v", err)
+			logrus.Errorf("Enable charging failed: %v", err)
 			return false
 		}
+		// Update our local state variable to reflect the change for the next steps.
 		isChargingEnabled = true
-		maintainedChargingInProgress = true
 	}
 
-	if batteryCharge >= upper && isChargingEnabled {
-		logrus.WithFields(logrus.Fields{
-			"batteryCharge": batteryCharge,
-			"lower":         lower,
-			"upper":         upper,
-		}).Infof("Battery charge is above upper limit, disabling charging")
-		err := smcConn.DisableCharging()
-		if err != nil {
-			logrus.Errorf("DisableCharging failed: %v", err)
-			return false
+	// Logic to Disable Charging (remains conditional on AC power)
+	if isPluggedIn {
+		if batteryCharge >= upper && isChargingEnabled {
+			logrus.WithFields(logrus.Fields{
+				"batteryCharge": batteryCharge,
+				"lower":         lower,
+				"upper":         upper,
+			}).Infof("Battery charge is above upper limit, disabling charging")
+			err := powerkit.SetChargingState(powerkit.ChargingActionOff)
+			if err != nil {
+				logrus.Errorf("EnableChargeInhibit failed: %v", err)
+				return false
+			}
+			// Update local state variable.
+			isChargingEnabled = false
 		}
-		isChargingEnabled = false
-		maintainedChargingInProgress = false
 	}
+
+	// Final State Update and Logging
+	// This now reflects the definitive state after all logic has run.
+	maintainedChargingInProgress = isChargingEnabled && isPluggedIn
+	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress)
 
 	if conf.ControlMagSafeLED() {
 		updateMagSafeLed(isChargingEnabled)
 	}
 
-	// batteryCharge >= upper - delta && batteryCharge < upper
-	// do nothing, keep as-is
-
 	return true
+
 }
 
 func maintainLoopInner(ignoreMissedLoops bool) bool {
@@ -305,36 +314,31 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 	lower := conf.LowerLimit()
 	maintain := upper < 100
 
-	isChargingEnabled, err := smcConn.IsChargingEnabled()
+	sysInfo, err := powerkit.GetSystemInfo()
 	if err != nil {
-		logrus.Errorf("IsChargingEnabled failed: %v", err)
+		logrus.Errorf("GetSystemInfo failed: %v", err)
 		return false
 	}
 
-	// If maintain is disabled, we don't care about the battery charge, enable charging anyway.
+	batteryCharge := sysInfo.IOKit.Battery.CurrentCharge
+	isPluggedIn := sysInfo.IOKit.State.IsConnected
+	isChargingEnabled := sysInfo.SMC.State.IsChargingEnabled
+
 	if !maintain {
 		return handleNoMaintain(isChargingEnabled)
-	}
-
-	batteryCharge, err := smcConn.GetBatteryCharge()
-	if err != nil {
-		logrus.Errorf("GetBatteryCharge failed: %v", err)
-		return false
-	}
-
-	isPluggedIn, err := smcConn.IsPluggedIn()
-	if err != nil {
-		logrus.Errorf("IsPluggedIn failed: %v", err)
-		return false
 	}
 
 	return handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn, batteryCharge, lower, upper)
 }
 
 func updateMagSafeLed(isChargingEnabled bool) {
-	err := smcConn.SetMagSafeCharging(isChargingEnabled)
+	color := powerkit.LEDGreen
+	if isChargingEnabled {
+		color = powerkit.LEDAmber
+	}
+	err := powerkit.SetMagsafeLEDColor(color)
 	if err != nil {
-		logrus.Errorf("SetMagSafeCharging failed: %v", err)
+		logrus.Errorf("SetMagsafeLEDColor failed: %v", err)
 	}
 }
 

@@ -14,12 +14,10 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/config"
-	"github.com/charlie0129/batt/pkg/smc"
 )
 
 var (
-	smcConn *smc.AppleSMC
-	conf    config.Config
+	conf config.Config
 )
 
 func setupRoutes() *gin.Engine {
@@ -39,13 +37,18 @@ func setupRoutes() *gin.Engine {
 	router.PUT("/adapter", setAdapter)
 	router.GET("/adapter", getAdapter)
 	router.GET("/charging", getCharging)
-	router.GET("/battery-info", getBatteryInfo)
+	// This endpoint is now obsolete and will be served by /system-info
+	// It is kept for backward compatibility for now, but points to the new handler.
+	router.GET("/battery-info", getSystemInfo)
 	router.PUT("/magsafe-led", setControlMagSafeLED)
 	router.GET("/current-charge", getCurrentCharge)
 	router.GET("/plugged-in", getPluggedIn)
 	router.GET("/charging-control-capable", getChargingControlCapable)
 	router.GET("/version", getVersion)
-	router.GET("/power-telemetry", getPowerTelemetry)
+	// New comprehensive endpoint
+	router.GET("/system-info", getSystemInfo)
+	// This endpoint is obsolete and will be served by /system-info
+	router.GET("/power-telemetry", getSystemInfo)
 
 	return router
 }
@@ -109,12 +112,6 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		}
 	}()
 
-	// Open Apple SMC for read/writing
-	smcConn = smc.New()
-	if err := smcConn.Open(); err != nil {
-		logrus.Fatal(err)
-	}
-
 	go func() {
 		logrus.Debugln("main loop starts")
 
@@ -140,12 +137,6 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 
 	logrus.Info("stopping listening notifications")
 	stopListeningNotifications()
-
-	logrus.Info("closing smc connection")
-	err = smcConn.Close()
-	if err != nil {
-		logrus.Errorf("failed to close smc connection: %v", err)
-	}
 
 	logrus.Info("exiting")
 	return nil
