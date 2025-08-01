@@ -188,6 +188,18 @@ As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS
 			return
 		}
 	})
+    preventSystemSleepItem.SetToolTip(`Set whether to prevent system sleep during a charging session (experimental).
+
+This option tells macOS to create power assertion, which prevents sleep, when all conditions are met:
+
+1) charging is active
+2) battery charge limit is enabled
+3) computer is connected to charger.
+So your computer can go to sleep as soon as a charging session is completed / charger disconnected.
+
+Does similar thing to prevent-idle-sleep, but works for manual sleep too.
+
+Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while this feature is in use`)
 	advancedMenu.AddItem(preventSystemSleepItem)
 
 	forceDischargeItem := checkBoxItem("Force Discharge...", "", func(checked bool) {

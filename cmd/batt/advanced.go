@@ -43,7 +43,9 @@ func NewSetPreventSystemSleepCommand() *cobra.Command {
 3) computer is connected to charger.
 So your computer can go to sleep as soon as a charging session is completed / charger disconnected.
 
-Does similar thing to prevent-idle-sleep, but works for manual sleep too.`,
+Does similar thing to prevent-idle-sleep, but works for manual sleep too.
+
+Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while this feature is in use`,
 		func() (string, error) { return apiClient.SetPreventSystemSleep(true) },
 		func() (string, error) { return apiClient.SetPreventSystemSleep(false) },
 	)
