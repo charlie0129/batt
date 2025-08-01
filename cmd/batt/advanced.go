@@ -32,6 +32,25 @@ As described in preventing-idle-sleep, batt will be paused by macOS when your co
 	)
 }
 
+func NewSetPreventSystemSleepCommand() *cobra.Command {
+	return newEnableDisableCommand(
+		"prevent-system-sleep",
+		"Set whether to prevent system sleep during a charging session (experimental)",
+		`This option tells macOS to create power assertion, which prevents sleep, when all conditions are met:
+
+1) charging is active
+2) battery charge limit is enabled
+3) computer is connected to charger.
+So your computer can go to sleep as soon as a charging session is completed / charger disconnected.
+
+Does similar thing to prevent-idle-sleep, but works for manual sleep too.
+
+Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while this feature is in use`,
+		func() (string, error) { return apiClient.SetPreventSystemSleep(true) },
+		func() (string, error) { return apiClient.SetPreventSystemSleep(false) },
+	)
+}
+
 func NewSetControlMagSafeLEDCommand() *cobra.Command {
 	return newEnableDisableCommand(
 		"magsafe-led",

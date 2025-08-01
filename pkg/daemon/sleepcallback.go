@@ -41,6 +41,10 @@ func canSystemSleepCallback() {
 		logrus.Debugln("PreventIdleSleep is disabled, allow idle sleep")
 		C.AllowPowerChange()
 		return
+	} else if conf.PreventSystemSleep() {
+		logrus.Warningln("prevent-system-sleep is active, no need in prevent-idle-sleep. Please disable it")
+		C.AllowPowerChange()
+		return
 	}
 
 	// We won't allow idle sleep if the system has just waked up,
@@ -79,6 +83,10 @@ func systemWillSleepCallback() {
 
 	if !conf.DisableChargingPreSleep() {
 		logrus.Debugln("DisableChargingPreSleep is disabled, allow sleep")
+		C.AllowPowerChange()
+		return
+	} else if conf.PreventSystemSleep() {
+		logrus.Warningln("prevent-system-sleep is active, no need in disable-charging-pre-sleep. Please disable it")
 		C.AllowPowerChange()
 		return
 	}
@@ -134,22 +142,33 @@ func systemHasPoweredOnCallback() {
 	lastWakeTime = time.Now()
 
 	if conf.UpperLimit() < 100 {
-		logrus.Debugf("delaying next loop by %d seconds", postSleepLoopDelaySeconds)
-		wg.Add(1)
-		go func() {
-			if conf.DisableChargingPreSleep() && conf.ControlMagSafeLED() {
-				err := smcConn.SetMagSafeLedState(smc.LEDOff)
-				if err != nil {
-					logrus.Errorf("SetMagSafeLedState failed: %v", err)
+		if conf.PreventSystemSleep() {
+			logrus.Debugf("prevent-system-sleep is active, so next loop is not delayed")
+			// System will wake up on charger connection for short period of time,
+			// so we are checking if battery needs charging, and if so, enabling charging
+			// and preventing system from re-entering sleep.
+			//
+			// This is required only in case laptop discharged below limit during sleep.
+			// If charging was already enabled before entering sleep, this will just update mag-safe state.
+			maintainLoopForced()
+		} else {
+			logrus.Debugf("delaying next loop by %d seconds", postSleepLoopDelaySeconds)
+			wg.Add(1)
+			go func() {
+				if conf.DisableChargingPreSleep() && conf.ControlMagSafeLED() {
+					err := smcConn.SetMagSafeLedState(smc.LEDOff)
+					if err != nil {
+						logrus.Errorf("SetMagSafeLedState failed: %v", err)
+					}
 				}
-			}
 
-			// Use sleep instead of time.After because when the computer sleeps, we
-			// actually want the sleep to prolong as well.
-			sleep(postSleepLoopDelaySeconds)
+				// Use sleep instead of time.After because when the computer sleeps, we
+				// actually want the sleep to prolong as well.
+				sleep(postSleepLoopDelaySeconds)
 
-			wg.Done()
-		}()
+				wg.Done()
+			}()
+		}
 	}
 }
 

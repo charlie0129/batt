@@ -121,6 +121,27 @@ func setDisableChargingPreSleep(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, "ok")
 }
 
+func setPreventSystemSleep(c *gin.Context) {
+	var p bool
+	if err := c.BindJSON(&p); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	conf.SetPreventSystemSleep(p)
+	if err := conf.Save(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	logrus.Infof("set prevent system sleep to %t", p)
+
+	c.IndentedJSON(http.StatusCreated, "ok")
+}
+
 func setAdapter(c *gin.Context) {
 	var d bool
 	if err := c.BindJSON(&d); err != nil {

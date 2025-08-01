@@ -187,6 +187,24 @@ As described in [Preventing idle sleep](#preventing-idle-sleep), batt will be pa
 
 To enable this feature, run `sudo batt disable-charging-pre-sleep enable`. To disable, run `sudo batt disable-charging-pre-sleep disable`.
 
+### Prevent system sleep
+
+Set whether to prevent system sleep during a charging session (experimental).
+
+This option tells macOS to create power assertion, which prevents sleep, when all conditions are met:
+
+1) charging is active
+2) battery charge limit is enabled
+3) computer is connected to charger.
+
+So your computer can go to sleep as soon as a charging session is completed / charger disconnected.
+
+Does similar thing to [Preventing idle sleep](#preventing-idle-sleep), but works for manual sleep too.
+
+*Note*: Please disable [Preventing idle sleep](#preventing-idle-sleep) and [Disabling charging before sleep](#disabling-charging-before-sleep), while this feature is in use.
+
+To enable this feature, run `sudo batt prevent-system-sleep enable`. To disable, run `sudo batt prevent-system-sleep disable`.
+
 ### Upper and lower charge limit
 
 > [!NOTE]  

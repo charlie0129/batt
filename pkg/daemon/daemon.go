@@ -36,6 +36,7 @@ func setupRoutes() *gin.Engine {
 	router.PUT("/lower-limit-delta", setLowerLimitDelta)
 	router.PUT("/prevent-idle-sleep", setPreventIdleSleep)
 	router.PUT("/disable-charging-pre-sleep", setDisableChargingPreSleep)
+	router.PUT("/prevent-system-sleep", setPreventSystemSleep)
 	router.PUT("/adapter", setAdapter)
 	router.GET("/adapter", getAdapter)
 	router.GET("/charging", getCharging)
@@ -139,6 +140,14 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 
 	logrus.Info("stopping listening notifications")
 	stopListeningNotifications()
+
+	if err := AllowSleepOnAC(); err != nil {
+		logrus.Errorf("failed to remove PM assertion before exiting: %v", err)
+	}
+
+	if err := smcConn.EnableCharging(); err != nil {
+		logrus.Errorf("failed to re-enable charging before exiting: %v", err)
+	}
 
 	logrus.Info("closing smc connection")
 	err = smcConn.Close()
