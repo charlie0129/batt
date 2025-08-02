@@ -2,10 +2,13 @@ package gui
 
 import (
 	"fmt"
+	"math"
 	"os"
+	"sync"
+	"time"
 
-	"github.com/distatus/battery"
 	"github.com/fatih/color"
+	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/progrium/darwinkit/macos/foundation"
@@ -56,9 +59,134 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	menu := appkit.NewMenuWithTitle("batt")
 	menu.SetAutoenablesItems(false)
 
+	// ==================== POWER FLOW ====================
+
+	powerFlowMenu := appkit.NewMenuWithTitle("Power Flow")
+	powerFlowMenu.SetAutoenablesItems(false)
+	powerFlowSubMenuItem := appkit.NewSubMenuItem(powerFlowMenu)
+	powerFlowSubMenuItem.SetTitle("Power Flow")
+	menu.AddItem(powerFlowSubMenuItem)
+
+	adapterPowerMenuItem := appkit.NewMenuItem()
+	adapterPowerMenuItem.SetEnabled(true)
+	powerFlowMenu.AddItem(adapterPowerMenuItem)
+
+	batteryPowerMenuItem := appkit.NewMenuItem()
+	batteryPowerMenuItem.SetEnabled(true)
+	powerFlowMenu.AddItem(batteryPowerMenuItem)
+
+	powerFlowMenu.AddItem(appkit.MenuItem_SeparatorItem())
+
+	systemPowerMenuItem := appkit.NewMenuItem()
+	systemPowerMenuItem.SetEnabled(true)
+	powerFlowMenu.AddItem(systemPowerMenuItem)
+
+	var (
+		fetcherStopChan chan struct{}
+		uiUpdateTimer   foundation.Timer
+		mu              sync.Mutex
+	)
+	infoChan := make(chan *powerkit.SystemInfo, 1) // Buffer of 1 to prevent blocking the fetcher
+	powerFlowMenuDelegate := &appkit.MenuDelegate{}
+
+	updatePowerFlowUI := func(sysInfo *powerkit.SystemInfo) {
+		if sysInfo == nil {
+			adapterPowerMenuItem.SetTitle("Error loading power data")
+			batteryPowerMenuItem.SetTitle("")
+			systemPowerMenuItem.SetTitle("")
+			return
+		}
+		ioKit := sysInfo.IOKit
+		smc := sysInfo.SMC
+
+		systemPowerMenuItem.SetAttributedTitle(formatPowerString("System", smc.Calculations.SystemPower))
+		adapterPowerMenuItem.SetAttributedTitle(formatPowerString("AC", smc.Calculations.AdapterPower))
+		batteryPowerMenuItem.SetAttributedTitle(formatPowerString("Battery", smc.Calculations.BatteryPower))
+
+		acTooltipText := fmt.Sprintf(
+			"Voltage: %.2fV\nAmperage: %.2fA",
+			ioKit.Adapter.InputVoltage,
+			ioKit.Adapter.InputAmperage,
+		)
+		adapterPowerMenuItem.SetToolTip(acTooltipText)
+
+		batteryTooltipText := fmt.Sprintf(
+			"Health: %d%%\nCycle Count: %d\nTemperature: %.2f°C",
+			ioKit.Calculations.HealthByMaxCapacity,
+			ioKit.Battery.CycleCount,
+			ioKit.Battery.Temperature,
+		)
+		batteryPowerMenuItem.SetToolTip(batteryTooltipText)
+	}
+
+	powerFlowMenuDelegate.SetMenuWillOpen(func(menu appkit.Menu) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		// Ensure previous goroutine is stopped before starting a new one
+		if fetcherStopChan != nil {
+			close(fetcherStopChan)
+		}
+		fetcherStopChan = make(chan struct{})
+
+		// Start the background data fetcher
+		go func(stop chan struct{}) {
+			ticker := time.NewTicker(3 * time.Second)
+			defer ticker.Stop()
+
+			// Initial fetch
+			sysInfo, err := apiClient.GetSystemInfo()
+			if err == nil {
+				infoChan <- sysInfo
+			}
+
+			for {
+				select {
+				case <-ticker.C:
+					sysInfo, err := apiClient.GetSystemInfo()
+					if err == nil {
+						infoChan <- sysInfo
+					} else {
+						logrus.WithError(err).Warn("Failed to get system info for power flow")
+					}
+				case <-stop:
+					return
+				}
+			}
+		}(fetcherStopChan)
+
+		// Start a timer on the main run loop to poll the channel for UI updates
+		uiUpdateTimer = foundation.Timer_TimerWithTimeIntervalRepeatsBlock(0.2, true, func(timer foundation.Timer) {
+			select {
+			case sysInfo := <-infoChan:
+				updatePowerFlowUI(sysInfo)
+			default:
+				// No new data
+			}
+		})
+		foundation.RunLoop_CurrentRunLoop().AddTimerForMode(uiUpdateTimer, foundation.RunLoopMode("NSEventTrackingRunLoopMode"))
+	})
+
+	powerFlowMenuDelegate.SetMenuDidClose(func(menu appkit.Menu) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		// Stop the background fetcher
+		if fetcherStopChan != nil {
+			close(fetcherStopChan)
+			fetcherStopChan = nil
+		}
+		// Stop the UI update timer
+		if uiUpdateTimer.IsValid() {
+			uiUpdateTimer.Invalidate()
+		}
+	})
+
+	powerFlowMenu.SetDelegate(powerFlowMenuDelegate)
+
 	// ==================== INSTALL & STATES ====================
 
-	unintallOrUpgrade := func(sender objc.Object) {
+	uninstallOrUpgrade := func(sender objc.Object) {
 		exe, err := os.Executable()
 		if err != nil {
 			logrus.WithError(err).Error("Failed to get executable path")
@@ -83,11 +211,11 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		setMenubarImage(menubarIcon, true, true, false)
 	}
 
-	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", unintallOrUpgrade)
+	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", uninstallOrUpgrade)
 	upgradeItem.SetToolTip(`Your batt daemon is not compatible with this client version and needs to be upgraded. This is usually caused by a new client version that requires a new daemon version. You can upgrade the batt daemon by running this command.`)
 	menu.AddItem(upgradeItem)
 
-	installItem := appkit.NewMenuItemWithAction("Install Daemon...", "i", unintallOrUpgrade)
+	installItem := appkit.NewMenuItemWithAction("Install Daemon...", "i", uninstallOrUpgrade)
 	installItem.SetToolTip(`Install the batt daemon. batt daemon is a component that controls charging. You must enter your password to install it because controlling charging is a privileged action.`)
 	menu.AddItem(installItem)
 
@@ -100,6 +228,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	menu.AddItem(currentLimitItem)
 
 	// ==================== QUICK LIMITS ====================
+
 	menu.AddItem(appkit.MenuItem_SeparatorItem())
 
 	quickLimitsItem := appkit.NewMenuItemWithAction("Quick Limits", "", func(sender objc.Object) {})
@@ -237,6 +366,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 	advancedMenu.AddItem(uninstallItem)
 
 	// ==================== QUIT ====================
+
 	menu.AddItem(appkit.MenuItem_SeparatorItem())
 	disableItem := appkit.NewMenuItemWithAction("Disable Charging Limit", "d", func(sender objc.Object) {
 		ret, err := apiClient.SetLimit(100)
@@ -268,7 +398,9 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 
 		setMenubarImage(menubarIcon, battInstalled, capable, needUpgrade)
 
-		installItem.SetHidden(!(!battInstalled))
+		powerFlowSubMenuItem.SetHidden(!(battInstalled && capable && !needUpgrade))
+
+		installItem.SetHidden(battInstalled)
 		upgradeItem.SetHidden(!(battInstalled && (needUpgrade || !capable)))
 		stateItem.SetHidden(!(battInstalled && capable))
 		currentLimitItem.SetHidden(!(battInstalled && capable))
@@ -313,27 +445,9 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 		}
 		logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
 
-		isCharging, err := apiClient.GetCharging()
+		sysInfo, err := apiClient.GetSystemInfo()
 		if err != nil {
-			logrus.WithError(err).Error("Failed to get charging state")
-			stateItem.SetTitle("State: Error")
-			return
-		}
-		isPluggedIn, err := apiClient.GetPluggedIn()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get plugged in state")
-			stateItem.SetTitle("State: Error")
-			return
-		}
-		currentCharge, err := apiClient.GetCurrentCharge()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get current charge")
-			stateItem.SetTitle("State: Error")
-			return
-		}
-		batteryInfo, err := apiClient.GetBatteryInfo()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get battery info")
+			logrus.WithError(err).Error("Failed to get system info")
 			stateItem.SetTitle("State: Error")
 			return
 		}
@@ -346,31 +460,32 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			setCheckboxItem(quickLimitItem, limit == conf.UpperLimit())
 		}
 
-		state := "Not Charging"
-		switch batteryInfo.State {
-		case battery.Charging:
-			state = color.GreenString("Charging")
-		case battery.Discharging:
-			state = color.RedString("Discharging")
-		case battery.Full:
-			state = "Full"
-		}
-		stateItem.SetTitle("State: " + state)
+		var state string
 
-		if !isCharging && isPluggedIn && conf.UpperLimit() < 100 && currentCharge < conf.LowerLimit() {
-			stateItem.SetTitle("State: Will Charge Soon")
+		if sysInfo.IOKit.State.FullyCharged {
+			state = "Full"
+		} else if sysInfo.IOKit.State.IsCharging {
+			state = color.GreenString("Charging")
+		} else if sysInfo.IOKit.State.IsConnected {
+			if !sysInfo.SMC.State.IsAdapterEnabled {
+				state = color.YellowString("Forced Discharge")
+			} else if conf.UpperLimit() < 100 && sysInfo.IOKit.Battery.CurrentCharge < conf.LowerLimit() {
+				state = color.RedString("Stalled (Not Charging)")
+			} else {
+				state = "Paused (On AC)"
+			}
+		} else {
+			state = color.RedString("Discharging")
 		}
+
+		stateItem.SetTitle("State: " + state)
 
 		setCheckboxItem(controlMagSafeLEDItem, conf.ControlMagSafeLED())
 		setCheckboxItem(preventIdleSleepItem, conf.PreventIdleSleep())
 		setCheckboxItem(disableChargingPreSleepItem, conf.DisableChargingPreSleep())
-		if adapter, err := apiClient.GetAdapter(); err == nil {
-			setCheckboxItem(forceDischargeItem, !adapter)
-		} else {
-			logrus.WithError(err).Error("Failed to get adapter")
-			forceDischargeItem.SetEnabled(false)
-		}
+		setCheckboxItem(forceDischargeItem, !sysInfo.SMC.State.IsAdapterEnabled)
 	})
+
 	menu.SetDelegate(menuDelegate)
 
 	// Update icon onstart up
@@ -450,4 +565,60 @@ func setCheckboxItem(menuItem appkit.MenuItem, checked bool) {
 	} else {
 		menuItem.SetState(appkit.ControlStateValueOff)
 	}
+}
+
+func formatPowerString(label string, value float64) foundation.AttributedString {
+	var color appkit.Color
+	sign := " " // Default to a space for alignment. This is crucial.
+
+	if label == "System" {
+		color = appkit.Color_LabelColor()
+	} else {
+		switch {
+		case value > 0:
+			color = appkit.Color_SystemGreenColor()
+			sign = "+"
+		case value < 0:
+			color = appkit.Color_SystemRedColor()
+			sign = "-"
+		default: // value is 0
+			color = appkit.Color_LabelColor()
+		}
+	}
+
+	// Use a monospaced font for alignment.
+	font := appkit.Font_MonospacedSystemFontOfSizeWeight(12, appkit.FontWeightRegular)
+
+	// Format the string with padding for alignment.
+	// %-8s  : The label, left-aligned and padded to 8 characters.
+	// %s    : Our sign character (+, -, or space).
+	// %7.2f : The numeric value, formatted to be 7 characters wide with 2 decimal places.
+	//         This pads smaller numbers (like 5.25) with a space to align with larger ones (like 15.25).
+	//         Using math.Abs() is critical to prevent a double negative sign.
+	fullString := fmt.Sprintf("%-8s %s%7.2fW", label+":", sign, math.Abs(value))
+
+	attrStr := foundation.NewMutableAttributedStringWithString(fullString)
+
+	// Define the range for the label (e.g., "System: ")
+	// The location where the value starts is now fixed because of our padding.
+	// Padded label (8) + space (1) = 9.
+	valueLocation := 9
+	labelRange := foundation.Range{
+		Location: 0,
+		Length:   uint64(valueLocation),
+	}
+	// Define the range for the value (e.g., "+  5.25W")
+	valueRange := foundation.Range{
+		Location: uint64(valueLocation),
+		Length:   uint64(len(fullString) - valueLocation),
+	}
+
+	// Set the label part to the standard secondary gray color.
+	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSColor"), appkit.Color_SecondaryLabelColor(), labelRange)
+	// Set the value part to its specific color (green, red, or white).
+	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSColor"), color, valueRange)
+
+	// Apply the monospaced font to the entire string.
+	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSFont"), font, foundation.Range{Location: 0, Length: uint64(len(fullString))})
+	return attrStr.AttributedString
 }

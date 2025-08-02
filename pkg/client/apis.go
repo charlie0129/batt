@@ -2,10 +2,9 @@ package client
 
 import (
 	"encoding/json"
-	"fmt"
 	"strconv"
 
-	"github.com/distatus/battery"
+	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 	pkgerrors "github.com/pkg/errors"
 
 	"github.com/charlie0129/batt/pkg/config"
@@ -71,18 +70,18 @@ func (c *Client) GetCurrentCharge() (int, error) {
 	return currentCharge, nil
 }
 
-func (c *Client) GetBatteryInfo() (*battery.Battery, error) {
-	ret, err := c.Get("/battery-info")
+func (c *Client) GetSystemInfo() (*powerkit.SystemInfo, error) {
+	ret, err := c.Get("/system-info")
 	if err != nil {
-		return nil, pkgerrors.Wrapf(err, "failed to get battery info")
+		return nil, pkgerrors.Wrapf(err, "failed to get system info")
 	}
 
-	var bat battery.Battery
-	if err := json.Unmarshal([]byte(ret), &bat); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal battery info: %w", err)
+	var info powerkit.SystemInfo
+	if err := json.Unmarshal([]byte(ret), &info); err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to unmarshal system info: %w", err)
 	}
 
-	return &bat, nil
+	return &info, nil
 }
 
 func (c *Client) GetChargingControlCapable() (bool, error) {

@@ -1,12 +1,11 @@
 package daemon
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 
-	"github.com/distatus/battery"
 	"github.com/gin-gonic/gin"
+	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/config"
@@ -59,10 +58,11 @@ func setLimit(c *gin.Context) {
 	logrus.Infof("set charging limit to %d", l)
 
 	var msg string
-	charge, err := smcConn.GetBatteryCharge()
+	sysInfo, err := powerkit.GetSystemInfo()
 	if err != nil {
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", conf.UpperLimit(), conf.LowerLimit())
 	} else {
+		charge := sysInfo.IOKit.Battery.CurrentCharge
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", conf.UpperLimit(), conf.LowerLimit(), charge)
 		if charge > conf.UpperLimit() {
 			msg += ". Current charge is above the limit, so your computer will use power from the wall only. Battery charge will remain the same."
@@ -130,7 +130,7 @@ func setAdapter(c *gin.Context) {
 	}
 
 	if d {
-		if err := smcConn.EnableAdapter(); err != nil {
+		if err := powerkit.SetAdapterState(powerkit.AdapterActionOn); err != nil {
 			logrus.Errorf("enablePowerAdapter failed: %v", err)
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())
 			_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -138,7 +138,7 @@ func setAdapter(c *gin.Context) {
 		}
 		logrus.Infof("enabled power adapter")
 	} else {
-		if err := smcConn.DisableAdapter(); err != nil {
+		if err := powerkit.SetAdapterState(powerkit.AdapterActionOff); err != nil {
 			logrus.Errorf("disablePowerAdapter failed: %v", err)
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())
 			_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -151,51 +151,39 @@ func setAdapter(c *gin.Context) {
 }
 
 func getAdapter(c *gin.Context) {
-	enabled, err := smcConn.IsAdapterEnabled()
+	sysInfo, err := powerkit.GetSystemInfo()
 	if err != nil {
-		logrus.Errorf("getAdapter failed: %v", err)
+		logrus.Errorf("getAdapter/getSystemInfo failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, enabled)
+	// The API returns 'true' if the adapter is considered enabled.
+	c.IndentedJSON(http.StatusOK, sysInfo.SMC.State.IsAdapterEnabled)
 }
 
 func getCharging(c *gin.Context) {
-	charging, err := smcConn.IsChargingEnabled()
+	sysInfo, err := powerkit.GetSystemInfo()
 	if err != nil {
-		logrus.Errorf("getCharging failed: %v", err)
+		logrus.Errorf("getSystemInfo for getCharging failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, charging)
+	c.IndentedJSON(http.StatusOK, sysInfo.IOKit.State.IsCharging)
 }
 
-func getBatteryInfo(c *gin.Context) {
-	batteries, err := battery.GetAll()
+func getSystemInfo(c *gin.Context) {
+	sysInfo, err := powerkit.GetSystemInfo()
 	if err != nil {
-		logrus.Errorf("getBatteryInfo failed: %v", err)
+		logrus.Errorf("getSystemInfo failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-
-	if len(batteries) == 0 {
-		logrus.Errorf("no batteries found")
-		c.IndentedJSON(http.StatusInternalServerError, "no batteries found")
-		_ = c.AbortWithError(http.StatusInternalServerError, errors.New("no batteries found"))
-		return
-	}
-
-	bat := batteries[0] // All Apple Silicon MacBooks only have one battery. No need to support more.
-	if bat.State == battery.Discharging {
-		bat.ChargeRate = -bat.ChargeRate
-	}
-
-	c.IndentedJSON(http.StatusOK, bat)
+	c.IndentedJSON(http.StatusOK, sysInfo)
 }
 
 func setLowerLimitDelta(c *gin.Context) {
@@ -235,15 +223,6 @@ func setLowerLimitDelta(c *gin.Context) {
 }
 
 func setControlMagSafeLED(c *gin.Context) {
-	// Check if MasSafe is supported first. If not, return error.
-	if !smcConn.CheckMagSafeExistence() {
-		logrus.Errorf("setControlMagSafeLED called but there is no MasSafe LED on this device")
-		err := fmt.Errorf("there is no MasSafe on this device. You can only enable this setting on a compatible device, e.g. MacBook Pro 14-inch 2021")
-		c.IndentedJSON(http.StatusInternalServerError, err.Error())
-		_ = c.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
-
 	var d bool
 	if err := c.BindJSON(&d); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -265,7 +244,7 @@ func setControlMagSafeLED(c *gin.Context) {
 }
 
 func getCurrentCharge(c *gin.Context) {
-	charge, err := smcConn.GetBatteryCharge()
+	sysInfo, err := powerkit.GetSystemInfo()
 	if err != nil {
 		logrus.Errorf("getCurrentCharge failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -273,23 +252,24 @@ func getCurrentCharge(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, charge)
+	c.IndentedJSON(http.StatusOK, sysInfo.IOKit.Battery.CurrentCharge)
 }
 
 func getPluggedIn(c *gin.Context) {
-	pluggedIn, err := smcConn.IsPluggedIn()
+	sysInfo, err := powerkit.GetSystemInfo()
 	if err != nil {
-		logrus.Errorf("getCurrentCharge failed: %v", err)
+		logrus.Errorf("getPluggedIn failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, pluggedIn)
+	c.IndentedJSON(http.StatusOK, sysInfo.IOKit.State.IsConnected)
 }
 
 func getChargingControlCapable(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, smcConn.IsChargingControlCapable())
+	// powerkit abstracts this away. If the library is running, we assume it's capable.
+	c.IndentedJSON(http.StatusOK, true)
 }
 
 func getVersion(c *gin.Context) {

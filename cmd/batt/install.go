@@ -11,8 +11,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/config"
-	"github.com/charlie0129/batt/pkg/smc"
 	daemonutils "github.com/charlie0129/batt/pkg/utils/daemon"
+
+	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 )
 
 func init() {
@@ -99,28 +100,14 @@ You must run this command as root.`,
 			}
 
 			if !noResetCharging {
-				// Open Apple SMC for read/writing
-				smcC := smc.New()
-				if err := smcC.Open(); err != nil {
-					return fmt.Errorf("failed to open SMC: %v", err)
-				}
-
-				err = smcC.EnableCharging()
-				if err != nil {
+				logrus.Infof("resetting charge limits")
+				if err := powerkit.SetChargingState(powerkit.ChargingActionOn); err != nil {
 					return fmt.Errorf("failed to enable charging: %v", err)
 				}
-
-				err = smcC.EnableAdapter()
-				if err != nil {
+				if err := powerkit.SetAdapterState(powerkit.AdapterActionOn); err != nil {
 					return fmt.Errorf("failed to enable adapter: %v", err)
 				}
-
-				if err := smcC.Close(); err != nil {
-					return fmt.Errorf("failed to close SMC: %v", err)
-				}
 			}
-
-			logrus.Infof("resetting charge limits")
 
 			fmt.Println("successfully uninstalled")
 
