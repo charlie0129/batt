@@ -188,7 +188,7 @@ As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS
 			return
 		}
 	})
-    preventSystemSleepItem.SetToolTip(`Set whether to prevent system sleep during a charging session (experimental).
+	preventSystemSleepItem.SetToolTip(`Set whether to prevent system sleep during a charging session (experimental).
 
 This option tells macOS to create power assertion, which prevents sleep, when all conditions are met:
 
