@@ -18,6 +18,7 @@ var (
 		Limit:                   ptr.To(80),
 		PreventIdleSleep:        ptr.To(true),
 		DisableChargingPreSleep: ptr.To(true),
+		PreventSystemSleep:      ptr.To(false),
 		AllowNonRootAccess:      ptr.To(false),
 		LowerLimitDelta:         ptr.To(2),
 		// There are Macs without MagSafe LED. We only do checks when the user
@@ -66,6 +67,7 @@ type RawFileConfig struct {
 	Limit                   *int  `json:"limit,omitempty"`
 	PreventIdleSleep        *bool `json:"preventIdleSleep,omitempty"`
 	DisableChargingPreSleep *bool `json:"disableChargingPreSleep,omitempty"`
+	PreventSystemSleep      *bool `json:"preventSystemSleep,omitempty"`
 	AllowNonRootAccess      *bool `json:"allowNonRootAccess,omitempty"`
 	LowerLimitDelta         *int  `json:"lowerLimitDelta,omitempty"`
 	ControlMagSafeLED       *bool `json:"controlMagSafeLED,omitempty"`
@@ -80,6 +82,7 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 		Limit:                   ptr.To(c.UpperLimit()),
 		PreventIdleSleep:        ptr.To(c.PreventIdleSleep()),
 		DisableChargingPreSleep: ptr.To(c.DisableChargingPreSleep()),
+		PreventSystemSleep:      ptr.To(c.PreventSystemSleep()),
 		AllowNonRootAccess:      ptr.To(c.AllowNonRootAccess()),
 		LowerLimitDelta:         ptr.To(c.UpperLimit() - c.LowerLimit()),
 		ControlMagSafeLED:       ptr.To(c.ControlMagSafeLED()),
@@ -162,6 +165,25 @@ func (f *File) DisableChargingPreSleep() bool {
 	}
 
 	return disableChargingPreSleep
+}
+
+func (f *File) PreventSystemSleep() bool {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	var preventSystemSleep bool
+
+	if f.c.PreventSystemSleep != nil {
+		preventSystemSleep = *f.c.PreventSystemSleep
+	} else {
+		preventSystemSleep = *defaultFileConfig.PreventSystemSleep
+	}
+
+	return preventSystemSleep
 }
 
 func (f *File) AllowNonRootAccess() bool {
@@ -251,6 +273,16 @@ func (f *File) SetDisableChargingPreSleep(b bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.c.DisableChargingPreSleep = &b
+}
+
+func (f *File) SetPreventSystemSleep(b bool) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.c.PreventSystemSleep = &b
 }
 
 func (f *File) SetAllowNonRootAccess(b bool) {
@@ -360,6 +392,7 @@ func (f *File) LogrusFields() logrus.Fields {
 		"lowerLimit":              f.LowerLimit(),
 		"preventIdleSleep":        f.PreventIdleSleep(),
 		"disableChargingPreSleep": f.DisableChargingPreSleep(),
+		"preventSystemSleep":      f.PreventSystemSleep(),
 		"allowNonRootAccess":      f.AllowNonRootAccess(),
 		"controlMagsafeLed":       f.ControlMagSafeLED(),
 	}

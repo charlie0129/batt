@@ -180,6 +180,28 @@ However, this options does not prevent manual sleep (limitation of macOS). For e
 As described in "Prevent Idle Sleep when Charging", batt will be paused by macOS when your computer goes to sleep, and there is no way for batt to continue controlling battery charging. This option will disable charging just before sleep, so your computer will not overcharge during sleep, even if the battery charge is below the limit.`)
 	advancedMenu.AddItem(disableChargingPreSleepItem)
 
+	preventSystemSleepItem := checkBoxItem("Prevent System Sleep when Charging (Experimental)", "", func(checked bool) {
+		// Perform action based on new state
+		_, err := apiClient.SetPreventSystemSleep(checked)
+		if err != nil {
+			showAlert("Failed to set prevent system sleep", err.Error())
+			return
+		}
+	})
+	preventSystemSleepItem.SetToolTip(`Set whether to prevent system sleep during a charging session (experimental).
+
+This option tells macOS to create power assertion, which prevents sleep, when all conditions are met:
+
+1) charging is active
+2) battery charge limit is enabled
+3) computer is connected to charger.
+So your computer can go to sleep as soon as a charging session is completed / charger disconnected.
+
+Does similar thing to prevent-idle-sleep, but works for manual sleep too.
+
+Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while this feature is in use`)
+	advancedMenu.AddItem(preventSystemSleepItem)
+
 	forceDischargeItem := checkBoxItem("Force Discharge...", "", func(checked bool) {
 		if checked {
 			alert := appkit.NewAlert()
@@ -282,6 +304,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 		controlMagSafeLEDItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		preventIdleSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		disableChargingPreSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
+		preventSystemSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		forceDischargeItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
 		uninstallItem.SetHidden(!battInstalled)
 
@@ -364,6 +387,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 		setCheckboxItem(controlMagSafeLEDItem, conf.ControlMagSafeLED())
 		setCheckboxItem(preventIdleSleepItem, conf.PreventIdleSleep())
 		setCheckboxItem(disableChargingPreSleepItem, conf.DisableChargingPreSleep())
+		setCheckboxItem(preventSystemSleepItem, conf.PreventSystemSleep())
 		if adapter, err := apiClient.GetAdapter(); err == nil {
 			setCheckboxItem(forceDischargeItem, !adapter)
 		} else {
