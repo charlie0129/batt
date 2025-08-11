@@ -73,7 +73,7 @@ GUI version is a native macOS menubar app. It's not as feature-complete as the c
 3. macOS may say it's damaged when you try to run it (it's NOT) and wants you to move it to trash. To fix it, run this in Terminal: `sudo xattr -r -d com.apple.quarantine /Applications/batt.app`.
 4. Run `batt.app`. 
 5. Follow the MenuBar UI to install or upgrade.
-6. It is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Trun OFF `Optimized Battery Charging`
+6. It is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`
 
 <img width="191" alt="SCR-20250624-lbmb-3" src="https://github.com/user-attachments/assets/4bef52d7-8483-49bd-b579-736b87c81a52" />
 <img width="206" alt="SCR-20250624-lbmb-2" src="https://github.com/user-attachments/assets/f3731a00-d973-4d67-8b4a-d57595e3842f" />
@@ -121,7 +121,7 @@ You can choose either one. Please do not use both at the same time to avoid conf
 
 - Test if it works by running `sudo batt status`. If you see your battery status, you are good to go!
 - Time to customize. By default `batt` will set a charge limit to 60%. For example, to set the charge limit to 80%, run `sudo batt limit 80`.
-- As said before, it is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Trun OFF `Optimized Battery Charging`
+- As said before, it is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`
 - If your current charge is above the limit, your computer will just stop charging and use power from the wall. It will stay at your current charge level, which is by design. You can use your battery until it is below the limit to see the effects.
 - You can refer to [Usage](#usage) for additional configurations. Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
 - To disable the charge limit, run `batt disable` or `batt limit 100`.
