@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/distatus/battery"
-	"github.com/peterneutron/go-iokit-powertelemetry/power"
 	pkgerrors "github.com/pkg/errors"
 
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/powerinfo"
 )
 
 func (c *Client) SetLimit(l int) (string, error) {
@@ -76,13 +75,13 @@ func (c *Client) GetCurrentCharge() (int, error) {
 	return currentCharge, nil
 }
 
-func (c *Client) GetBatteryInfo() (*battery.Battery, error) {
+func (c *Client) GetBatteryInfo() (*powerinfo.Battery, error) {
 	ret, err := c.Get("/battery-info")
 	if err != nil {
 		return nil, pkgerrors.Wrapf(err, "failed to get battery info")
 	}
 
-	var bat battery.Battery
+	var bat powerinfo.Battery
 	if err := json.Unmarshal([]byte(ret), &bat); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal battery info: %w", err)
 	}
@@ -128,13 +127,13 @@ func (c *Client) GetVersion() (string, error) {
 	return ret, nil
 }
 
-func (c *Client) GetPowerTelemetry() (*power.BatteryInfo, error) {
+func (c *Client) GetPowerTelemetry() (*powerinfo.PowerTelemetry, error) {
 	ret, err := c.Get("/power-telemetry")
 	if err != nil {
 		return nil, pkgerrors.Wrapf(err, "failed to get power telemetry")
 	}
 
-	var info power.BatteryInfo // Use the library's type
+	var info powerinfo.PowerTelemetry
 	if err := json.Unmarshal([]byte(ret), &info); err != nil {
 		return nil, pkgerrors.Wrapf(err, "failed to unmarshal power telemetry")
 	}

@@ -5,7 +5,6 @@ import (
 	"math"
 	"os"
 
-	"github.com/distatus/battery"
 	"github.com/fatih/color"
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/powerinfo"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
@@ -107,7 +107,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 				batteryTooltipText := fmt.Sprintf(
 					"Cycle Count: %d\nMaximum Capacity: %d%%",
 					snapshot.Battery.CycleCount,
-					//battInfo.Condition,
+					// battInfo.Condition,
 					snapshot.Calculations.HealthByMaxCapacity,
 				)
 				batteryPowerMenuItem.SetToolTip(batteryTooltipText)
@@ -449,11 +449,11 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 
 		state := "Not Charging"
 		switch batteryInfo.State {
-		case battery.Charging:
+		case powerinfo.Charging:
 			state = color.GreenString("Charging")
-		case battery.Discharging:
+		case powerinfo.Discharging:
 			state = color.RedString("Discharging")
-		case battery.Full:
+		case powerinfo.Full:
 			state = "Full"
 		}
 		stateItem.SetTitle("State: " + state)
