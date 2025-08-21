@@ -2,9 +2,9 @@ package gui
 
 import (
 	"fmt"
+	"math"
 	"os"
 
-	"github.com/distatus/battery"
 	"github.com/fatih/color"
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/powerinfo"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
@@ -56,9 +57,84 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	menu := appkit.NewMenuWithTitle("batt")
 	menu.SetAutoenablesItems(false)
 
+	// ==================== POWER FLOW ====================
+	powerFlowMenu := appkit.NewMenuWithTitle("Power Flow")
+	powerFlowMenu.SetAutoenablesItems(false)
+	powerFlowSubMenuItem := appkit.NewSubMenuItem(powerFlowMenu)
+	powerFlowSubMenuItem.SetTitle("Power Flow")
+	menu.AddItem(powerFlowSubMenuItem)
+
+	acPowerMenuItem := appkit.NewMenuItem()
+	acPowerMenuItem.SetEnabled(true)
+	powerFlowMenu.AddItem(acPowerMenuItem)
+
+	batteryPowerMenuItem := appkit.NewMenuItem()
+	batteryPowerMenuItem.SetEnabled(true)
+	powerFlowMenu.AddItem(batteryPowerMenuItem)
+
+	powerFlowMenu.AddItem(appkit.MenuItem_SeparatorItem())
+
+	systemPowerMenuItem := appkit.NewMenuItem()
+	systemPowerMenuItem.SetEnabled(true)
+	powerFlowMenu.AddItem(systemPowerMenuItem)
+
+	var powerFlowUpdateTimer foundation.Timer
+	powerFlowMenuDelegate := &appkit.MenuDelegate{}
+
+	powerFlowMenuDelegate.SetMenuWillOpen(func(menu appkit.Menu) {
+		updatePowerFlow := func() {
+			snapshot, err := apiClient.GetPowerTelemetry() // This now returns everything
+			if err != nil {                                // handle error
+				return
+			}
+
+			systemPower := snapshot.Calculations.SystemPower
+
+			acPowerMenuItem.SetAttributedTitle(formatPowerString("AC", snapshot.Calculations.ACPower))
+			batteryPowerMenuItem.SetAttributedTitle(formatPowerString("Battery", snapshot.Calculations.BatteryPower))
+			systemPowerMenuItem.SetAttributedTitle(formatPowerString("System", systemPower))
+
+			acTooltipText := fmt.Sprintf(
+				"Voltage: %.2fV\nAmperage: %.2fA",
+				snapshot.Adapter.InputVoltage,
+				snapshot.Adapter.InputAmperage,
+			)
+			acPowerMenuItem.SetToolTip(acTooltipText)
+
+			if err != nil {
+				batteryPowerMenuItem.SetToolTip("Could not load battery details.")
+			} else {
+				batteryTooltipText := fmt.Sprintf(
+					"Cycle Count: %d\nMaximum Capacity: %d%%",
+					snapshot.Battery.CycleCount,
+					// battInfo.Condition,
+					snapshot.Calculations.HealthByMaxCapacity,
+				)
+				batteryPowerMenuItem.SetToolTip(batteryTooltipText)
+			}
+		}
+
+		updatePowerFlow()
+
+		powerFlowUpdateTimer = foundation.Timer_TimerWithTimeIntervalRepeatsBlock(3, true, func(timer foundation.Timer) {
+			updatePowerFlow()
+		})
+
+		foundation.RunLoop_CurrentRunLoop().AddTimerForMode(powerFlowUpdateTimer, foundation.RunLoopMode("NSEventTrackingRunLoopMode"))
+	})
+
+	powerFlowMenuDelegate.SetMenuDidClose(func(menu appkit.Menu) {
+		// Stop timer when the submenu is closed
+		if powerFlowUpdateTimer.IsValid() {
+			powerFlowUpdateTimer.Invalidate()
+		}
+	})
+
+	powerFlowMenu.SetDelegate(powerFlowMenuDelegate)
+
 	// ==================== INSTALL & STATES ====================
 
-	unintallOrUpgrade := func(sender objc.Object) {
+	uninstallOrUpgrade := func(sender objc.Object) {
 		exe, err := os.Executable()
 		if err != nil {
 			logrus.WithError(err).Error("Failed to get executable path")
@@ -83,11 +159,11 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		setMenubarImage(menubarIcon, true, true, false)
 	}
 
-	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", unintallOrUpgrade)
+	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", uninstallOrUpgrade)
 	upgradeItem.SetToolTip(`Your batt daemon is not compatible with this client version and needs to be upgraded. This is usually caused by a new client version that requires a new daemon version. You can upgrade the batt daemon by running this command.`)
 	menu.AddItem(upgradeItem)
 
-	installItem := appkit.NewMenuItemWithAction("Install Daemon...", "i", unintallOrUpgrade)
+	installItem := appkit.NewMenuItemWithAction("Install Daemon...", "i", uninstallOrUpgrade)
 	installItem.SetToolTip(`Install the batt daemon. batt daemon is a component that controls charging. You must enter your password to install it because controlling charging is a privileged action.`)
 	menu.AddItem(installItem)
 
@@ -290,7 +366,9 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 
 		setMenubarImage(menubarIcon, battInstalled, capable, needUpgrade)
 
-		installItem.SetHidden(!(!battInstalled))
+		powerFlowSubMenuItem.SetHidden(!(battInstalled && capable && !needUpgrade))
+
+		installItem.SetHidden(battInstalled)
 		upgradeItem.SetHidden(!(battInstalled && (needUpgrade || !capable)))
 		stateItem.SetHidden(!(battInstalled && capable))
 		currentLimitItem.SetHidden(!(battInstalled && capable))
@@ -371,11 +449,11 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 
 		state := "Not Charging"
 		switch batteryInfo.State {
-		case battery.Charging:
+		case powerinfo.Charging:
 			state = color.GreenString("Charging")
-		case battery.Discharging:
+		case powerinfo.Discharging:
 			state = color.RedString("Discharging")
-		case battery.Full:
+		case powerinfo.Full:
 			state = "Full"
 		}
 		stateItem.SetTitle("State: " + state)
@@ -474,4 +552,60 @@ func setCheckboxItem(menuItem appkit.MenuItem, checked bool) {
 	} else {
 		menuItem.SetState(appkit.ControlStateValueOff)
 	}
+}
+
+func formatPowerString(label string, value float64) foundation.AttributedString {
+	var color appkit.Color
+	sign := " " // Default to a space for alignment. This is crucial.
+
+	if label == "System" {
+		color = appkit.Color_LabelColor()
+	} else {
+		switch {
+		case value > 0:
+			color = appkit.Color_SystemGreenColor()
+			sign = "+"
+		case value < 0:
+			color = appkit.Color_SystemRedColor()
+			sign = "-"
+		default: // value is 0
+			color = appkit.Color_LabelColor()
+		}
+	}
+
+	// Use a monospaced font for alignment.
+	font := appkit.Font_MonospacedSystemFontOfSizeWeight(12, appkit.FontWeightRegular)
+
+	// Format the string with padding for alignment.
+	// %-8s  : The label, left-aligned and padded to 8 characters.
+	// %s    : Our sign character (+, -, or space).
+	// %7.2f : The numeric value, formatted to be 7 characters wide with 2 decimal places.
+	//         This pads smaller numbers (like 5.25) with a space to align with larger ones (like 15.25).
+	//         Using math.Abs() is critical to prevent a double negative sign.
+	fullString := fmt.Sprintf("%-8s %s%7.2fW", label+":", sign, math.Abs(value))
+
+	attrStr := foundation.NewMutableAttributedStringWithString(fullString)
+
+	// Define the range for the label (e.g., "System: ")
+	// The location where the value starts is now fixed because of our padding.
+	// Padded label (8) + space (1) = 9.
+	valueLocation := 9
+	labelRange := foundation.Range{
+		Location: 0,
+		Length:   uint64(valueLocation),
+	}
+	// Define the range for the value (e.g., "+  5.25W")
+	valueRange := foundation.Range{
+		Location: uint64(valueLocation),
+		Length:   uint64(len(fullString) - valueLocation),
+	}
+
+	// Set the label part to the standard secondary gray color.
+	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSColor"), appkit.Color_SecondaryLabelColor(), labelRange)
+	// Set the value part to its specific color (green, red, or white).
+	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSColor"), color, valueRange)
+
+	// Apply the monospaced font to the entire string.
+	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSFont"), font, foundation.Range{Location: 0, Length: uint64(len(fullString))})
+	return attrStr.AttributedString
 }

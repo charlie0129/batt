@@ -3,13 +3,16 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 
-	"github.com/distatus/battery"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
+	"github.com/peterneutron/powerkit-go/pkg/powerkit"
+
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/powerinfo"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
@@ -196,27 +199,47 @@ func getCharging(c *gin.Context) {
 }
 
 func getBatteryInfo(c *gin.Context) {
-	batteries, err := battery.GetAll()
-	if err != nil {
+	// Use powerkit-go to retrieve current system info (IOKit only is sufficient here)
+	info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
+	if err != nil || info == nil || info.IOKit == nil {
+		if err == nil {
+			err = errors.New("no IOKit data available")
+		}
 		logrus.Errorf("getBatteryInfo failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	if len(batteries) == 0 {
-		logrus.Errorf("no batteries found")
-		c.IndentedJSON(http.StatusInternalServerError, "no batteries found")
-		_ = c.AbortWithError(http.StatusInternalServerError, errors.New("no batteries found"))
-		return
+	// Map powerkit-go data to our backwards-compatible Battery structure
+	var state powerinfo.BatteryState
+	switch {
+	case info.IOKit.State.FullyCharged:
+		state = powerinfo.Full
+	case info.IOKit.State.IsCharging:
+		state = powerinfo.Charging
+	default:
+		state = powerinfo.Discharging
 	}
 
-	bat := batteries[0] // All Apple Silicon MacBooks only have one battery. No need to support more.
-	if bat.State == battery.Discharging {
-		bat.ChargeRate = -bat.ChargeRate
+	// Compute charge rate (mW), negative when discharging
+	powerW := info.IOKit.Battery.Voltage * info.IOKit.Battery.Amperage
+	if state == powerinfo.Discharging {
+		powerW = -powerW
+	}
+	chargeRateMilliW := int(math.Round(powerW * 1000.0))
+
+	// Design capacity (assumed mWh from IOKit; keep units consistent with existing CLI output)
+	designmWh := info.IOKit.Battery.DesignCapacity
+
+	resp := powerinfo.Battery{
+		State:         state,
+		Design:        designmWh,
+		ChargeRate:    chargeRateMilliW,
+		DesignVoltage: info.IOKit.Battery.Voltage,
 	}
 
-	c.IndentedJSON(http.StatusOK, bat)
+	c.IndentedJSON(http.StatusOK, resp)
 }
 
 func setLowerLimitDelta(c *gin.Context) {
@@ -315,4 +338,31 @@ func getChargingControlCapable(c *gin.Context) {
 
 func getVersion(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, version.Version)
+}
+
+func getPowerTelemetry(c *gin.Context) {
+	// Use powerkit-go to fetch a snapshot of system power state
+	info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
+	if err != nil || info == nil || info.IOKit == nil {
+		if err == nil {
+			err = errors.New("failed to fetch IOKit power data")
+		}
+		logrus.Errorf("getPowerTelemetry failed: %v", err)
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	// Build simplified telemetry expected by the GUI
+	var snapshot powerinfo.PowerTelemetry
+	snapshot.Adapter.InputVoltage = info.IOKit.Adapter.InputVoltage
+	snapshot.Adapter.InputAmperage = info.IOKit.Adapter.InputAmperage
+
+	snapshot.Battery.CycleCount = info.IOKit.Battery.CycleCount
+
+	snapshot.Calculations.ACPower = info.IOKit.Calculations.AdapterPower
+	snapshot.Calculations.BatteryPower = info.IOKit.Calculations.BatteryPower
+	snapshot.Calculations.SystemPower = info.IOKit.Calculations.SystemPower
+	snapshot.Calculations.HealthByMaxCapacity = info.IOKit.Calculations.HealthByMaxCapacity
+
+	c.IndentedJSON(http.StatusOK, snapshot)
 }

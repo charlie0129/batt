@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 
-	"github.com/distatus/battery"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/powerinfo"
 )
 
 type statusData struct {
@@ -16,7 +16,7 @@ type statusData struct {
 	pluggedIn     bool
 	adapter       bool
 	currentCharge int
-	batteryInfo   *battery.Battery
+	batteryInfo   *powerinfo.Battery
 	config        *config.RawFileConfig
 }
 
@@ -129,9 +129,9 @@ func NewStatusCommand() *cobra.Command {
 
 			cmd.Printf("  Current charge: %s\n", bold("%d%%", data.currentCharge))
 
-			if data.batteryInfo.State == battery.Charging && config.UpperLimit() < 100 && data.currentCharge < config.UpperLimit() {
-				designCapacityWh := data.batteryInfo.Design / 1000.0
-				chargeRateW := data.batteryInfo.ChargeRate / 1000.0
+			if data.batteryInfo.State == powerinfo.Charging && config.UpperLimit() < 100 && data.currentCharge < config.UpperLimit() {
+				designCapacityWh := float64(data.batteryInfo.Design) / 1000.0
+				chargeRateW := float64(data.batteryInfo.ChargeRate) / 1000.0
 
 				targetCapacityWh := float64(config.UpperLimit()) / 100.0 * designCapacityWh
 				currentCapacityWh := float64(data.currentCharge) / 100.0 * designCapacityWh
@@ -149,16 +149,16 @@ func NewStatusCommand() *cobra.Command {
 
 			state := "not charging"
 			switch data.batteryInfo.State {
-			case battery.Charging:
+			case powerinfo.Charging:
 				state = color.GreenString("charging")
-			case battery.Discharging:
+			case powerinfo.Discharging:
 				state = color.RedString("discharging")
-			case battery.Full:
+			case powerinfo.Full:
 				state = "full"
 			}
 			cmd.Printf("  State: %s\n", bold("%s", state))
-			cmd.Printf("  Full capacity: %s\n", bold("%.1f Wh", data.batteryInfo.Design/1e3))
-			cmd.Printf("  Charge rate: %s\n", bold("%.1f W", data.batteryInfo.ChargeRate/1e3))
+			cmd.Printf("  Full capacity: %s\n", bold("%.1f Wh", float64(data.batteryInfo.Design)/1e3))
+			cmd.Printf("  Charge rate: %s\n", bold("%.1f W", float64(data.batteryInfo.ChargeRate)/1e3))
 			cmd.Printf("  Voltage: %s\n", bold("%.2f V", data.batteryInfo.DesignVoltage))
 
 			cmd.Println()
