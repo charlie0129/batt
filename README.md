@@ -51,7 +51,7 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 | `8419.x.x` / `8422.x.x` | ✅   | ✅              | ✅                       |
 | `10151.x.x`             | ✅   | ✅              | ✅                       |
 | `11881.x.x`             | ✅   | ✅              | ✅                       |
-| `13822+`                | ⚠️  | ⚠️              | ⚠️                       |
+| `13822+`                | ✅   | ✅              | ✅                       |
 
 - ❌: Unsupported
 - ✅: Supported
@@ -396,6 +396,8 @@ If you absolutely need to charge your Mac _immediately_ after waking up from sle
 - [Apple](https://developer.apple.com/library/archive/qa/qa1340/_index.html) for its guide to register and unregister sleep and wake notifications.
 - [@exidler](https://github.com/exidler) for building the MagSafe LED controlling logic.
 - [@pichxyaponn](https://github.com/pichxyaponn) for the initial version of GUI.
+- [@MabaKalox](https://github.com/MabaKalox) for prevent-system-sleep feature.
+- [@peterneutron](https://github.com/peterneutron) for refactoring the power metrics code and the power flow feature
 
 ## Star History
 
