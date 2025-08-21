@@ -5,7 +5,6 @@ import (
 	"math"
 	"os"
 
-	"github.com/fatih/color"
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/progrium/darwinkit/macos/foundation"
@@ -85,8 +84,11 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 		updatePowerFlow := func() {
 			snapshot, err := apiClient.GetPowerTelemetry() // This now returns everything
 			if err != nil {                                // handle error
+				batteryPowerMenuItem.SetToolTip("Could not load battery details.")
 				return
 			}
+
+			logrus.WithField("snapshot", snapshot).Info("Got power telemetry snapshot")
 
 			systemPower := snapshot.Calculations.SystemPower
 
@@ -101,17 +103,13 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 			)
 			acPowerMenuItem.SetToolTip(acTooltipText)
 
-			if err != nil {
-				batteryPowerMenuItem.SetToolTip("Could not load battery details.")
-			} else {
-				batteryTooltipText := fmt.Sprintf(
-					"Cycle Count: %d\nMaximum Capacity: %d%%",
-					snapshot.Battery.CycleCount,
-					// battInfo.Condition,
-					snapshot.Calculations.HealthByMaxCapacity,
-				)
-				batteryPowerMenuItem.SetToolTip(batteryTooltipText)
-			}
+			batteryTooltipText := fmt.Sprintf(
+				"Cycle Count: %d\nMaximum Capacity: %d%%",
+				snapshot.Battery.CycleCount,
+				// battInfo.Condition,
+				snapshot.Calculations.HealthByMaxCapacity,
+			)
+			batteryPowerMenuItem.SetToolTip(batteryTooltipText)
 		}
 
 		updatePowerFlow()
@@ -450,9 +448,9 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 		state := "Not Charging"
 		switch batteryInfo.State {
 		case powerinfo.Charging:
-			state = color.GreenString("Charging")
+			state = "Charging"
 		case powerinfo.Discharging:
-			state = color.RedString("Discharging")
+			state = "Discharging"
 		case powerinfo.Full:
 			state = "Full"
 		}

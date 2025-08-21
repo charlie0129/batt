@@ -152,7 +152,9 @@ func NewStatusCommand() *cobra.Command {
 			case powerinfo.Charging:
 				state = color.GreenString("charging")
 			case powerinfo.Discharging:
-				state = color.RedString("discharging")
+				if data.batteryInfo.ChargeRate != 0 {
+					state = color.RedString("discharging")
+				}
 			case powerinfo.Full:
 				state = "full"
 			}
