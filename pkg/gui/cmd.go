@@ -330,6 +330,9 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 
 		setMenubarImage(menubarIcon, false, true, false)
 	})
+	uninstallItem.SetToolTip(`Uninstall the batt daemon. This will remove the batt daemon from your system. You must enter your password to uninstall it.
+
+After uninstalling the batt daemon, no charging control will be present on your system and your Mac will charge to 100% as normal. The menubar app will still be present, but all options will be disabled. You can remove the menubar app by moving it to the trash.`)
 	advancedMenu.AddItem(uninstallItem)
 
 	// ==================== QUIT ====================
@@ -343,13 +346,18 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 			}
 		}
 	})
+	disableItem.SetToolTip(`Disable battery charge limit and let your Mac charge to 100%. This almost has the same effect as uninstalling batt, but keeps the batt daemon installed.`)
 	menu.AddItem(disableItem)
 	// Quit
-	quitItem := appkit.NewMenuItemWithAction("Quit", "q", func(sender objc.Object) {
+	quitItem := appkit.NewMenuItemWithAction("Quit Menubar App", "q", func(sender objc.Object) {
 		logrus.Info("Quitting client")
 		app.Terminate(nil)
 	})
-	quitItem.SetToolTip("Quit the batt client. Note that this does not stop the batt daemon, which will continue to run in the background. To stop the batt daemon, you can use the \"Disable Charging Limit\" command.")
+	quitItem.SetToolTip(`Quit the batt menubar app, but keep the batt daemon running.
+
+Since the batt daemon is still running, batt can continue to control charging. This is useful if you don't want the menubar icon to show up, but still want to use batt. When the client is not running, you can change batt settings using the command line interface (batt). To prevent the menubar app from starting at login, you can remove it in System Settings -> General -> Login Items & Extensions -> remove batt.app from the list (do NOT remove the batt daemon).
+
+If you want to stop batt completely (menubar app and the daemon), you can use the "Disable Charging Limit" command. To uninstall, you can use the "Uninstall Daemon" command in the Advanced menu.`)
 	menu.AddItem(quitItem)
 
 	menubarIcon.SetMenu(menu)
