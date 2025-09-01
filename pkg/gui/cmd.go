@@ -458,7 +458,9 @@ If you want to stop batt completely (menubar app and the daemon), you can use th
 		case powerinfo.Charging:
 			state = "Charging"
 		case powerinfo.Discharging:
-			state = "Discharging"
+			if batteryInfo.ChargeRate != 0 {
+				state = "Discharging"
+			}
 		case powerinfo.Full:
 			state = "Full"
 		}
