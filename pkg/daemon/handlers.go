@@ -222,19 +222,16 @@ func getBatteryInfo(c *gin.Context) {
 		state = powerinfo.Discharging
 	}
 
-	// Compute charge rate (mW), negative when discharging
-	powerW := info.IOKit.Battery.Voltage * info.IOKit.Battery.Amperage
-	if state == powerinfo.Discharging {
-		powerW = -powerW
-	}
-	chargeRateMilliW := int(math.Round(powerW * 1000.0))
+    // Compute charge rate (mW) using native amperage sign from IOKit
+    powerW := info.IOKit.Battery.Voltage * info.IOKit.Battery.Amperage
+    chargeRateMilliW := int(math.Round(powerW * 1000.0))
 
-	// Design capacity (assumed mWh from IOKit; keep units consistent with existing CLI output)
-	designmWh := info.IOKit.Battery.DesignCapacity
+    // Use the actual achievable max capacity (mAh) from IOKit.
+    designmAh := info.IOKit.Battery.MaxCapacity
 
 	resp := powerinfo.Battery{
 		State:         state,
-		Design:        designmWh,
+        Design:        designmAh,
 		ChargeRate:    chargeRateMilliW,
 		DesignVoltage: info.IOKit.Battery.Voltage,
 	}

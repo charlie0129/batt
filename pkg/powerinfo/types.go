@@ -15,7 +15,7 @@ const (
 // Battery is a minimal, backwards-compatible battery info structure
 // containing the fields used by the batt client and CLI.
 // Units:
-// - Design: mWh
+// - Design: mAh
 // - ChargeRate: mW (may be negative when discharging)
 // - DesignVoltage: Volts
 type Battery struct {

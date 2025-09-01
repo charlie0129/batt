@@ -129,23 +129,28 @@ func NewStatusCommand() *cobra.Command {
 
 			cmd.Printf("  Current charge: %s\n", bold("%d%%", data.currentCharge))
 
-			if data.batteryInfo.State == powerinfo.Charging && config.UpperLimit() < 100 && data.currentCharge < config.UpperLimit() {
-				designCapacityWh := float64(data.batteryInfo.Design) / 1000.0
-				chargeRateW := float64(data.batteryInfo.ChargeRate) / 1000.0
+            if data.batteryInfo.State == powerinfo.Charging && config.UpperLimit() < 100 && data.currentCharge < config.UpperLimit() {
+                // Work in mAh directly (no Wh conversions)
+                designCapacitymAh := float64(data.batteryInfo.Design)
+                targetCapacitymAh := float64(config.UpperLimit()) / 100.0 * designCapacitymAh
+                currentCapacitymAh := float64(data.currentCharge) / 100.0 * designCapacitymAh
+                capacityToChargemAh := targetCapacitymAh - currentCapacitymAh
 
-				targetCapacityWh := float64(config.UpperLimit()) / 100.0 * designCapacityWh
-				currentCapacityWh := float64(data.currentCharge) / 100.0 * designCapacityWh
-				capacityToChargeWh := targetCapacityWh - currentCapacityWh
+                // Convert charge rate (mW) to mA using V: mA = mW / V
+                var chargeRatemA float64
+                if data.batteryInfo.DesignVoltage > 0 {
+                    chargeRatemA = float64(data.batteryInfo.ChargeRate) / data.batteryInfo.DesignVoltage
+                }
 
-				if chargeRateW > 0 && capacityToChargeWh > 0 {
-					timeToLimitHours := capacityToChargeWh / chargeRateW
-					timeToLimitMinutes := float64(timeToLimitHours * 60)
+                if chargeRatemA > 0 && capacityToChargemAh > 0 {
+                    timeToLimitHours := capacityToChargemAh / chargeRatemA
+                    timeToLimitMinutes := float64(timeToLimitHours * 60)
 
-					if timeToLimitMinutes > 0.00 {
-						cmd.Printf("  Time to limit (%d%%): %s\n", config.UpperLimit(), bold("~%d minutes", int(timeToLimitMinutes)))
-					}
-				}
-			}
+                    if timeToLimitMinutes > 0.00 {
+                        cmd.Printf("  Time to limit (%d%%): %s\n", config.UpperLimit(), bold("~%d minutes", int(timeToLimitMinutes)))
+                    }
+                }
+            }
 
 			state := "not charging"
 			switch data.batteryInfo.State {
@@ -159,8 +164,19 @@ func NewStatusCommand() *cobra.Command {
 				state = "full"
 			}
 			cmd.Printf("  State: %s\n", bold("%s", state))
-			cmd.Printf("  Full capacity: %s\n", bold("%.1f Wh", float64(data.batteryInfo.Design)/1e3))
-			cmd.Printf("  Charge rate: %s\n", bold("%.1f W", float64(data.batteryInfo.ChargeRate)/1e3))
+            cmd.Printf("  Full capacity: %s\n", bold("%d mAh", data.batteryInfo.Design))
+            // Show charge rate in Watts with sign (+ charging, - discharging) and bright color (bold)
+            watts := float64(data.batteryInfo.ChargeRate) / 1e3
+            var rateStr string
+            switch {
+            case watts > 0:
+                rateStr = color.New(color.Bold, color.FgGreen).Sprintf("%+.1f W", watts)
+            case watts < 0:
+                rateStr = color.New(color.Bold, color.FgRed).Sprintf("%+.1f W", watts)
+            default:
+                rateStr = bold("%+.1f W", watts)
+            }
+            cmd.Printf("  Charge rate: %s\n", rateStr)
 			cmd.Printf("  Voltage: %s\n", bold("%.2f V", data.batteryInfo.DesignVoltage))
 
 			cmd.Println()
