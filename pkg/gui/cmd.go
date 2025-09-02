@@ -16,6 +16,8 @@ import (
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
 	"github.com/charlie0129/batt/pkg/version"
+
+	cgo "runtime/cgo"
 )
 
 func NewGUICommand(unixSocketPath string, groupID string) *cobra.Command {
@@ -38,13 +40,10 @@ func Run(unixSocketPath string) {
 	apiClient := client.NewClient(unixSocketPath)
 
 	app := appkit.Application_SharedApplication()
-	delegate := &appkit.ApplicationDelegate{}
-	delegate.SetApplicationDidFinishLaunching(func(notification foundation.Notification) {
-		logrus.WithField("version", version.Version).WithField("gitCommit", version.GitCommit).Info("batt gui")
-		addMenubar(app, apiClient)
-	})
-
-	app.SetDelegate(delegate)
+	// Set up the menubar immediately to avoid using a dynamic
+	// Objective-C closure for NSApplicationDidFinishLaunching.
+	logrus.WithField("version", version.Version).WithField("gitCommit", version.GitCommit).Info("batt gui")
+	addMenubar(app, apiClient)
 	app.Run()
 }
 
@@ -56,79 +55,30 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 	menu := appkit.NewMenuWithTitle("batt")
 	menu.SetAutoenablesItems(false)
 
-	// ==================== POWER FLOW ====================
+	// ==================== POWER FLOW (selector-based, ObjC-observed) ====================
 	powerFlowMenu := appkit.NewMenuWithTitle("Power Flow")
 	powerFlowMenu.SetAutoenablesItems(false)
 	powerFlowSubMenuItem := appkit.NewSubMenuItem(powerFlowMenu)
 	powerFlowSubMenuItem.SetTitle("Power Flow")
+
+	// Items with attributed titles
+	powerSystemItem := appkit.NewMenuItemWithAction("", "", func(sender objc.Object) {})
+	powerSystemItem.SetEnabled(false)
+	powerSystemItem.SetAttributedTitle(formatPowerString("System", 0))
+	powerFlowMenu.AddItem(powerSystemItem)
+
+	powerAdapterItem := appkit.NewMenuItemWithAction("", "", func(sender objc.Object) {})
+	powerAdapterItem.SetEnabled(false)
+	powerAdapterItem.SetAttributedTitle(formatPowerString("Adapter", 0))
+	powerFlowMenu.AddItem(powerAdapterItem)
+
+	powerBatteryItem := appkit.NewMenuItemWithAction("", "", func(sender objc.Object) {})
+	powerBatteryItem.SetEnabled(false)
+	powerBatteryItem.SetAttributedTitle(formatPowerString("Battery", 0))
+	powerFlowMenu.AddItem(powerBatteryItem)
+
+	// Add Power Flow submenu near the top
 	menu.AddItem(powerFlowSubMenuItem)
-
-	acPowerMenuItem := appkit.NewMenuItem()
-	acPowerMenuItem.SetEnabled(true)
-	powerFlowMenu.AddItem(acPowerMenuItem)
-
-	batteryPowerMenuItem := appkit.NewMenuItem()
-	batteryPowerMenuItem.SetEnabled(true)
-	powerFlowMenu.AddItem(batteryPowerMenuItem)
-
-	powerFlowMenu.AddItem(appkit.MenuItem_SeparatorItem())
-
-	systemPowerMenuItem := appkit.NewMenuItem()
-	systemPowerMenuItem.SetEnabled(true)
-	powerFlowMenu.AddItem(systemPowerMenuItem)
-
-	var powerFlowUpdateTimer foundation.Timer
-	powerFlowMenuDelegate := &appkit.MenuDelegate{}
-
-	powerFlowMenuDelegate.SetMenuWillOpen(func(menu appkit.Menu) {
-		updatePowerFlow := func() {
-			snapshot, err := apiClient.GetPowerTelemetry() // This now returns everything
-			if err != nil {                                // handle error
-				batteryPowerMenuItem.SetToolTip("Could not load battery details.")
-				return
-			}
-
-			logrus.WithField("snapshot", snapshot).Info("Got power telemetry snapshot")
-
-			systemPower := snapshot.Calculations.SystemPower
-
-			acPowerMenuItem.SetAttributedTitle(formatPowerString("AC", snapshot.Calculations.ACPower))
-			batteryPowerMenuItem.SetAttributedTitle(formatPowerString("Battery", snapshot.Calculations.BatteryPower))
-			systemPowerMenuItem.SetAttributedTitle(formatPowerString("System", systemPower))
-
-			acTooltipText := fmt.Sprintf(
-				"Voltage: %.2fV\nAmperage: %.2fA",
-				snapshot.Adapter.InputVoltage,
-				snapshot.Adapter.InputAmperage,
-			)
-			acPowerMenuItem.SetToolTip(acTooltipText)
-
-			batteryTooltipText := fmt.Sprintf(
-				"Cycle Count: %d\nMaximum Capacity: %d%%",
-				snapshot.Battery.CycleCount,
-				// battInfo.Condition,
-				snapshot.Calculations.HealthByMaxCapacity,
-			)
-			batteryPowerMenuItem.SetToolTip(batteryTooltipText)
-		}
-
-		updatePowerFlow()
-
-		powerFlowUpdateTimer = foundation.Timer_TimerWithTimeIntervalRepeatsBlock(3, true, func(timer foundation.Timer) {
-			updatePowerFlow()
-		})
-
-		foundation.RunLoop_CurrentRunLoop().AddTimerForMode(powerFlowUpdateTimer, foundation.RunLoopMode("NSEventTrackingRunLoopMode"))
-	})
-
-	powerFlowMenuDelegate.SetMenuDidClose(func(menu appkit.Menu) {
-		// Stop timer when the submenu is closed
-		if powerFlowUpdateTimer.IsValid() {
-			powerFlowUpdateTimer.Invalidate()
-		}
-	})
-
-	powerFlowMenu.SetDelegate(powerFlowMenuDelegate)
 
 	// ==================== INSTALL & STATES ====================
 
@@ -362,126 +312,34 @@ If you want to stop batt completely (menubar app and the daemon), you can use th
 
 	menubarIcon.SetMenu(menu)
 
-	// ==================== CALLBACKS ====================
-
-	//nolint:staticcheck // the boolean conditions are intentionally written this way
-	toggleMenusRequiringInstall := func(battInstalled bool, capable, needUpgrade bool) {
-		if v := os.Getenv("BATT_GUI_NO_COMPATIBILITY_CHECK"); v == "1" || v == "true" {
-			return
-		}
-
-		setMenubarImage(menubarIcon, battInstalled, capable, needUpgrade)
-
-		powerFlowSubMenuItem.SetHidden(!(battInstalled && capable && !needUpgrade))
-
-		installItem.SetHidden(battInstalled)
-		upgradeItem.SetHidden(!(battInstalled && (needUpgrade || !capable)))
-		stateItem.SetHidden(!(battInstalled && capable))
-		currentLimitItem.SetHidden(!(battInstalled && capable))
-
-		quickLimitsItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
-		for _, quickLimitItem := range setQuickLimitsItems {
-			quickLimitItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
-		}
-
-		advancedSubMenuItem.SetHidden(!battInstalled)
-		controlMagSafeLEDItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
-		preventIdleSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
-		disableChargingPreSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
-		preventSystemSleepItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
-		forceDischargeItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
-		uninstallItem.SetHidden(!battInstalled)
-
-		disableItem.SetHidden(!((battInstalled && capable) && !needUpgrade))
+	// ==================== CALLBACKS & OBSERVER ====================
+	ctrl := &menuController{
+		api:                         apiClient,
+		menubarIcon:                 menubarIcon,
+		powerFlowSubMenuItem:        powerFlowSubMenuItem,
+		installItem:                 installItem,
+		upgradeItem:                 upgradeItem,
+		stateItem:                   stateItem,
+		currentLimitItem:            currentLimitItem,
+		quickLimitsItem:             quickLimitsItem,
+		setQuickLimitsItems:         setQuickLimitsItems,
+		advancedSubMenuItem:         advancedSubMenuItem,
+		controlMagSafeLEDItem:       controlMagSafeLEDItem,
+		preventIdleSleepItem:        preventIdleSleepItem,
+		disableChargingPreSleepItem: disableChargingPreSleepItem,
+		preventSystemSleepItem:      preventSystemSleepItem,
+		forceDischargeItem:          forceDischargeItem,
+		uninstallItem:               uninstallItem,
+		disableItem:                 disableItem,
+		// Power Flow items
+		systemItem:  powerSystemItem,
+		adapterItem: powerAdapterItem,
+		batteryItem: powerBatteryItem,
 	}
+	h := cgo.NewHandle(ctrl)
+	_ = AttachPowerFlowObserver(menu, h)
 
-	menuDelegate := &appkit.MenuDelegate{}
-
-	menuDelegate.SetMenuWillOpen(func(menu appkit.Menu) {
-		// Get current information from the API
-		rawConfig, err := apiClient.GetConfig()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get config")
-			toggleMenusRequiringInstall(false, false, false)
-			return
-		}
-		capable, err := apiClient.GetChargingControlCapable()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get charging capablility")
-			toggleMenusRequiringInstall(true, false, false)
-			return
-		}
-		daemonVersion, err := apiClient.GetVersion()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get version")
-			toggleMenusRequiringInstall(true, capable, true)
-		} else {
-			toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
-		}
-		logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
-
-		isCharging, err := apiClient.GetCharging()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get charging state")
-			stateItem.SetTitle("State: Error")
-			return
-		}
-		isPluggedIn, err := apiClient.GetPluggedIn()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get plugged in state")
-			stateItem.SetTitle("State: Error")
-			return
-		}
-		currentCharge, err := apiClient.GetCurrentCharge()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get current charge")
-			stateItem.SetTitle("State: Error")
-			return
-		}
-		batteryInfo, err := apiClient.GetBatteryInfo()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get battery info")
-			stateItem.SetTitle("State: Error")
-			return
-		}
-
-		conf := config.NewFileFromConfig(rawConfig, "")
-		logrus.WithFields(conf.LogrusFields()).Info("Got config")
-
-		currentLimitItem.SetTitle(fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
-		for limit, quickLimitItem := range setQuickLimitsItems {
-			setCheckboxItem(quickLimitItem, limit == conf.UpperLimit())
-		}
-
-		state := "Not Charging"
-		switch batteryInfo.State {
-		case powerinfo.Charging:
-			state = "Charging"
-		case powerinfo.Discharging:
-			if batteryInfo.ChargeRate != 0 {
-				state = "Discharging"
-			}
-		case powerinfo.Full:
-			state = "Full"
-		}
-		stateItem.SetTitle("State: " + state)
-
-		if !isCharging && isPluggedIn && conf.UpperLimit() < 100 && currentCharge < conf.LowerLimit() {
-			stateItem.SetTitle("State: Will Charge Soon")
-		}
-
-		setCheckboxItem(controlMagSafeLEDItem, conf.ControlMagSafeLED())
-		setCheckboxItem(preventIdleSleepItem, conf.PreventIdleSleep())
-		setCheckboxItem(disableChargingPreSleepItem, conf.DisableChargingPreSleep())
-		setCheckboxItem(preventSystemSleepItem, conf.PreventSystemSleep())
-		if adapter, err := apiClient.GetAdapter(); err == nil {
-			setCheckboxItem(forceDischargeItem, !adapter)
-		} else {
-			logrus.WithError(err).Error("Failed to get adapter")
-			forceDischargeItem.SetEnabled(false)
-		}
-	})
-	menu.SetDelegate(menuDelegate)
+	// The observer above will trigger onWillOpen/onDidClose/timer without using libffi closures.
 
 	// Update icon onstart up
 	{
@@ -489,7 +347,7 @@ If you want to stop batt completely (menubar app and the daemon), you can use th
 		rawConfig, err := apiClient.GetConfig()
 		if err != nil {
 			logrus.WithError(err).Warnf("Failed to get config")
-			toggleMenusRequiringInstall(false, false, false)
+			ctrl.toggleMenusRequiringInstall(false, false, false)
 			return
 		}
 		conf := config.NewFileFromConfig(rawConfig, "")
@@ -498,7 +356,7 @@ If you want to stop batt completely (menubar app and the daemon), you can use th
 		capable, err := apiClient.GetChargingControlCapable()
 		if err != nil {
 			logrus.WithError(err).Warnf("Failed to get charging capablility")
-			toggleMenusRequiringInstall(true, false, false)
+			ctrl.toggleMenusRequiringInstall(true, false, false)
 			return
 		}
 		logrus.WithField("capable", capable).Info("Got charging control capability")
@@ -506,9 +364,9 @@ If you want to stop batt completely (menubar app and the daemon), you can use th
 		daemonVersion, err := apiClient.GetVersion()
 		if err != nil {
 			logrus.WithError(err).Warnf("Failed to get version")
-			toggleMenusRequiringInstall(true, capable, true)
+			ctrl.toggleMenusRequiringInstall(true, capable, true)
 		} else {
-			toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
+			ctrl.toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
 		}
 		logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
 	}
@@ -560,6 +418,175 @@ func setCheckboxItem(menuItem appkit.MenuItem, checked bool) {
 	} else {
 		menuItem.SetState(appkit.ControlStateValueOff)
 	}
+}
+
+// menuController owns the menu updates and avoids darwinkit delegate closures.
+type menuController struct {
+	api         *client.Client
+	menubarIcon appkit.StatusItem
+
+	// Power Flow
+	powerFlowSubMenuItem appkit.MenuItem
+	systemItem           appkit.MenuItem
+	adapterItem          appkit.MenuItem
+	batteryItem          appkit.MenuItem
+
+	// Core items
+	installItem         appkit.MenuItem
+	upgradeItem         appkit.MenuItem
+	stateItem           appkit.MenuItem
+	currentLimitItem    appkit.MenuItem
+	quickLimitsItem     appkit.MenuItem
+	setQuickLimitsItems map[int]appkit.MenuItem
+
+	// Advanced
+	advancedSubMenuItem         appkit.MenuItem
+	controlMagSafeLEDItem       appkit.MenuItem
+	preventIdleSleepItem        appkit.MenuItem
+	disableChargingPreSleepItem appkit.MenuItem
+	preventSystemSleepItem      appkit.MenuItem
+	forceDischargeItem          appkit.MenuItem
+	uninstallItem               appkit.MenuItem
+
+	// Quit/disable
+	disableItem appkit.MenuItem
+}
+
+func (c *menuController) onWillOpen() {
+	c.refreshOnOpen()
+	c.updatePowerFlowOnce()
+}
+
+func (c *menuController) onDidClose() {}
+
+func (c *menuController) onTimerTick() { c.updatePowerFlowOnce() }
+
+func (c *menuController) toggleMenusRequiringInstall(battInstalled, capable, needUpgrade bool) {
+	if v := os.Getenv("BATT_GUI_NO_COMPATIBILITY_CHECK"); v == "1" || v == "true" {
+		return
+	}
+	setMenubarImage(c.menubarIcon, battInstalled, capable, needUpgrade)
+
+	// Visible when installed, capable, and no upgrade needed.
+	c.powerFlowSubMenuItem.SetHidden(!battInstalled || !capable || needUpgrade)
+
+	c.installItem.SetHidden(battInstalled)
+	// Show when installed AND (needs upgrade OR not capable)
+	c.upgradeItem.SetHidden(!battInstalled || (!needUpgrade && capable))
+	// Show when installed AND capable
+	c.stateItem.SetHidden(!battInstalled || !capable)
+	c.currentLimitItem.SetHidden(!battInstalled || !capable)
+
+	// Show when installed AND capable AND no upgrade needed
+	c.quickLimitsItem.SetHidden(!battInstalled || !capable || needUpgrade)
+	for _, it := range c.setQuickLimitsItems {
+		it.SetHidden(!battInstalled || !capable || needUpgrade)
+	}
+
+	c.advancedSubMenuItem.SetHidden(!battInstalled)
+	c.controlMagSafeLEDItem.SetHidden(!battInstalled || !capable || needUpgrade)
+	c.preventIdleSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
+	c.disableChargingPreSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
+	c.preventSystemSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
+	c.forceDischargeItem.SetHidden(!battInstalled || !capable || needUpgrade)
+	c.uninstallItem.SetHidden(!battInstalled)
+
+	c.disableItem.SetHidden(!battInstalled || !capable || needUpgrade)
+}
+
+func (c *menuController) refreshOnOpen() {
+	rawConfig, err := c.api.GetConfig()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get config")
+		c.toggleMenusRequiringInstall(false, false, false)
+		return
+	}
+	capable, err := c.api.GetChargingControlCapable()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get charging capablility")
+		c.toggleMenusRequiringInstall(true, false, false)
+		return
+	}
+	daemonVersion, err := c.api.GetVersion()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get version")
+		c.toggleMenusRequiringInstall(true, capable, true)
+	} else {
+		c.toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
+	}
+	logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
+
+	isCharging, err := c.api.GetCharging()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get charging state")
+		c.stateItem.SetTitle("State: Error")
+		return
+	}
+	isPluggedIn, err := c.api.GetPluggedIn()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get plugged in state")
+		c.stateItem.SetTitle("State: Error")
+		return
+	}
+	currentCharge, err := c.api.GetCurrentCharge()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get current charge")
+		c.stateItem.SetTitle("State: Error")
+		return
+	}
+	batteryInfo, err := c.api.GetBatteryInfo()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get battery info")
+		c.stateItem.SetTitle("State: Error")
+		return
+	}
+
+	conf := config.NewFileFromConfig(rawConfig, "")
+	logrus.WithFields(conf.LogrusFields()).Info("Got config")
+	c.currentLimitItem.SetTitle(fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
+	for limit, item := range c.setQuickLimitsItems {
+		setCheckboxItem(item, limit == conf.UpperLimit())
+	}
+
+	state := "Not Charging"
+	switch batteryInfo.State {
+	case powerinfo.Charging:
+		state = "Charging"
+	case powerinfo.Discharging:
+		if batteryInfo.ChargeRate != 0 {
+			state = "Discharging"
+		}
+	case powerinfo.Full:
+		state = "Full"
+	}
+	c.stateItem.SetTitle("State: " + state)
+	if !isCharging && isPluggedIn && conf.UpperLimit() < 100 && currentCharge < conf.LowerLimit() {
+		c.stateItem.SetTitle("State: Will Charge Soon")
+	}
+
+	setCheckboxItem(c.controlMagSafeLEDItem, conf.ControlMagSafeLED())
+	setCheckboxItem(c.preventIdleSleepItem, conf.PreventIdleSleep())
+	setCheckboxItem(c.disableChargingPreSleepItem, conf.DisableChargingPreSleep())
+	setCheckboxItem(c.preventSystemSleepItem, conf.PreventSystemSleep())
+	if adapter, err := c.api.GetAdapter(); err == nil {
+		setCheckboxItem(c.forceDischargeItem, !adapter)
+	} else {
+		logrus.WithError(err).Error("Failed to get adapter")
+		c.forceDischargeItem.SetEnabled(false)
+	}
+}
+
+func (c *menuController) updatePowerFlowOnce() {
+	info, err := c.api.GetPowerTelemetry()
+	if err != nil || info == nil {
+		if err != nil {
+			logrus.WithError(err).Debug("GetPowerTelemetry failed")
+		}
+		return
+	}
+	c.systemItem.SetAttributedTitle(formatPowerString("System", info.Calculations.SystemPower))
+	c.adapterItem.SetAttributedTitle(formatPowerString("Adapter", info.Calculations.ACPower))
+	c.batteryItem.SetAttributedTitle(formatPowerString("Battery", info.Calculations.BatteryPower))
 }
 
 func formatPowerString(label string, value float64) foundation.AttributedString {
