@@ -3,6 +3,9 @@
 #import <CoreFoundation/CoreFoundation.h>
 #include <stdint.h>
 
+// The time interval in seconds for the menu update timer.
+static const NSTimeInterval kMenuUpdateTimerInterval = 1.0;
+
 // Callbacks exported from Go
 extern void battMenuWillOpen(uintptr_t handle);
 extern void battMenuDidClose(uintptr_t handle);
@@ -27,7 +30,7 @@ extern void battMenuTimerFired(uintptr_t handle);
 - (void)menuWillOpen:(NSNotification *)note {
     battMenuWillOpen(_handle);
     // Start a selector-based timer and add it to common modes so it fires during menu tracking.
-    self.timer = [NSTimer timerWithTimeInterval:1.0
+    self.timer = [NSTimer timerWithTimeInterval:kMenuUpdateTimerInterval
                                          target:self
                                        selector:@selector(timerTick:)
                                        userInfo:nil

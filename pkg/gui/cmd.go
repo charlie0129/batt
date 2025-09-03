@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"unsafe"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
@@ -63,17 +64,17 @@ func addMenubar(app appkit.Application, apiClient *client.Client) {
 
 	// Items with attributed titles
 	powerSystemItem := appkit.NewMenuItemWithAction("", "", func(sender objc.Object) {})
-	powerSystemItem.SetEnabled(false)
+	powerSystemItem.SetEnabled(true) // Changed to true for readability
 	powerSystemItem.SetAttributedTitle(formatPowerString("System", 0))
 	powerFlowMenu.AddItem(powerSystemItem)
 
 	powerAdapterItem := appkit.NewMenuItemWithAction("", "", func(sender objc.Object) {})
-	powerAdapterItem.SetEnabled(false)
+	powerAdapterItem.SetEnabled(true) // Changed to true for readability
 	powerAdapterItem.SetAttributedTitle(formatPowerString("Adapter", 0))
 	powerFlowMenu.AddItem(powerAdapterItem)
 
 	powerBatteryItem := appkit.NewMenuItemWithAction("", "", func(sender objc.Object) {})
-	powerBatteryItem.SetEnabled(false)
+	powerBatteryItem.SetEnabled(true) // Changed to true for readability
 	powerBatteryItem.SetAttributedTitle(formatPowerString("Battery", 0))
 	powerFlowMenu.AddItem(powerBatteryItem)
 
@@ -298,17 +299,6 @@ After uninstalling the batt daemon, no charging control will be present on your 
 	})
 	disableItem.SetToolTip(`Disable battery charge limit and let your Mac charge to 100%. This almost has the same effect as uninstalling batt, but keeps the batt daemon installed.`)
 	menu.AddItem(disableItem)
-	// Quit
-	quitItem := appkit.NewMenuItemWithAction("Quit Menubar App", "q", func(sender objc.Object) {
-		logrus.Info("Quitting client")
-		app.Terminate(nil)
-	})
-	quitItem.SetToolTip(`Quit the batt menubar app, but keep the batt daemon running.
-
-Since the batt daemon is still running, batt can continue to control charging. This is useful if you don't want the menubar icon to show up, but still want to use batt. When the client is not running, you can change batt settings using the command line interface (batt). To prevent the menubar app from starting at login, you can remove it in System Settings -> General -> Login Items & Extensions -> remove batt.app from the list (do NOT remove the batt daemon).
-
-If you want to stop batt completely (menubar app and the daemon), you can use the "Disable Charging Limit" command. To uninstall, you can use the "Uninstall Daemon" command in the Advanced menu.`)
-	menu.AddItem(quitItem)
 
 	menubarIcon.SetMenu(menu)
 
@@ -336,8 +326,25 @@ If you want to stop batt completely (menubar app and the daemon), you can use th
 		adapterItem: powerAdapterItem,
 		batteryItem: powerBatteryItem,
 	}
+
 	h := cgo.NewHandle(ctrl)
-	_ = AttachPowerFlowObserver(menu, h)
+	ctrl.observerPtr = AttachPowerFlowObserver(menu, h)
+
+	// Now that ctrl is defined, create and add the quit item.
+	// Its action closure can now safely capture the ctrl variable.
+	quitItem := appkit.NewMenuItemWithAction("Quit Menubar App", "q", func(sender objc.Object) {
+		logrus.Info("Releasing observer and quitting client")
+		if ctrl.observerPtr != nil {
+			ReleasePowerFlowObserver(ctrl.observerPtr)
+		}
+		app.Terminate(nil)
+	})
+	quitItem.SetToolTip(`Quit the batt menubar app, but keep the batt daemon running.
+
+Since the batt daemon is still running, batt can continue to control charging. This is useful if you don't want the menubar icon to show up, but still want to use batt. When the client is not running, you can change batt settings using the command line interface (batt). To prevent the menubar app from starting at login, you can remove it in System Settings -> General -> Login Items & Extensions -> remove batt.app from the list (do NOT remove the batt daemon).
+
+If you want to stop batt completely (menubar app and the daemon), you can use the "Disable Charging Limit" command. To uninstall, you can use the "Uninstall Daemon" command in the Advanced menu.`)
+	menu.AddItem(quitItem)
 
 	// The observer above will trigger onWillOpen/onDidClose/timer without using libffi closures.
 
@@ -450,6 +457,9 @@ type menuController struct {
 
 	// Quit/disable
 	disableItem appkit.MenuItem
+
+	// Observer management
+	observerPtr unsafe.Pointer
 }
 
 func (c *menuController) onWillOpen() {
