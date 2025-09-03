@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"unsafe"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
@@ -44,12 +43,13 @@ func Run(unixSocketPath string) {
 	// Set up the menubar immediately to avoid using a dynamic
 	// Objective-C closure for NSApplicationDidFinishLaunching.
 	logrus.WithField("version", version.Version).WithField("gitCommit", version.GitCommit).Info("batt gui")
-	addMenubar(app, apiClient)
+	cleanup := addMenubar(app, apiClient)
+	defer cleanup()
 	app.Run()
 }
 
 //nolint:gocyclo
-func addMenubar(app appkit.Application, apiClient *client.Client) {
+func addMenubar(app appkit.Application, apiClient *client.Client) func() {
 	menubarIcon := appkit.StatusBar_SystemStatusBar().StatusItemWithLength(appkit.VariableStatusItemLength)
 	objc.Retain(&menubarIcon)
 	setMenubarImage(menubarIcon, false, false, false)
@@ -328,17 +328,20 @@ After uninstalling the batt daemon, no charging control will be present on your 
 	}
 
 	h := cgo.NewHandle(ctrl)
-	ctrl.observerPtr = AttachPowerFlowObserver(menu, h)
+	observerPtr := AttachPowerFlowObserver(menu, h)
 
-	// Now that ctrl is defined, create and add the quit item.
-	// Its action closure can now safely capture the ctrl variable.
+	cleanupFunc := func() {
+		logrus.Info("Cleaning up resources")
+		ReleasePowerFlowObserver(observerPtr)
+		h.Delete()
+	}
+
+	// The quit action is now simplified to only terminate the app.
 	quitItem := appkit.NewMenuItemWithAction("Quit Menubar App", "q", func(sender objc.Object) {
-		logrus.Info("Releasing observer and quitting client")
-		if ctrl.observerPtr != nil {
-			ReleasePowerFlowObserver(ctrl.observerPtr)
-		}
+		logrus.Info("Quitting client")
 		app.Terminate(nil)
 	})
+
 	quitItem.SetToolTip(`Quit the batt menubar app, but keep the batt daemon running.
 
 Since the batt daemon is still running, batt can continue to control charging. This is useful if you don't want the menubar icon to show up, but still want to use batt. When the client is not running, you can change batt settings using the command line interface (batt). To prevent the menubar app from starting at login, you can remove it in System Settings -> General -> Login Items & Extensions -> remove batt.app from the list (do NOT remove the batt daemon).
@@ -355,7 +358,7 @@ If you want to stop batt completely (menubar app and the daemon), you can use th
 		if err != nil {
 			logrus.WithError(err).Warnf("Failed to get config")
 			ctrl.toggleMenusRequiringInstall(false, false, false)
-			return
+			return cleanupFunc
 		}
 		conf := config.NewFileFromConfig(rawConfig, "")
 		logrus.WithFields(conf.LogrusFields()).Info("Got config")
@@ -364,7 +367,7 @@ If you want to stop batt completely (menubar app and the daemon), you can use th
 		if err != nil {
 			logrus.WithError(err).Warnf("Failed to get charging capablility")
 			ctrl.toggleMenusRequiringInstall(true, false, false)
-			return
+			return cleanupFunc
 		}
 		logrus.WithField("capable", capable).Info("Got charging control capability")
 		logrus.Info("Getting daemon version")
@@ -377,6 +380,8 @@ If you want to stop batt completely (menubar app and the daemon), you can use th
 		}
 		logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
 	}
+
+	return cleanupFunc
 }
 
 func showAlert(msg, body string) {
@@ -457,9 +462,6 @@ type menuController struct {
 
 	// Quit/disable
 	disableItem appkit.MenuItem
-
-	// Observer management
-	observerPtr unsafe.Pointer
 }
 
 func (c *menuController) onWillOpen() {
