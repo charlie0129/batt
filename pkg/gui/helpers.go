@@ -6,58 +6,81 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"unsafe"
+
+	"runtime/cgo"
 
 	pkgerrors "github.com/pkg/errors"
+	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/sirupsen/logrus"
 )
 
 // #cgo CFLAGS: -x objective-c
-// #cgo LDFLAGS: -framework Cocoa -framework ServiceManagement
-// #import <Cocoa/Cocoa.h>
-// #import <ServiceManagement/ServiceManagement.h>
-//
-// bool registerAppWithSMAppService(void) {
-//     if (@available(macOS 13.0, *)) {
-//         NSError *error = nil;
-//         SMAppService *service = [SMAppService mainAppService];
-//         BOOL success = [service registerAndReturnError:&error];
-//
-//         if (!success && error) {
-//             NSLog(@"Failed to register login item: %@", error);
-//             return false;
-//         }
-//         return success;
-//     } else {
-//         NSLog(@"SMAppService not available on this macOS version");
-//         return false;
-//     }
-// }
-//
-// bool unregisterAppWithSMAppService(void) {
-//     if (@available(macOS 13.0, *)) {
-//         NSError *error = nil;
-//         SMAppService *service = [SMAppService mainAppService];
-//         BOOL success = [service unregisterAndReturnError:&error];
-//
-//         if (!success && error) {
-//             NSLog(@"Failed to unregister login item: %@", error);
-//             return false;
-//         }
-//         return success;
-//     } else {
-//         NSLog(@"SMAppService not available on this macOS version");
-//         return false;
-//     }
-// }
-//
-// bool isRegisteredWithSMAppService(void) {
-//     if (@available(macOS 13.0, *)) {
-//         SMAppService *service = [SMAppService mainAppService];
-//         return [service status] == SMAppServiceStatusEnabled;
-//     }
-//     return false;
-// }
+// #cgo LDFLAGS: -framework Cocoa -framework ServiceManagement -framework CoreFoundation
+// #include <stdint.h>
+// #include <stdbool.h>
+// // C/ObjC functions are implemented in bridge.m; only prototypes here.
+// void *batt_attachMenuObserver(uintptr_t menuPtr, uintptr_t handle);
+// void batt_releaseMenuObserver(void *obsPtr);
+// bool registerAppWithSMAppService(void);
+// bool unregisterAppWithSMAppService(void);
+// bool isRegisteredWithSMAppService(void);
 import "C"
+
+//export battMenuWillOpen
+func battMenuWillOpen(h C.uintptr_t) {
+	defer func() {
+		if r := recover(); r != nil {
+			logrus.Errorf("panic in battMenuWillOpen: %v", r)
+		}
+	}()
+	handle := cgo.Handle(h)
+	if v := handle.Value(); v != nil {
+		if c, ok := v.(*menuController); ok {
+			c.onWillOpen()
+		}
+	}
+}
+
+//export battMenuDidClose
+func battMenuDidClose(h C.uintptr_t) {
+	defer func() {
+		if r := recover(); r != nil {
+			logrus.Errorf("panic in battMenuDidClose: %v", r)
+		}
+	}()
+	handle := cgo.Handle(h)
+	if v := handle.Value(); v != nil {
+		if c, ok := v.(*menuController); ok {
+			c.onDidClose()
+		}
+	}
+}
+
+//export battMenuTimerFired
+func battMenuTimerFired(h C.uintptr_t) {
+	defer func() {
+		if r := recover(); r != nil {
+			logrus.Errorf("panic in battMenuTimerFired: %v", r)
+		}
+	}()
+	handle := cgo.Handle(h)
+	if v := handle.Value(); v != nil {
+		if c, ok := v.(*menuController); ok {
+			c.onTimerTick()
+		}
+	}
+}
+
+// AttachPowerFlowObserver wires an Objective-C NSMenu notifications observer to a Go handle.
+// It returns an opaque pointer retained on the ObjC side; call ReleasePowerFlowObserver to free.
+func AttachPowerFlowObserver(menu appkit.Menu, h cgo.Handle) unsafe.Pointer {
+	return C.batt_attachMenuObserver(C.uintptr_t(uintptr(menu.Ptr())), C.uintptr_t(h))
+}
+
+func ReleasePowerFlowObserver(ptr unsafe.Pointer) {
+	C.batt_releaseMenuObserver(ptr)
+}
 
 // RegisterLoginItem registers the application to start at login using SMAppService
 func RegisterLoginItem() error {
