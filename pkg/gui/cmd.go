@@ -178,7 +178,7 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`)
 		setCheckboxItem(controlMagSafeDisableItem, false)
 		setCheckboxItem(controlMagSafeAlwaysOffItem, false)
 
-		_, err := apiClient.SetControlMagSafeLED("enable")
+		_, err := apiClient.SetControlMagSafeLED(config.ControlMagSafeModeEnabled)
 		if err != nil {
 			logrus.WithError(err).Error("Failed to set control mag safe LED")
 			showAlert("Failed to set MagSafe LED control", err.Error())
@@ -192,7 +192,7 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`)
 		setCheckboxItem(controlMagSafeDisableItem, true)
 		setCheckboxItem(controlMagSafeAlwaysOffItem, false)
 
-		_, err := apiClient.SetControlMagSafeLED("disable")
+		_, err := apiClient.SetControlMagSafeLED(config.ControlMagSafeModeDisabled)
 		if err != nil {
 			logrus.WithError(err).Error("Failed to set control mag safe LED")
 			showAlert("Failed to set MagSafe LED control", err.Error())
@@ -206,7 +206,7 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`)
 		setCheckboxItem(controlMagSafeDisableItem, false)
 		setCheckboxItem(controlMagSafeAlwaysOffItem, true)
 
-		_, err := apiClient.SetControlMagSafeLED("always-off")
+		_, err := apiClient.SetControlMagSafeLED(config.ControlMagSafeModeAlwaysOff)
 		if err != nil {
 			logrus.WithError(err).Error("Failed to set control mag safe LED")
 			showAlert("Failed to set MagSafe LED control", err.Error())
@@ -501,8 +501,8 @@ type menuController struct {
 	setQuickLimitsItems map[int]appkit.MenuItem
 
 	// Advanced
-	advancedSubMenuItem         appkit.MenuItem
-	controlMagSafeLEDItem       appkit.MenuItem
+	advancedSubMenuItem   appkit.MenuItem
+	controlMagSafeLEDItem appkit.MenuItem
 
 	controlMagSafeEnableItem    appkit.MenuItem
 	controlMagSafeDisableItem   appkit.MenuItem
@@ -632,11 +632,11 @@ func (c *menuController) refreshOnOpen() {
 
 	magSafeMode := conf.ControlMagSafeLED()
 	switch magSafeMode {
-	case "enable":
+	case config.ControlMagSafeModeEnabled:
 		setCheckboxItem(c.controlMagSafeEnableItem, true)
 		setCheckboxItem(c.controlMagSafeDisableItem, false)
 		setCheckboxItem(c.controlMagSafeAlwaysOffItem, false)
-	case "always-off":
+	case config.ControlMagSafeModeAlwaysOff:
 		setCheckboxItem(c.controlMagSafeEnableItem, false)
 		setCheckboxItem(c.controlMagSafeDisableItem, false)
 		setCheckboxItem(c.controlMagSafeAlwaysOffItem, true)

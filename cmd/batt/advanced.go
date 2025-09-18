@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
+
+	"github.com/charlie0129/batt/pkg/config"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 func NewSetPreventIdleSleepCommand() *cobra.Command {
@@ -56,9 +58,9 @@ Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while th
 func NewSetControlMagSafeLEDCommand() *cobra.Command {
 	use := "magsafe-led"
 	cmd := &cobra.Command{
-		Use: use,
+		Use:     use,
 		GroupID: gAdvanced,
-		Short: "Control MagSafe LED according to battery charging status",
+		Short:   "Control MagSafe LED according to battery charging status",
 	}
 
 	enable := &cobra.Command{
@@ -68,7 +70,7 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 		- Orange: Charging is in progress.
 		- Off: Woke from sleep, charging is off and batt is awaiting control.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ret, err := apiClient.SetControlMagSafeLED("enable")
+			ret, err := apiClient.SetControlMagSafeLED(config.ControlMagSafeModeEnabled)
 			if err != nil {
 				return fmt.Errorf("failed to set to %s: %v", use, err)
 			}
@@ -81,10 +83,10 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 	}
 
 	disable := &cobra.Command{
-		Use: "disable",
+		Use:   "disable",
 		Short: "Disable MagSafe LED control.",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ret, err := apiClient.SetControlMagSafeLED("disable")
+			ret, err := apiClient.SetControlMagSafeLED(config.ControlMagSafeModeDisabled)
 			if err != nil {
 				return fmt.Errorf("failed to set to %s: %v", use, err)
 			}
@@ -97,10 +99,10 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 	}
 
 	alwaysOff := &cobra.Command{
-		Use: "always-off",
+		Use:   "always-off",
 		Short: "Force the MagSafe LED to stay off.",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ret, err := apiClient.SetControlMagSafeLED("always-off")
+			ret, err := apiClient.SetControlMagSafeLED(config.ControlMagSafeModeAlwaysOff)
 			if err != nil {
 				return fmt.Errorf("failed to set to %s: %v", use, err)
 			}

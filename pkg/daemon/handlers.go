@@ -285,7 +285,7 @@ func setControlMagSafeLED(c *gin.Context) {
 		return
 	}
 
-	var mode string
+	var mode config.ControlMagSafeMode
 	if err := c.BindJSON(&mode); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)

@@ -43,12 +43,12 @@ func (c *Client) SetPreventSystemSleep(enabled bool) (string, error) {
 	return c.Put("/prevent-system-sleep", strconv.FormatBool(enabled))
 }
 
-func (c *Client) SetControlMagSafeLED(mode string) (string, error) {
+func (c *Client) SetControlMagSafeLED(mode config.ControlMagSafeMode) (string, error) {
 	payload, err := json.Marshal(mode)
-    if err != nil {
-        return "", err
-    }
-    return c.Put("/magsafe-led", string(payload))
+	if err != nil {
+		return "", err
+	}
+	return c.Put("/magsafe-led", string(payload))
 }
 
 func (c *Client) GetCharging() (bool, error) {

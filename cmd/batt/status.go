@@ -77,7 +77,7 @@ func NewStatusCommand() *cobra.Command {
 				return err
 			}
 
-			config := config.NewFileFromConfig(data.config, "")
+			cfg := config.NewFileFromConfig(data.config, "")
 
 			// Charging status.
 			cmd.Println(bold("Charging status:"))
@@ -92,16 +92,16 @@ func NewStatusCommand() *cobra.Command {
 					cmd.Print(".") // plugged in and charging is allowed.
 				}
 				cmd.Println()
-			} else if config.UpperLimit() < 100 {
+			} else if cfg.UpperLimit() < 100 {
 				cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
 				cmd.Print("    Your Mac will not charge")
 				if data.pluggedIn {
 					cmd.Print(" even if you plug in")
 				}
-				low := config.LowerLimit()
-				if data.currentCharge >= config.UpperLimit() {
+				low := cfg.LowerLimit()
+				if data.currentCharge >= cfg.UpperLimit() {
 					cmd.Print(", because your current charge is above the limit.")
-				} else if data.currentCharge < config.UpperLimit() && data.currentCharge >= low {
+				} else if data.currentCharge < cfg.UpperLimit() && data.currentCharge >= low {
 					cmd.Print(", because your current charge is above the lower limit. Charging will be allowed after current charge drops below the lower limit.")
 				}
 				if data.pluggedIn && data.currentCharge < low {
@@ -129,10 +129,10 @@ func NewStatusCommand() *cobra.Command {
 
 			cmd.Printf("  Current charge: %s\n", bold("%d%%", data.currentCharge))
 
-			if data.batteryInfo.State == powerinfo.Charging && config.UpperLimit() < 100 && data.currentCharge < config.UpperLimit() {
+			if data.batteryInfo.State == powerinfo.Charging && cfg.UpperLimit() < 100 && data.currentCharge < cfg.UpperLimit() {
 				// Work in mAh directly (no Wh conversions)
 				designCapacitymAh := float64(data.batteryInfo.Design)
-				targetCapacitymAh := float64(config.UpperLimit()) / 100.0 * designCapacitymAh
+				targetCapacitymAh := float64(cfg.UpperLimit()) / 100.0 * designCapacitymAh
 				currentCapacitymAh := float64(data.currentCharge) / 100.0 * designCapacitymAh
 				capacityToChargemAh := targetCapacitymAh - currentCapacitymAh
 
@@ -147,7 +147,7 @@ func NewStatusCommand() *cobra.Command {
 					timeToLimitMinutes := float64(timeToLimitHours * 60)
 
 					if timeToLimitMinutes > 0.00 {
-						cmd.Printf("  Time to limit (%d%%): %s\n", config.UpperLimit(), bold("~%d minutes", int(timeToLimitMinutes)))
+						cmd.Printf("  Time to limit (%d%%): %s\n", cfg.UpperLimit(), bold("~%d minutes", int(timeToLimitMinutes)))
 					}
 				}
 			}
@@ -183,17 +183,24 @@ func NewStatusCommand() *cobra.Command {
 
 			// Config.
 			cmd.Println(bold("Battery configuration:"))
-			if config.UpperLimit() < 100 {
-				cmd.Printf("  Upper limit: %s\n", bold("%d%%", config.UpperLimit()))
-				cmd.Printf("  Lower limit: %s\n", bold("%d%%", config.LowerLimit()))
+			if cfg.UpperLimit() < 100 {
+				cmd.Printf("  Upper limit: %s\n", bold("%d%%", cfg.UpperLimit()))
+				cmd.Printf("  Lower limit: %s\n", bold("%d%%", cfg.LowerLimit()))
 			} else {
 				cmd.Printf("  Charge limit: %s\n", bold("100%% (batt disabled)"))
 			}
-			cmd.Printf("  Prevent idle-sleep when charging: %s\n", bool2Text(config.PreventIdleSleep()))
-			cmd.Printf("  Disable charging before sleep if charge limit is enabled: %s\n", bool2Text(config.DisableChargingPreSleep()))
-			cmd.Printf("  Prevent system-sleep when charging: %s\n", bool2Text(config.PreventSystemSleep()))
-			cmd.Printf("  Allow non-root users to access the daemon: %s\n", bool2Text(config.AllowNonRootAccess()))
-			cmd.Printf("  Control MagSafe LED: %s\n", bold("%s", config.ControlMagSafeLED()))
+			cmd.Printf("  Prevent idle-sleep when charging: %s\n", bool2Text(cfg.PreventIdleSleep()))
+			cmd.Printf("  Disable charging before sleep if charge limit is enabled: %s\n", bool2Text(cfg.DisableChargingPreSleep()))
+			cmd.Printf("  Prevent system-sleep when charging: %s\n", bool2Text(cfg.PreventSystemSleep()))
+			cmd.Printf("  Allow non-root users to access the daemon: %s\n", bool2Text(cfg.AllowNonRootAccess()))
+
+			mode := cfg.ControlMagSafeLED()
+			enabled := mode != config.ControlMagSafeModeDisabled
+			ledStatus := bool2Text(enabled)
+			if mode == config.ControlMagSafeModeAlwaysOff {
+				ledStatus += " (" + bold("always off") + ")"
+			}
+			cmd.Printf("  Control MagSafe LED: %s\n", ledStatus)
 			return nil
 		},
 	}

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/charlie0129/batt/pkg/config"
 	"github.com/sirupsen/logrus"
 )
 
@@ -239,9 +240,9 @@ func handleNoMaintain(isChargingEnabled bool) bool {
 			return false
 		}
 		switch conf.ControlMagSafeLED() {
-		case "always-off":
+		case config.ControlMagSafeModeAlwaysOff:
 			_ = smcConn.DisableMagSafeLed()
-		case "enable":
+		case config.ControlMagSafeModeEnabled:
 			batteryCharge, err := smcConn.GetBatteryCharge()
 			if err == nil {
 				_ = smcConn.SetMagSafeCharging(batteryCharge < 100)
@@ -299,9 +300,9 @@ func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool,
 	}
 
 	switch conf.ControlMagSafeLED() {
-	case "always-off":
+	case config.ControlMagSafeModeAlwaysOff:
 		_ = smcConn.DisableMagSafeLed()
-	case "enable":
+	case config.ControlMagSafeModeEnabled:
 		updateMagSafeLed(isChargingEnabled)
 	default:
 		// nothing
