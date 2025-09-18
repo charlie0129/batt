@@ -285,14 +285,14 @@ func setControlMagSafeLED(c *gin.Context) {
 		return
 	}
 
-	var d bool
-	if err := c.BindJSON(&d); err != nil {
+	var mode string
+	if err := c.BindJSON(&mode); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	conf.SetControlMagSafeLED(d)
+	conf.SetControlMagSafeLED(mode)
 	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -300,9 +300,9 @@ func setControlMagSafeLED(c *gin.Context) {
 		return
 	}
 
-	logrus.Infof("set control MagSafe LED to %t", d)
+	logrus.Infof("set control MagSafe LED to %s", mode)
 
-	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("ControlMagSafeLED set to %t. You should be able to see the effect in a few minutes.", d))
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("ControlMagSafeLED set to %s. You should be able to see the effect in a few minutes.", mode))
 }
 
 func getCurrentCharge(c *gin.Context) {

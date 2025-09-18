@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-
-	"github.com/charlie0129/batt/pkg/smc"
 )
 
 var (
@@ -117,10 +115,10 @@ func systemWillSleepCallback() {
 			logrus.Errorf("DisableCharging failed: %v", err)
 			return
 		}
-		if conf.ControlMagSafeLED() {
-			err = smcConn.SetMagSafeLedState(smc.LEDOff)
+		if conf.ControlMagSafeLED() != "disable" {
+			err = smcConn.DisableMagSafeLed()
 			if err != nil {
-				logrus.Errorf("SetMagSafeLedState failed: %v", err)
+				logrus.Errorf("DisableMagSafeLed failed: %v", err)
 			}
 		}
 	} else {
@@ -155,10 +153,10 @@ func systemHasPoweredOnCallback() {
 			logrus.Debugf("delaying next loop by %d seconds", postSleepLoopDelaySeconds)
 			wg.Add(1)
 			go func() {
-				if conf.DisableChargingPreSleep() && conf.ControlMagSafeLED() {
-					err := smcConn.SetMagSafeLedState(smc.LEDOff)
+				if conf.DisableChargingPreSleep() && conf.ControlMagSafeLED() != "disable" {
+					err := smcConn.DisableMagSafeLed()
 					if err != nil {
-						logrus.Errorf("SetMagSafeLedState failed: %v", err)
+						logrus.Errorf("DisableMagSafeLed failed: %v", err)
 					}
 				}
 

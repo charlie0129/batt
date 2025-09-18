@@ -71,7 +71,7 @@ GUI version is a native macOS menubar app. It's not as feature-complete as the c
 1. Download `.dmg` file from [Releases](https://github.com/charlie0129/batt/releases) and open it (right-click open if macOS says it's damaged)
 2. Drag `batt.app` to `Applications`
 3. macOS may say it's damaged when you try to run it (it's NOT) and wants you to move it to trash. To fix it, run this in Terminal: `sudo xattr -r -d com.apple.quarantine /Applications/batt.app`.
-4. Run `batt.app`. 
+4. Run `batt.app`.
 5. Follow the MenuBar UI to install or upgrade.
 6. It is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`
 
@@ -109,7 +109,7 @@ You can choose either one. Please do not use both at the same time to avoid conf
 1. (Optional) There is an installation script to help you quickly install batt (Internet connection required). Put this in your terminal: `bash <(curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh)`. You may need to provide your login password (to control charging). This will download and install the latest _stable_ version for you. Follow the on-screen instructions, then you can skip to step 5.
 <details>
 <summary>Manual installation steps</summary>
-    
+
 2. Get the binary. For _stable_ and _beta_ releases, you can find the download link in the [release page](https://github.com/charlie0129/batt/releases). If you want development versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months and you need to `chmod +x batt` after extracting the archive) or [build it yourself](#building) .
 3. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line. In this case, the binary location will be `/usr/local/bin/batt`.
 4. Install daemon using `sudo batt install`. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. To uninstall: please refer to [How to uninstall?](#how-to-uninstall)
@@ -143,10 +143,10 @@ To customize charge limit, see `batt limit`. For example,to set the limit to 80%
 
 ### Enable/disable power adapter
 
-> [!NOTE]  
+> [!NOTE]
 > This feature is CLI-only and is not available in the GUI version.
 
-Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in. 
+Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in.
 
 This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.
 
@@ -156,7 +156,7 @@ To enable/disable power adapter, see `batt adapter`. For example, to disable the
 
 ### Check status
 
-> [!NOTE]  
+> [!NOTE]
 > This feature is CLI-only and is not available in the GUI version.
 
 Check the current config, battery info, and charging status.
@@ -207,7 +207,7 @@ To enable this feature, run `sudo batt prevent-system-sleep enable`. To disable,
 
 ### Upper and lower charge limit
 
-> [!NOTE]  
+> [!NOTE]
 > This feature is CLI-only and is not available in the GUI version.
 
 When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
@@ -220,7 +220,7 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 
 > Acknowledgement: [@exidler](https://github.com/exidler)
 
-This option can make the MagSafe LED on your MacBook change color according to the charging status. For example: 
+This option makes the MagSafe LED reflect the charging state of your MacBook (or force it off).
 
 - Green: charge limit is reached and charging is stopped.
 - Orange: charging is in progress.
@@ -229,6 +229,8 @@ This option can make the MagSafe LED on your MacBook change color according to t
 Note that you must have a MagSafe LED on your MacBook to use this feature.
 
 To enable MagSafe LED control, run `sudo batt magsafe-led enable`.
+
+To force the MagSafe LED to stay off, run `sudo batt magsafe-led always-off`.
 
 ### Check logs
 

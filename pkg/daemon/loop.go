@@ -238,11 +238,16 @@ func handleNoMaintain(isChargingEnabled bool) bool {
 			logrus.Errorf("EnableCharging failed: %v", err)
 			return false
 		}
-		if conf.ControlMagSafeLED() {
+		switch conf.ControlMagSafeLED() {
+		case "always-off":
+			_ = smcConn.DisableMagSafeLed()
+		case "enable":
 			batteryCharge, err := smcConn.GetBatteryCharge()
 			if err == nil {
 				_ = smcConn.SetMagSafeCharging(batteryCharge < 100)
 			}
+		default:
+			// nothing
 		}
 	}
 	maintainedChargingInProgress = false
@@ -293,8 +298,13 @@ func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool,
 		maintainedChargingInProgress = false
 	}
 
-	if conf.ControlMagSafeLED() {
+	switch conf.ControlMagSafeLED() {
+	case "always-off":
+		_ = smcConn.DisableMagSafeLed()
+	case "enable":
 		updateMagSafeLed(isChargingEnabled)
+	default:
+		// nothing
 	}
 
 	if conf.PreventSystemSleep() {

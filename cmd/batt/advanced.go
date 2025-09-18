@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"github.com/spf13/cobra"
+	"github.com/sirupsen/logrus"
 )
 
 func NewSetPreventIdleSleepCommand() *cobra.Command {
@@ -52,17 +54,64 @@ Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while th
 }
 
 func NewSetControlMagSafeLEDCommand() *cobra.Command {
-	return newEnableDisableCommand(
-		"magsafe-led",
-		"Control MagSafe LED according to battery charging status",
-		`This option can make the MagSafe LED on your MacBook change color according to the charging status. For example:
+	use := "magsafe-led"
+	cmd := &cobra.Command{
+		Use: use,
+		GroupID: gAdvanced,
+		Short: "Control MagSafe LED according to battery charging status",
+	}
 
-- Green: Charge limit is reached and charging is stopped.
-- Orange: Charging is in progress.
-- Off: Just woken up from sleep, charging is disabled and batt is waiting before controlling charging.
+	enable := &cobra.Command{
+		Use: "enable",
+		Short: `Enable MagSafe LED control. The LED will reflect charging status:
+		- Green: Charge limit is reached and charging is stopped.
+		- Orange: Charging is in progress.
+		- Off: Woke from sleep, charging is off and batt is awaiting control.`,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			ret, err := apiClient.SetControlMagSafeLED("enable")
+			if err != nil {
+				return fmt.Errorf("failed to set to %s: %v", use, err)
+			}
+			if ret != "" {
+				logrus.Infof("daemon responded: %s", ret)
+			}
+			logrus.Infof("successfully set to %s", use)
+			return nil
+		},
+	}
 
-Note that you must have a MagSafe LED on your MacBook to use this feature.`,
-		func() (string, error) { return apiClient.SetControlMagSafeLED(true) },
-		func() (string, error) { return apiClient.SetControlMagSafeLED(false) },
-	)
+	disable := &cobra.Command{
+		Use: "disable",
+		Short: "Disable MagSafe LED control.",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			ret, err := apiClient.SetControlMagSafeLED("disable")
+			if err != nil {
+				return fmt.Errorf("failed to set to %s: %v", use, err)
+			}
+			if ret != "" {
+				logrus.Infof("daemon responded: %s", ret)
+			}
+			logrus.Infof("successfully set to %s", use)
+			return nil
+		},
+	}
+
+	alwaysOff := &cobra.Command{
+		Use: "always-off",
+		Short: "Force the MagSafe LED to stay off.",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			ret, err := apiClient.SetControlMagSafeLED("always-off")
+			if err != nil {
+				return fmt.Errorf("failed to set to %s: %v", use, err)
+			}
+			if ret != "" {
+				logrus.Infof("daemon responded: %s", ret)
+			}
+			logrus.Infof("successfully set to %s", use)
+			return nil
+		},
+	}
+
+	cmd.AddCommand(enable, disable, alwaysOff)
+	return cmd
 }

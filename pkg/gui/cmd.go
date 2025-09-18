@@ -155,23 +155,69 @@ func addMenubar(app appkit.Application, apiClient *client.Client) func() {
 	advancedSubMenuItem.SetTitle("Advanced")
 	menu.AddItem(advancedSubMenuItem)
 
-	controlMagSafeLEDItem := checkBoxItem("Control MagSafe LED", "", func(checked bool) {
-		// Perform action based on new state
-		_, err := apiClient.SetControlMagSafeLED(checked)
+	controlMagSafeLEDMenu := appkit.NewMenuWithTitle("Control MagSafe LED")
+	controlMagSafeLEDItem := appkit.NewSubMenuItem(controlMagSafeLEDMenu)
+	controlMagSafeLEDItem.SetTitle("Control MagSafe LED")
+	controlMagSafeLEDItem.SetToolTip(`This option makes the MagSafe LED reflect the charging state of your MacBook (or force it off).
+
+- Green: Charge limit is reached and charging is stopped.
+- Orange: Charging is in progress.
+- Off: Woke from sleep, charging is off and batt is awaiting control.
+
+Note that you must have a MagSafe LED on your MacBook to use this feature.`)
+	advancedMenu.AddItem(controlMagSafeLEDItem)
+
+	var (
+		controlMagSafeEnableItem    appkit.MenuItem
+		controlMagSafeDisableItem   appkit.MenuItem
+		controlMagSafeAlwaysOffItem appkit.MenuItem
+	)
+
+	controlMagSafeEnableItem = appkit.NewMenuItemWithAction("Enable", "", func(sender objc.Object) {
+		setCheckboxItem(controlMagSafeEnableItem, true)
+		setCheckboxItem(controlMagSafeDisableItem, false)
+		setCheckboxItem(controlMagSafeAlwaysOffItem, false)
+
+		_, err := apiClient.SetControlMagSafeLED("enable")
 		if err != nil {
 			logrus.WithError(err).Error("Failed to set control mag safe LED")
 			showAlert("Failed to set MagSafe LED control", err.Error())
 			return
 		}
 	})
-	controlMagSafeLEDItem.SetToolTip(`This option can make the MagSafe LED on your MacBook change color according to the charging status. For example:
+	controlMagSafeLEDMenu.AddItem(controlMagSafeEnableItem)
 
-- Green: Charge limit is reached and charging is stopped.
-- Orange: Charging is in progress.
-- Off: Just woken up from sleep, charging is disabled and batt is waiting before controlling charging.
+	controlMagSafeDisableItem = appkit.NewMenuItemWithAction("Disable", "", func(sender objc.Object) {
+		setCheckboxItem(controlMagSafeEnableItem, false)
+		setCheckboxItem(controlMagSafeDisableItem, true)
+		setCheckboxItem(controlMagSafeAlwaysOffItem, false)
 
-Note that you must have a MagSafe LED on your MacBook to use this feature.`)
-	advancedMenu.AddItem(controlMagSafeLEDItem)
+		_, err := apiClient.SetControlMagSafeLED("disable")
+		if err != nil {
+			logrus.WithError(err).Error("Failed to set control mag safe LED")
+			showAlert("Failed to set MagSafe LED control", err.Error())
+			return
+		}
+	})
+	controlMagSafeLEDMenu.AddItem(controlMagSafeDisableItem)
+
+	controlMagSafeAlwaysOffItem = appkit.NewMenuItemWithAction("Always-off", "", func(sender objc.Object) {
+		setCheckboxItem(controlMagSafeEnableItem, false)
+		setCheckboxItem(controlMagSafeDisableItem, false)
+		setCheckboxItem(controlMagSafeAlwaysOffItem, true)
+
+		_, err := apiClient.SetControlMagSafeLED("always-off")
+		if err != nil {
+			logrus.WithError(err).Error("Failed to set control mag safe LED")
+			showAlert("Failed to set MagSafe LED control", err.Error())
+			return
+		}
+	})
+	controlMagSafeLEDMenu.AddItem(controlMagSafeAlwaysOffItem)
+
+	controlMagSafeEnableItem.SetToolTip(`Enable MagSafe LED control. The LED will reflect charging status.`)
+	controlMagSafeDisableItem.SetToolTip(`Disable MagSafe LED control. The LED will stay in its default state.`)
+	controlMagSafeAlwaysOffItem.SetToolTip(`Force the MagSafe LED to stay off regardless of charging state.`)
 
 	preventIdleSleepItem := checkBoxItem("Prevent Idle Sleep when Charging", "", func(checked bool) {
 		// Perform action based on new state
@@ -315,6 +361,9 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		setQuickLimitsItems:         setQuickLimitsItems,
 		advancedSubMenuItem:         advancedSubMenuItem,
 		controlMagSafeLEDItem:       controlMagSafeLEDItem,
+		controlMagSafeEnableItem:    controlMagSafeEnableItem,
+		controlMagSafeDisableItem:   controlMagSafeDisableItem,
+		controlMagSafeAlwaysOffItem: controlMagSafeAlwaysOffItem,
 		preventIdleSleepItem:        preventIdleSleepItem,
 		disableChargingPreSleepItem: disableChargingPreSleepItem,
 		preventSystemSleepItem:      preventSystemSleepItem,
@@ -454,6 +503,11 @@ type menuController struct {
 	// Advanced
 	advancedSubMenuItem         appkit.MenuItem
 	controlMagSafeLEDItem       appkit.MenuItem
+
+	controlMagSafeEnableItem    appkit.MenuItem
+	controlMagSafeDisableItem   appkit.MenuItem
+	controlMagSafeAlwaysOffItem appkit.MenuItem
+
 	preventIdleSleepItem        appkit.MenuItem
 	disableChargingPreSleepItem appkit.MenuItem
 	preventSystemSleepItem      appkit.MenuItem
@@ -576,7 +630,22 @@ func (c *menuController) refreshOnOpen() {
 		c.stateItem.SetTitle("State: Will Charge Soon")
 	}
 
-	setCheckboxItem(c.controlMagSafeLEDItem, conf.ControlMagSafeLED())
+	magSafeMode := conf.ControlMagSafeLED()
+	switch magSafeMode {
+	case "enable":
+		setCheckboxItem(c.controlMagSafeEnableItem, true)
+		setCheckboxItem(c.controlMagSafeDisableItem, false)
+		setCheckboxItem(c.controlMagSafeAlwaysOffItem, false)
+	case "always-off":
+		setCheckboxItem(c.controlMagSafeEnableItem, false)
+		setCheckboxItem(c.controlMagSafeDisableItem, false)
+		setCheckboxItem(c.controlMagSafeAlwaysOffItem, true)
+	default:
+		setCheckboxItem(c.controlMagSafeEnableItem, false)
+		setCheckboxItem(c.controlMagSafeDisableItem, true)
+		setCheckboxItem(c.controlMagSafeAlwaysOffItem, false)
+	}
+
 	setCheckboxItem(c.preventIdleSleepItem, conf.PreventIdleSleep())
 	setCheckboxItem(c.disableChargingPreSleepItem, conf.DisableChargingPreSleep())
 	setCheckboxItem(c.preventSystemSleepItem, conf.PreventSystemSleep())

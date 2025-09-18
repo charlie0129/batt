@@ -24,6 +24,12 @@ func (c *AppleSMC) SetMagSafeLedState(state MagSafeLedState) error {
 	return c.Write(MagSafeLedKey, []byte{byte(state)})
 }
 
+func (c *AppleSMC) DisableMagSafeLed() error {
+	logrus.Tracef("DisableMagSafeLed() called")
+
+	return c.Write(MagSafeLedKey, []byte{byte(LEDOff)})
+}
+
 // GetMagSafeLedState .
 func (c *AppleSMC) GetMagSafeLedState() (MagSafeLedState, error) {
 	logrus.Tracef("GetMagSafeLedState called")
