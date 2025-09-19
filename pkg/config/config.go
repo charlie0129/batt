@@ -11,7 +11,7 @@ type Config interface {
 	DisableChargingPreSleep() bool
 	PreventSystemSleep() bool
 	AllowNonRootAccess() bool
-	ControlMagSafeLED() bool
+	ControlMagSafeLED() ControlMagSafeMode
 
 	SetUpperLimit(int)
 	SetLowerLimit(int)
@@ -19,7 +19,7 @@ type Config interface {
 	SetDisableChargingPreSleep(bool)
 	SetPreventSystemSleep(bool)
 	SetAllowNonRootAccess(bool)
-	SetControlMagSafeLED(bool)
+	SetControlMagSafeLED(ControlMagSafeMode)
 
 	LogrusFields() logrus.Fields
 

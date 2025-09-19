@@ -13,6 +13,20 @@ import (
 	"github.com/charlie0129/batt/pkg/utils/ptr"
 )
 
+const (
+	ctrlMagSafeModeEnabledStr   = "enabled"
+	ctrlMagSafeModeDisabledStr  = "disabled"
+	ctrlMagSafeModeAlwaysOffStr = "always-off"
+)
+
+type ControlMagSafeMode string
+
+const (
+	ControlMagSafeModeEnabled   ControlMagSafeMode = ctrlMagSafeModeEnabledStr
+	ControlMagSafeModeDisabled  ControlMagSafeMode = ctrlMagSafeModeDisabledStr
+	ControlMagSafeModeAlwaysOff ControlMagSafeMode = ctrlMagSafeModeAlwaysOffStr
+)
+
 var (
 	defaultFileConfig = &RawFileConfig{
 		Limit:                   ptr.To(80),
@@ -24,7 +38,7 @@ var (
 		// There are Macs without MagSafe LED. We only do checks when the user
 		// explicitly enables this feature. In the future, we might add a check
 		// that disables this feature if the Mac does not have a MagSafe LED.
-		ControlMagSafeLED: ptr.To(false),
+		ControlMagSafeLED: ptr.To(ControlMagSafeModeDisabled),
 	}
 )
 
@@ -63,14 +77,42 @@ func NewFileFromConfig(c *RawFileConfig, configPath string) *File {
 	return f
 }
 
+func (c *ControlMagSafeMode) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		switch s {
+		case ctrlMagSafeModeEnabledStr:
+			*c = ControlMagSafeModeEnabled
+		case ctrlMagSafeModeDisabledStr:
+			*c = ControlMagSafeModeDisabled
+		case ctrlMagSafeModeAlwaysOffStr:
+			*c = ControlMagSafeModeAlwaysOff
+		default:
+			logrus.Warnf("invalid ControlMagSafeMode %q, falling back to %q", s, ControlMagSafeModeDisabled)
+			*c = ControlMagSafeModeDisabled
+		}
+		return nil
+	}
+	var b bool
+	if err := json.Unmarshal(data, &b); err == nil {
+		if b {
+			*c = ControlMagSafeModeEnabled
+		} else {
+			*c = ControlMagSafeModeDisabled
+		}
+		return nil
+	}
+	return nil
+}
+
 type RawFileConfig struct {
-	Limit                   *int  `json:"limit,omitempty"`
-	PreventIdleSleep        *bool `json:"preventIdleSleep,omitempty"`
-	DisableChargingPreSleep *bool `json:"disableChargingPreSleep,omitempty"`
-	PreventSystemSleep      *bool `json:"preventSystemSleep,omitempty"`
-	AllowNonRootAccess      *bool `json:"allowNonRootAccess,omitempty"`
-	LowerLimitDelta         *int  `json:"lowerLimitDelta,omitempty"`
-	ControlMagSafeLED       *bool `json:"controlMagSafeLED,omitempty"`
+	Limit                   *int                `json:"limit,omitempty"`
+	PreventIdleSleep        *bool               `json:"preventIdleSleep,omitempty"`
+	DisableChargingPreSleep *bool               `json:"disableChargingPreSleep,omitempty"`
+	PreventSystemSleep      *bool               `json:"preventSystemSleep,omitempty"`
+	AllowNonRootAccess      *bool               `json:"allowNonRootAccess,omitempty"`
+	LowerLimitDelta         *int                `json:"lowerLimitDelta,omitempty"`
+	ControlMagSafeLED       *ControlMagSafeMode `json:"controlMagSafeLED,omitempty"`
 }
 
 func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
@@ -205,7 +247,7 @@ func (f *File) AllowNonRootAccess() bool {
 	return allowNonRootAccess
 }
 
-func (f *File) ControlMagSafeLED() bool {
+func (f *File) ControlMagSafeLED() ControlMagSafeMode {
 	if f.c == nil {
 		panic("config is nil")
 	}
@@ -213,15 +255,15 @@ func (f *File) ControlMagSafeLED() bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	var controlMagSafeLED bool
+	var ControlMagSafeLED ControlMagSafeMode
 
 	if f.c.ControlMagSafeLED != nil {
-		controlMagSafeLED = *f.c.ControlMagSafeLED
+		ControlMagSafeLED = *f.c.ControlMagSafeLED
 	} else {
-		controlMagSafeLED = *defaultFileConfig.ControlMagSafeLED
+		ControlMagSafeLED = *defaultFileConfig.ControlMagSafeLED
 	}
 
-	return controlMagSafeLED
+	return ControlMagSafeLED
 }
 
 func (f *File) SetUpperLimit(i int) {
@@ -296,7 +338,7 @@ func (f *File) SetAllowNonRootAccess(b bool) {
 	f.c.AllowNonRootAccess = &b
 }
 
-func (f *File) SetControlMagSafeLED(b bool) {
+func (f *File) SetControlMagSafeLED(mode ControlMagSafeMode) {
 	if f.c == nil {
 		panic("config is nil")
 	}
@@ -304,7 +346,7 @@ func (f *File) SetControlMagSafeLED(b bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.c.ControlMagSafeLED = &b
+	f.c.ControlMagSafeLED = ptr.To(mode)
 }
 
 func (f *File) Load() error {
