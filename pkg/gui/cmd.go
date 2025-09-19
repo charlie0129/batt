@@ -158,11 +158,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) func() {
 	controlMagSafeLEDMenu := appkit.NewMenuWithTitle("Control MagSafe LED")
 	controlMagSafeLEDItem := appkit.NewSubMenuItem(controlMagSafeLEDMenu)
 	controlMagSafeLEDItem.SetTitle("Control MagSafe LED")
-	controlMagSafeLEDItem.SetToolTip(`This option makes the MagSafe LED reflect the charging state of your MacBook (or force it off).
-
-- Green: Charge limit is reached and charging is stopped.
-- Orange: Charging is in progress.
-- Off: Woke from sleep, charging is off and batt is awaiting control.
+	controlMagSafeLEDItem.SetToolTip(`Let batt control MagSafe LED to reflect the charging state of your MacBook (or force it off).
 
 Note that you must have a MagSafe LED on your MacBook to use this feature.`)
 	advancedMenu.AddItem(controlMagSafeLEDItem)
@@ -215,8 +211,12 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`)
 	})
 	controlMagSafeLEDMenu.AddItem(controlMagSafeAlwaysOffItem)
 
-	controlMagSafeEnableItem.SetToolTip(`Enable MagSafe LED control. The LED will reflect charging status.`)
-	controlMagSafeDisableItem.SetToolTip(`Disable MagSafe LED control. The LED will stay in its default state.`)
+	controlMagSafeEnableItem.SetToolTip(`Enable MagSafe LED control. The LED will reflect charging status:
+
+- Green: Charge limit is reached and charging is stopped.
+- Orange: Charging is in progress.
+- Off: Woke from sleep, charging is off and batt is awaiting control.`)
+	controlMagSafeDisableItem.SetToolTip(`Disable MagSafe LED control. The LED will stay in its default state (mostly orange).`)
 	controlMagSafeAlwaysOffItem.SetToolTip(`Force the MagSafe LED to stay off regardless of charging state.`)
 
 	preventIdleSleepItem := checkBoxItem("Prevent Idle Sleep when Charging", "", func(checked bool) {
