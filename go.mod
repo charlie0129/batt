@@ -6,7 +6,7 @@ require (
 	github.com/charlie0129/gosmc v0.0.0-20250206014004-02656b3859e0
 	github.com/fatih/color v1.15.0
 	github.com/gin-gonic/gin v1.9.1
-	github.com/peterneutron/powerkit-go v0.2.9
+	github.com/peterneutron/powerkit-go v0.3.3
 	github.com/pkg/errors v0.9.1
 	github.com/progrium/darwinkit v0.5.1-0.20240715194340-61b9e31a12fa
 	github.com/sirupsen/logrus v1.9.3
