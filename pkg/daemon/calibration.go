@@ -181,7 +181,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 				st.LastError = err.Error()
 				st.Phase = CalPhaseError
 				persistCalibrationState()
-				return false
+				return true
 			}
 		}
 	case CalPhaseCharge:
