@@ -144,6 +144,45 @@ func (c *Client) GetPowerTelemetry() (*powerinfo.PowerTelemetry, error) {
 	return &info, nil
 }
 
+// ===== Auto Calibration APIs =====
+
+type CalibrationStatus struct {
+	Phase             string `json:"phase"`
+	ChargePercent     int    `json:"chargePercent"`
+	PluggedIn         bool   `json:"pluggedIn"`
+	RemainingHoldSecs int    `json:"remainingHoldSeconds"`
+	StartedAt         string `json:"startedAt"`
+	Paused            bool   `json:"paused"`
+	CanPause          bool   `json:"canPause"`
+	CanCancel         bool   `json:"canCancel"`
+	Message           string `json:"message"`
+	TargetPercent     int    `json:"targetPercent"`
+}
+
+func (c *Client) StartCalibration() (string, error) {
+	return c.Send("POST", "/calibration/start", "")
+}
+
+func (c *Client) GetCalibrationStatus() (*CalibrationStatus, error) {
+	ret, err := c.Get("/calibration/status")
+	if err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to get calibration status")
+	}
+	var st CalibrationStatus
+	if err := json.Unmarshal([]byte(ret), &st); err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to unmarshal calibration status")
+	}
+	return &st, nil
+}
+
+func (c *Client) PauseCalibration() (string, error) { return c.Send("POST", "/calibration/pause", "") }
+func (c *Client) ResumeCalibration() (string, error) {
+	return c.Send("POST", "/calibration/resume", "")
+}
+func (c *Client) CancelCalibration() (string, error) {
+	return c.Send("POST", "/calibration/cancel", "")
+}
+
 func parseBoolResponse(resp string) (bool, error) {
 	switch resp {
 	case "true":

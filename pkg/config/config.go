@@ -12,6 +12,8 @@ type Config interface {
 	PreventSystemSleep() bool
 	AllowNonRootAccess() bool
 	ControlMagSafeLED() ControlMagSafeMode
+	CalibrationDischargeThreshold() int
+	CalibrationHoldDurationMinutes() int
 
 	SetUpperLimit(int)
 	SetLowerLimit(int)

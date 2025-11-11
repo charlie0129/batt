@@ -45,6 +45,7 @@ func Run(unixSocketPath string) {
 	logrus.WithField("version", version.Version).WithField("gitCommit", version.GitCommit).Info("batt gui")
 	cleanup := addMenubar(app, apiClient)
 	defer cleanup()
+
 	app.Run()
 }
 
@@ -297,6 +298,65 @@ This is useful when you want to use your battery to lower the battery charge, bu
 NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.`)
 	advancedMenu.AddItem(forceDischargeItem)
 
+	// Auto Calibration menu (after Force Discharge)
+	autoCalibrationItem := appkit.NewMenuWithTitle("Auto Calibration")
+	autoCalibrationItem.SetAutoenablesItems(false)
+	autoCalibrationSub := appkit.NewSubMenuItem(autoCalibrationItem)
+	autoCalibrationSub.SetTitle("Auto Calibration…")
+	advancedMenu.AddItem(autoCalibrationSub)
+
+	// Sub-items
+	calStatusItem := appkit.NewMenuItemWithAction("Status: Idle", "", func(sender objc.Object) {})
+	calStatusItem.SetEnabled(false)
+	autoCalibrationItem.AddItem(calStatusItem)
+
+	calStartItem := appkit.NewMenuItemWithAction("Start", "", func(sender objc.Object) {
+		alert := appkit.NewAlert()
+		alert.SetIcon(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("battery.100", "calibration"))
+		alert.SetAlertStyle(appkit.AlertStyleInformational)
+		alert.SetMessageText("Start Auto Calibration?")
+		alert.SetInformativeText("This will:\n• Discharge to threshold, without sleep prevention.\n• Charge to 100%.\n• Hold at full for configured minutes.\n• Restore your original settings.\nYou can pause or cancel anytime from the menu.")
+		// Explicitly add two buttons and compare first-button response, consistent with update flow
+		alert.AddButtonWithTitle("Start")
+		alert.AddButtonWithTitle("Cancel")
+		response := alert.RunModal()
+		if response != appkit.AlertFirstButtonReturn {
+			logrus.Info("User cancelled auto calibration start")
+			return
+		}
+		if _, err := apiClient.StartCalibration(); err != nil {
+			showAlert("Failed to start calibration", err.Error())
+			return
+		}
+		calStatusItem.SetTitle("Status: In Progress")
+	})
+	autoCalibrationItem.AddItem(calStartItem)
+
+	calPauseItem := appkit.NewMenuItemWithAction("Pause", "", func(sender objc.Object) {
+		if _, err := apiClient.PauseCalibration(); err != nil {
+			showAlert("Failed to pause calibration", err.Error())
+			return
+		}
+	})
+	autoCalibrationItem.AddItem(calPauseItem)
+
+	calResumeItem := appkit.NewMenuItemWithAction("Resume", "", func(sender objc.Object) {
+		if _, err := apiClient.ResumeCalibration(); err != nil {
+			showAlert("Failed to resume calibration", err.Error())
+			return
+		}
+	})
+	autoCalibrationItem.AddItem(calResumeItem)
+
+	calCancelItem := appkit.NewMenuItemWithAction("Cancel", "", func(sender objc.Object) {
+		if _, err := apiClient.CancelCalibration(); err != nil {
+			showAlert("Failed to cancel calibration", err.Error())
+			return
+		}
+		calStatusItem.SetTitle("Status: Idle")
+	})
+	autoCalibrationItem.AddItem(calCancelItem)
+
 	advancedMenu.AddItem(appkit.MenuItem_SeparatorItem())
 
 	versionItem := appkit.NewMenuItemWithAction("Version: "+version.Version, "", func(sender objc.Object) {})
@@ -370,6 +430,13 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		forceDischargeItem:          forceDischargeItem,
 		uninstallItem:               uninstallItem,
 		disableItem:                 disableItem,
+		// Auto Calibration
+		autoCalSubMenuItem: autoCalibrationSub,
+		calStatusItem:      calStatusItem,
+		calStartItem:       calStartItem,
+		calPauseItem:       calPauseItem,
+		calResumeItem:      calResumeItem,
+		calCancelItem:      calCancelItem,
 		// Power Flow items
 		systemItem:  powerSystemItem,
 		adapterItem: powerAdapterItem,
@@ -514,18 +581,35 @@ type menuController struct {
 	forceDischargeItem          appkit.MenuItem
 	uninstallItem               appkit.MenuItem
 
+	// Auto Calibration
+	autoCalSubMenuItem appkit.MenuItem
+	calStatusItem      appkit.MenuItem
+	calStartItem       appkit.MenuItem
+	calPauseItem       appkit.MenuItem
+	calResumeItem      appkit.MenuItem
+	calCancelItem      appkit.MenuItem
+
 	// Quit/disable
 	disableItem appkit.MenuItem
+
+	// Calibration cached parameters
+	calThreshold   int
+	calHoldMinutes int
+	lastCalPhase   string
 }
 
 func (c *menuController) onWillOpen() {
 	c.refreshOnOpen()
 	c.updatePowerFlowOnce()
+	c.updateCalibrationStatusOnce()
 }
 
 func (c *menuController) onDidClose() {}
 
-func (c *menuController) onTimerTick() { c.updatePowerFlowOnce() }
+func (c *menuController) onTimerTick() {
+	c.updatePowerFlowOnce()
+	c.updateCalibrationStatusOnce()
+}
 
 func (c *menuController) toggleMenusRequiringInstall(battInstalled, capable, needUpgrade bool) {
 	if v := os.Getenv("BATT_GUI_NO_COMPATIBILITY_CHECK"); v == "1" || v == "true" {
@@ -555,6 +639,7 @@ func (c *menuController) toggleMenusRequiringInstall(battInstalled, capable, nee
 	c.disableChargingPreSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.preventSystemSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.forceDischargeItem.SetHidden(!battInstalled || !capable || needUpgrade)
+	c.autoCalSubMenuItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.uninstallItem.SetHidden(!battInstalled)
 
 	c.disableItem.SetHidden(!battInstalled || !capable || needUpgrade)
@@ -609,6 +694,9 @@ func (c *menuController) refreshOnOpen() {
 
 	conf := config.NewFileFromConfig(rawConfig, "")
 	logrus.WithFields(conf.LogrusFields()).Info("Got config")
+	// Cache calibration params for formatting
+	c.calThreshold = conf.CalibrationDischargeThreshold()
+	c.calHoldMinutes = conf.CalibrationHoldDurationMinutes()
 	c.currentLimitItem.SetTitle(fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
 	for limit, item := range c.setQuickLimitsItems {
 		setCheckboxItem(item, limit == conf.UpperLimit())
@@ -668,6 +756,99 @@ func (c *menuController) updatePowerFlowOnce() {
 	c.systemItem.SetAttributedTitle(formatPowerString("System", info.Calculations.SystemPower))
 	c.adapterItem.SetAttributedTitle(formatPowerString("Adapter", info.Calculations.ACPower))
 	c.batteryItem.SetAttributedTitle(formatPowerString("Battery", info.Calculations.BatteryPower))
+}
+
+// updateCalibrationStatusOnce polls calibration status and updates menu items.
+func (c *menuController) updateCalibrationStatusOnce() {
+	st, err := c.api.GetCalibrationStatus()
+	if err != nil || st == nil {
+		return
+	}
+
+	isIdle := st.Phase == "Idle"
+
+	// Title of submenu
+	if !isIdle {
+		if st.Paused {
+			c.autoCalSubMenuItem.SetTitle("Auto Calibration (Paused)")
+		} else {
+			c.autoCalSubMenuItem.SetTitle("Auto Calibration (In Progress)")
+		}
+	} else {
+		c.autoCalSubMenuItem.SetTitle("Auto Calibration…")
+	}
+
+	// Enable/disable action items
+	c.calStartItem.SetEnabled(isIdle)
+	c.calCancelItem.SetEnabled(!isIdle)
+	if st.Paused {
+		c.calPauseItem.SetEnabled(false)
+		c.calResumeItem.SetEnabled(true)
+	} else {
+		c.calPauseItem.SetEnabled(!isIdle)
+		c.calResumeItem.SetEnabled(false)
+	}
+
+	// Format status line
+	switch st.Phase {
+	case "Idle":
+		c.calStatusItem.SetTitle("Status: Idle")
+	case "DischargeToThreshold":
+		c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging %d%% → %d%%", st.ChargePercent, c.calThreshold))
+	case "ChargeToFull":
+		c.calStatusItem.SetTitle(fmt.Sprintf("Status: Charging %d%% → 100%%", st.ChargePercent))
+	case "HoldAfterFull":
+		hrs := st.RemainingHoldSecs / 3600
+		mins := (st.RemainingHoldSecs % 3600) / 60
+		secs := st.RemainingHoldSecs % 60
+		c.calStatusItem.SetTitle(fmt.Sprintf("Status: Holding %02d:%02d:%02d left", hrs, mins, secs))
+	case "DischargeAfterHold":
+		if st.TargetPercent > 0 {
+			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging %d%% → %d%%", st.ChargePercent, st.TargetPercent))
+		} else {
+			c.calStatusItem.SetTitle("Status: Discharging to previous limit…")
+		}
+	case "RestoreAndFinish":
+		c.calStatusItem.SetTitle("Status: Restoring…")
+	case "Error":
+		if st.Message != "" {
+			c.calStatusItem.SetTitle("Status: Error - " + st.Message)
+		} else {
+			c.calStatusItem.SetTitle("Status: Error")
+		}
+	default:
+		c.calStatusItem.SetTitle("Status: " + st.Phase)
+	}
+
+	prevPhase := c.lastCalPhase
+
+	// Notifications on phase transitions (excluding Idle repetitive updates)
+	if prevPhase != st.Phase {
+		switch st.Phase {
+		case "DischargeToThreshold":
+			showNotification("Calibration Started", fmt.Sprintf("Discharging to %d%%", c.calThreshold))
+		case "ChargeToFull":
+			showNotification("Calibration", "Now charging to 100%")
+		case "HoldAfterFull":
+			showNotification("Calibration", fmt.Sprintf("Holding at 100%% for %d minutes", c.calHoldMinutes))
+		case "DischargeAfterHold":
+			showNotification("Calibration", "Discharging to previous limit")
+		case "RestoreAndFinish":
+			showNotification("Calibration", "Restoring original settings")
+		case "Idle":
+			// Transition back to Idle after restore
+			showNotification("Calibration Complete", "Original settings restored")
+		case "Error":
+			if st.Message != "" {
+				showNotification("Calibration Error", st.Message)
+			} else {
+				showNotification("Calibration Error", "An error occurred. Use Cancel to recover.")
+			}
+		}
+	}
+
+	// Update last phase after processing notifications
+	c.lastCalPhase = st.Phase
 }
 
 func formatPowerString(label string, value float64) foundation.AttributedString {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -47,6 +48,13 @@ func setupRoutes() *gin.Engine {
 	router.GET("/charging-control-capable", getChargingControlCapable)
 	router.GET("/version", getVersion)
 	router.GET("/power-telemetry", getPowerTelemetry)
+
+	// Calibration endpoints
+	router.POST("/calibration/start", postStartCalibration)
+	router.GET("/calibration/status", getCalibrationStatusHandler)
+	router.POST("/calibration/pause", postPauseCalibration)
+	router.POST("/calibration/resume", postResumeCalibration)
+	router.POST("/calibration/cancel", postCancelCalibration)
 
 	return router
 }
@@ -124,6 +132,14 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		logrus.Errorf("main loop exited unexpectedly")
 	}()
 
+	// Initialize calibration state file next to config path (derive directory from configPath)
+	if configPath != "" {
+		dir := filepath.Dir(configPath)
+		initCalibrationState(filepath.Join(dir, "batt.state.json"))
+	} else {
+		initCalibrationState("/etc/batt.state.json")
+	}
+
 	// Handle common process-killing signals, so we can gracefully shut down:
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
@@ -148,6 +164,10 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 
 	if err := smcConn.EnableCharging(); err != nil {
 		logrus.Errorf("failed to re-enable charging before exiting: %v", err)
+	}
+
+	if err := smcConn.EnableAdapter(); err != nil {
+		logrus.Errorf("failed to re-enable adapter before exiting: %v", err)
 	}
 
 	logrus.Info("closing smc connection")

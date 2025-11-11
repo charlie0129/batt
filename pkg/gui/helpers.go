@@ -145,6 +145,19 @@ func escapeShellInAppleScript(in string) string {
 	return out.String()
 }
 
+// showNotification displays a macOS notification using AppleScript.
+// It avoids extra framework dependencies and works outside the sandbox.
+func showNotification(title, body string) {
+	// Best-effort: run asynchronously and ignore errors to avoid blocking UI.
+	go func() {
+		script := fmt.Sprintf("display notification \"%s\" with title \"%s\"", escapeShellInAppleScript(body), escapeShellInAppleScript(title))
+		cmd := exec.Command("/usr/bin/osascript", "-e", script)
+		if err := cmd.Run(); err != nil {
+			logrus.WithError(err).Debug("failed to display notification")
+		}
+	}()
+}
+
 // uninstallDaemon removes daemon and resets charging limits.
 func uninstallDaemon(exe string) error {
 	shellScript := `

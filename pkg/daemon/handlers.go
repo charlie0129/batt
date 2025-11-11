@@ -363,3 +363,49 @@ func getPowerTelemetry(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusOK, snapshot)
 }
+
+// ===== Calibration Handlers =====
+
+func postStartCalibration(c *gin.Context) {
+	// Read threshold & hold from current config getters
+	threshold := conf.CalibrationDischargeThreshold()
+	hold := conf.CalibrationHoldDurationMinutes()
+	if err := startCalibration(threshold, hold); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	c.IndentedJSON(http.StatusCreated, gin.H{"ok": true})
+}
+
+func getCalibrationStatusHandler(c *gin.Context) {
+	st := getCalibrationStatus()
+	c.IndentedJSON(http.StatusOK, st)
+}
+
+func postPauseCalibration(c *gin.Context) {
+	if err := pauseCalibration(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func postResumeCalibration(c *gin.Context) {
+	if err := resumeCalibration(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func postCancelCalibration(c *gin.Context) {
+	if err := cancelCalibration(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
+}
