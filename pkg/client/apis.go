@@ -159,20 +159,38 @@ type CalibrationStatus struct {
 	TargetPercent     int    `json:"targetPercent"`
 }
 
-func (c *Client) StartCalibration() (string, error) {
-	return c.Send("POST", "/calibration/start", "")
+// Unified telemetry structures
+type TelemetryResponse struct {
+	Power       *powerinfo.PowerTelemetry `json:"power,omitempty"`
+	Calibration *CalibrationStatus        `json:"calibration,omitempty"`
 }
 
-func (c *Client) GetCalibrationStatus() (*CalibrationStatus, error) {
-	ret, err := c.Get("/calibration/status")
+// GetTelemetry fetches unified telemetry; set power or calibration to false to exclude.
+func (c *Client) GetTelemetry(includePower, includeCalibration bool) (*TelemetryResponse, error) {
+	// Build query params: default include if true
+	q := ""
+	if !includePower {
+		q += "power=0&"
+	}
+	if !includeCalibration {
+		q += "calibration=0&"
+	}
+	if len(q) > 0 {
+		q = "?" + q[:len(q)-1]
+	}
+	ret, err := c.Get("/telemetry" + q)
 	if err != nil {
-		return nil, pkgerrors.Wrapf(err, "failed to get calibration status")
+		return nil, pkgerrors.Wrapf(err, "failed to get unified telemetry")
 	}
-	var st CalibrationStatus
-	if err := json.Unmarshal([]byte(ret), &st); err != nil {
-		return nil, pkgerrors.Wrapf(err, "failed to unmarshal calibration status")
+	var tr TelemetryResponse
+	if err := json.Unmarshal([]byte(ret), &tr); err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to unmarshal unified telemetry")
 	}
-	return &st, nil
+	return &tr, nil
+}
+
+func (c *Client) StartCalibration() (string, error) {
+	return c.Send("POST", "/calibration/start", "")
 }
 
 func (c *Client) PauseCalibration() (string, error) { return c.Send("POST", "/calibration/pause", "") }

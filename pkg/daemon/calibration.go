@@ -56,9 +56,6 @@ var calibrationMu = &sync.Mutex{}
 var calibrationState = &CalibrationState{Phase: CalPhaseIdle}
 var calibrationStatePath = "" // set during daemon Run? Could derive from config path + suffix.
 
-// smc accessors (function vars) for test seam; default to smcConn methods.
-// function vars declared above
-
 func initCalibrationState(path string) {
 	calibrationStatePath = path
 	// Try load existing state

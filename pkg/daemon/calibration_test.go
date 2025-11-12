@@ -82,8 +82,9 @@ func TestCalibrationFlow(t *testing.T) {
 	if calibrationState.Phase != CalPhaseCharge {
 		t.Fatalf("expected charge phase, got %s", calibrationState.Phase)
 	}
-	if !fake.charging {
-		t.Fatalf("expected charging enabled")
+	// In current implementation, we enable adapter to allow charging to full
+	if !fake.adapter {
+		t.Fatalf("expected adapter enabled")
 	}
 
 	// Simulate reaching full

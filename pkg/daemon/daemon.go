@@ -47,11 +47,12 @@ func setupRoutes() *gin.Engine {
 	router.GET("/plugged-in", getPluggedIn)
 	router.GET("/charging-control-capable", getChargingControlCapable)
 	router.GET("/version", getVersion)
+	// Deprecated
 	router.GET("/power-telemetry", getPowerTelemetry)
+	router.GET("/telemetry", getUnifiedTelemetry)
 
-	// Calibration endpoints
+	// Calibration endpoints (status folded into /telemetry)
 	router.POST("/calibration/start", postStartCalibration)
-	router.GET("/calibration/status", getCalibrationStatusHandler)
 	router.POST("/calibration/pause", postPauseCalibration)
 	router.POST("/calibration/resume", postResumeCalibration)
 	router.POST("/calibration/cancel", postCancelCalibration)

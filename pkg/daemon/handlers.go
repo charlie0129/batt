@@ -339,6 +339,8 @@ func getVersion(c *gin.Context) {
 
 func getPowerTelemetry(c *gin.Context) {
 	// Use powerkit-go to fetch a snapshot of system power state
+	c.Header("X-Deprecated", "true")
+	c.Header("X-Deprecation-Info", "Use /telemetry?power=1 instead; /power-telemetry will be removed in a future release")
 	info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
 	if err != nil || info == nil || info.IOKit == nil {
 		if err == nil {
@@ -362,6 +364,42 @@ func getPowerTelemetry(c *gin.Context) {
 	snapshot.Calculations.HealthByMaxCapacity = info.IOKit.Calculations.HealthByMaxCapacity
 
 	c.IndentedJSON(http.StatusOK, snapshot)
+}
+
+// Unified telemetry endpoint: /telemetry?power=1&calibration=1 (flags optional; default all)
+func getUnifiedTelemetry(c *gin.Context) {
+	wantPower := c.Query("power") != "0"
+	wantCal := c.Query("calibration") != "0"
+
+	resp := gin.H{}
+
+	if wantPower {
+		info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
+		if err != nil || info == nil || info.IOKit == nil {
+			if err == nil {
+				err = errors.New("failed to fetch IOKit power data")
+			}
+			logrus.WithError(err).Warn("power telemetry unavailable for unified telemetry")
+		} else {
+			var snapshot powerinfo.PowerTelemetry
+			snapshot.Adapter.InputVoltage = info.IOKit.Adapter.InputVoltage
+			snapshot.Adapter.InputAmperage = info.IOKit.Adapter.InputAmperage
+			snapshot.Battery.CycleCount = info.IOKit.Battery.CycleCount
+			snapshot.Calculations.ACPower = info.IOKit.Calculations.AdapterPower
+			snapshot.Calculations.BatteryPower = info.IOKit.Calculations.BatteryPower
+			snapshot.Calculations.SystemPower = info.IOKit.Calculations.SystemPower
+			snapshot.Calculations.HealthByMaxCapacity = info.IOKit.Calculations.HealthByMaxCapacity
+			resp["power"] = snapshot
+		}
+	}
+
+	if wantCal {
+		resp["calibration"] = getCalibrationStatus()
+	}
+
+	// Add deprecation header if caller still hitting legacy endpoints (not detectable here), but we can add a generic hint.
+	c.Header("X-Batt-Telemetry-Version", "1")
+	c.IndentedJSON(http.StatusOK, resp)
 }
 
 // ===== Calibration Handlers =====

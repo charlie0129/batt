@@ -595,20 +595,17 @@ type menuController struct {
 	// Calibration cached parameters
 	calThreshold   int
 	calHoldMinutes int
-	lastCalPhase   string
 }
 
 func (c *menuController) onWillOpen() {
 	c.refreshOnOpen()
-	c.updatePowerFlowOnce()
-	c.updateCalibrationStatusOnce()
+	c.updateTelemetryOnce()
 }
 
 func (c *menuController) onDidClose() {}
 
 func (c *menuController) onTimerTick() {
-	c.updatePowerFlowOnce()
-	c.updateCalibrationStatusOnce()
+	c.updateTelemetryOnce()
 }
 
 func (c *menuController) toggleMenusRequiringInstall(battInstalled, capable, needUpgrade bool) {
@@ -745,110 +742,76 @@ func (c *menuController) refreshOnOpen() {
 	}
 }
 
-func (c *menuController) updatePowerFlowOnce() {
-	info, err := c.api.GetPowerTelemetry()
-	if err != nil || info == nil {
+// updateTelemetryOnce fetches both power and calibration in a single call and updates the UI.
+func (c *menuController) updateTelemetryOnce() {
+	tr, err := c.api.GetTelemetry(true, true)
+	if err != nil || tr == nil {
 		if err != nil {
-			logrus.WithError(err).Debug("GetPowerTelemetry failed")
+			logrus.WithError(err).Debug("GetTelemetry failed")
 		}
 		return
 	}
-	c.systemItem.SetAttributedTitle(formatPowerString("System", info.Calculations.SystemPower))
-	c.adapterItem.SetAttributedTitle(formatPowerString("Adapter", info.Calculations.ACPower))
-	c.batteryItem.SetAttributedTitle(formatPowerString("Battery", info.Calculations.BatteryPower))
-}
-
-// updateCalibrationStatusOnce polls calibration status and updates menu items.
-func (c *menuController) updateCalibrationStatusOnce() {
-	st, err := c.api.GetCalibrationStatus()
-	if err != nil || st == nil {
-		return
+	// Power section
+	if tr.Power != nil {
+		info := tr.Power
+		c.systemItem.SetAttributedTitle(formatPowerString("System", info.Calculations.SystemPower))
+		c.adapterItem.SetAttributedTitle(formatPowerString("Adapter", info.Calculations.ACPower))
+		c.batteryItem.SetAttributedTitle(formatPowerString("Battery", info.Calculations.BatteryPower))
 	}
-
-	isIdle := st.Phase == "Idle"
-
-	// Title of submenu
-	if !isIdle {
+	// Calibration section
+	if tr.Calibration != nil {
+		st := tr.Calibration
+		isIdle := st.Phase == "Idle"
+		// Title of submenu
+		if !isIdle {
+			if st.Paused {
+				c.autoCalSubMenuItem.SetTitle("Auto Calibration (Paused)")
+			} else {
+				c.autoCalSubMenuItem.SetTitle("Auto Calibration (In Progress)")
+			}
+		} else {
+			c.autoCalSubMenuItem.SetTitle("Auto Calibration…")
+		}
+		// Enable/disable action items
+		c.calStartItem.SetEnabled(isIdle)
+		c.calCancelItem.SetEnabled(!isIdle)
 		if st.Paused {
-			c.autoCalSubMenuItem.SetTitle("Auto Calibration (Paused)")
+			c.calPauseItem.SetEnabled(false)
+			c.calResumeItem.SetEnabled(true)
 		} else {
-			c.autoCalSubMenuItem.SetTitle("Auto Calibration (In Progress)")
+			c.calPauseItem.SetEnabled(!isIdle)
+			c.calResumeItem.SetEnabled(false)
 		}
-	} else {
-		c.autoCalSubMenuItem.SetTitle("Auto Calibration…")
-	}
 
-	// Enable/disable action items
-	c.calStartItem.SetEnabled(isIdle)
-	c.calCancelItem.SetEnabled(!isIdle)
-	if st.Paused {
-		c.calPauseItem.SetEnabled(false)
-		c.calResumeItem.SetEnabled(true)
-	} else {
-		c.calPauseItem.SetEnabled(!isIdle)
-		c.calResumeItem.SetEnabled(false)
-	}
-
-	// Format status line
-	switch st.Phase {
-	case "Idle":
-		c.calStatusItem.SetTitle("Status: Idle")
-	case "DischargeToThreshold":
-		c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging %d%% → %d%%", st.ChargePercent, c.calThreshold))
-	case "ChargeToFull":
-		c.calStatusItem.SetTitle(fmt.Sprintf("Status: Charging %d%% → 100%%", st.ChargePercent))
-	case "HoldAfterFull":
-		hrs := st.RemainingHoldSecs / 3600
-		mins := (st.RemainingHoldSecs % 3600) / 60
-		secs := st.RemainingHoldSecs % 60
-		c.calStatusItem.SetTitle(fmt.Sprintf("Status: Holding %02d:%02d:%02d left", hrs, mins, secs))
-	case "DischargeAfterHold":
-		if st.TargetPercent > 0 {
-			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging %d%% → %d%%", st.ChargePercent, st.TargetPercent))
-		} else {
-			c.calStatusItem.SetTitle("Status: Discharging to previous limit…")
-		}
-	case "RestoreAndFinish":
-		c.calStatusItem.SetTitle("Status: Restoring…")
-	case "Error":
-		if st.Message != "" {
-			c.calStatusItem.SetTitle("Status: Error - " + st.Message)
-		} else {
-			c.calStatusItem.SetTitle("Status: Error")
-		}
-	default:
-		c.calStatusItem.SetTitle("Status: " + st.Phase)
-	}
-
-	prevPhase := c.lastCalPhase
-
-	// Notifications on phase transitions (excluding Idle repetitive updates)
-	if prevPhase != st.Phase {
+		// Format status line
 		switch st.Phase {
-		case "DischargeToThreshold":
-			showNotification("Calibration Started", fmt.Sprintf("Discharging to %d%%", c.calThreshold))
-		case "ChargeToFull":
-			showNotification("Calibration", "Now charging to 100%")
-		case "HoldAfterFull":
-			showNotification("Calibration", fmt.Sprintf("Holding at 100%% for %d minutes", c.calHoldMinutes))
-		case "DischargeAfterHold":
-			showNotification("Calibration", "Discharging to previous limit")
-		case "RestoreAndFinish":
-			showNotification("Calibration", "Restoring original settings")
 		case "Idle":
-			// Transition back to Idle after restore
-			showNotification("Calibration Complete", "Original settings restored")
+			c.calStatusItem.SetTitle("Status: Idle")
+		case "DischargeToThreshold":
+			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging %d%% → %d%%", st.ChargePercent, c.calThreshold))
+		case "ChargeToFull":
+			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Charging %d%% → 100%%", st.ChargePercent))
+		case "HoldAfterFull":
+			hrs := st.RemainingHoldSecs / 3600
+			mins := (st.RemainingHoldSecs % 3600) / 60
+			secs := st.RemainingHoldSecs % 60
+			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Holding %02d:%02d:%02d left", hrs, mins, secs))
+		case "DischargeAfterHold":
+			if st.TargetPercent > 0 {
+				c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging %d%% → %d%%", st.ChargePercent, st.TargetPercent))
+			} else {
+				c.calStatusItem.SetTitle("Status: Discharging to previous limit…")
+			}
+		case "RestoreAndFinish":
+			c.calStatusItem.SetTitle("Status: Restoring settings…")
 		case "Error":
 			if st.Message != "" {
-				showNotification("Calibration Error", st.Message)
+				c.calStatusItem.SetTitle("Status: Error - " + st.Message)
 			} else {
-				showNotification("Calibration Error", "An error occurred. Use Cancel to recover.")
+				c.calStatusItem.SetTitle("Status: Error")
 			}
 		}
 	}
-
-	// Update last phase after processing notifications
-	c.lastCalPhase = st.Phase
 }
 
 func formatPowerString(label string, value float64) foundation.AttributedString {
