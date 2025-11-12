@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/sirupsen/logrus"
 )
@@ -72,14 +73,14 @@ func TestCalibrationFlow(t *testing.T) {
 	if err := startCalibration(15, 1); err != nil {
 		t.Fatalf("startCalibration failed: %v", err)
 	}
-	if calibrationState.Phase != CalPhaseDischarge {
+	if calibrationState.Phase != calibration.PhaseDischarge {
 		t.Fatalf("expected discharge phase, got %s", calibrationState.Phase)
 	}
 
 	// Move charge below threshold to trigger charging phase
 	fake.charge = 14
 	applyCalibrationWithinLoop(fake.charge)
-	if calibrationState.Phase != CalPhaseCharge {
+	if calibrationState.Phase != calibration.PhaseCharge {
 		t.Fatalf("expected charge phase, got %s", calibrationState.Phase)
 	}
 	// In current implementation, we enable adapter to allow charging to full
@@ -90,7 +91,7 @@ func TestCalibrationFlow(t *testing.T) {
 	// Simulate reaching full
 	fake.charge = 100
 	applyCalibrationWithinLoop(fake.charge)
-	if calibrationState.Phase != CalPhaseHold {
+	if calibrationState.Phase != calibration.PhaseHold {
 		t.Fatalf("expected hold phase, got %s", calibrationState.Phase)
 	}
 	if calibrationState.HoldEndTime.IsZero() {
@@ -100,20 +101,20 @@ func TestCalibrationFlow(t *testing.T) {
 	// Fast-forward hold period
 	calibrationState.HoldEndTime = time.Now().Add(-time.Second)
 	applyCalibrationWithinLoop(fake.charge)
-	if calibrationState.Phase != CalPhasePostHold {
+	if calibrationState.Phase != calibration.PhasePostHold {
 		t.Fatalf("expected post-hold discharge phase, got %s", calibrationState.Phase)
 	}
 
 	// Simulate discharging back down to snapshot upper limit (original upper 80)
 	fake.charge = 80
 	applyCalibrationWithinLoop(fake.charge)
-	if calibrationState.Phase != CalPhaseRestore {
+	if calibrationState.Phase != calibration.PhaseRestore {
 		t.Fatalf("expected restore phase after post-hold discharge, got %s", calibrationState.Phase)
 	}
 
 	// Perform restore
 	applyCalibrationWithinLoop(fake.charge)
-	if calibrationState.Phase != CalPhaseIdle {
+	if calibrationState.Phase != calibration.PhaseIdle {
 		t.Fatalf("expected idle at end, got %s", calibrationState.Phase)
 	}
 }

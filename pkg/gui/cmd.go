@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
@@ -761,7 +762,7 @@ func (c *menuController) updateTelemetryOnce() {
 	// Calibration section
 	if tr.Calibration != nil {
 		st := tr.Calibration
-		isIdle := st.Phase == "Idle"
+		isIdle := st.Phase == calibration.PhaseIdle
 		// Title of submenu
 		if !isIdle {
 			if st.Paused {
@@ -785,26 +786,26 @@ func (c *menuController) updateTelemetryOnce() {
 
 		// Format status line
 		switch st.Phase {
-		case "Idle":
+		case calibration.PhaseIdle:
 			c.calStatusItem.SetTitle("Status: Idle")
-		case "DischargeToThreshold":
+		case calibration.PhaseDischarge:
 			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging %d%% → %d%%", st.ChargePercent, c.calThreshold))
-		case "ChargeToFull":
+		case calibration.PhaseCharge:
 			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Charging %d%% → 100%%", st.ChargePercent))
-		case "HoldAfterFull":
+		case calibration.PhaseHold:
 			hrs := st.RemainingHoldSecs / 3600
 			mins := (st.RemainingHoldSecs % 3600) / 60
 			secs := st.RemainingHoldSecs % 60
 			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Holding %02d:%02d:%02d left", hrs, mins, secs))
-		case "DischargeAfterHold":
+		case calibration.PhasePostHold:
 			if st.TargetPercent > 0 {
 				c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging %d%% → %d%%", st.ChargePercent, st.TargetPercent))
 			} else {
 				c.calStatusItem.SetTitle("Status: Discharging to previous limit…")
 			}
-		case "RestoreAndFinish":
+		case calibration.PhaseRestore:
 			c.calStatusItem.SetTitle("Status: Restoring settings…")
-		case "Error":
+		case calibration.PhaseError:
 			if st.Message != "" {
 				c.calStatusItem.SetTitle("Status: Error - " + st.Message)
 			} else {

@@ -6,20 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/sirupsen/logrus"
-)
-
-// CalibrationPhase defines phases for auto calibration.
-type CalibrationPhase string
-
-const (
-	CalPhaseIdle      CalibrationPhase = "Idle"
-	CalPhaseDischarge CalibrationPhase = "DischargeToThreshold"
-	CalPhaseCharge    CalibrationPhase = "ChargeToFull"
-	CalPhaseHold      CalibrationPhase = "HoldAfterFull"
-	CalPhasePostHold  CalibrationPhase = "DischargeAfterHold"
-	CalPhaseRestore   CalibrationPhase = "RestoreAndFinish"
-	CalPhaseError     CalibrationPhase = "Error"
 )
 
 // smc accessors (function vars) for test seam; default to smcConn methods.
@@ -33,27 +21,8 @@ var (
 	smcDisableAdapter    = func() error { return smcConn.DisableAdapter() }
 	smcIsPluggedIn       = func() (bool, error) { return smcConn.IsPluggedIn() }
 )
-
-// CalibrationState holds runtime state persisted to disk.
-type CalibrationState struct {
-	Phase     CalibrationPhase `json:"phase"`
-	StartedAt time.Time        `json:"startedAt"`
-	Paused    bool             `json:"paused"`
-	// When paused, record the timestamp to properly adjust timers (e.g., Hold)
-	PauseStartedAt     time.Time `json:"pauseStartedAt"`
-	SnapshotUpperLimit int       `json:"snapshotUpperLimit"`
-	SnapshotLowerLimit int       `json:"snapshotLowerLimit"`
-	SnapshotMaintain   bool      `json:"snapshotMaintain"` // upper<100
-	SnapshotAdapterOn  bool      `json:"snapshotAdapterOn"`
-	SnapshotChargingOn bool      `json:"snapshotChargingOn"`
-	HoldEndTime        time.Time `json:"holdEndTime"`
-	Threshold          int       `json:"threshold"`
-	HoldMinutes        int       `json:"holdMinutes"`
-	LastError          string    `json:"lastError"`
-}
-
 var calibrationMu = &sync.Mutex{}
-var calibrationState = &CalibrationState{Phase: CalPhaseIdle}
+var calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
 var calibrationStatePath = "" // set during daemon Run? Could derive from config path + suffix.
 
 func initCalibrationState(path string) {
@@ -67,13 +36,13 @@ func initCalibrationState(path string) {
 		logrus.WithError(err).Warn("failed to read calibration state")
 		return
 	}
-	var st CalibrationState
+	var st calibration.State
 	if err := json.Unmarshal(b, &st); err != nil {
 		logrus.WithError(err).Warn("failed to unmarshal calibration state")
 		return
 	}
 	// On restart, mark paused (safety) if mid-flow
-	if st.Phase != CalPhaseIdle && st.Phase != CalPhaseRestore && st.Phase != CalPhaseError {
+	if st.Phase != calibration.PhaseIdle && st.Phase != calibration.PhaseRestore && st.Phase != calibration.PhaseError {
 		st.Paused = true
 	}
 	calibrationState = &st
@@ -96,7 +65,7 @@ func persistCalibrationState() {
 func startCalibration(threshold, holdMinutes int) error {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
-	if calibrationState.Phase != CalPhaseIdle && calibrationState.Phase != CalPhaseError {
+	if calibrationState.Phase != calibration.PhaseIdle && calibrationState.Phase != calibration.PhaseError {
 		return ErrCalibrationInProgress
 	}
 	if threshold < 5 {
@@ -116,8 +85,8 @@ func startCalibration(threshold, holdMinutes int) error {
 	chargingEnabled, _ := smcIsChargingEnabled()
 	adapterEnabled, _ := smcIsAdapterEnabled()
 
-	calibrationState = &CalibrationState{
-		Phase:              CalPhaseDischarge,
+	calibrationState = &calibration.State{
+		Phase:              calibration.PhaseDischarge,
 		StartedAt:          time.Now(),
 		Paused:             false,
 		SnapshotUpperLimit: upper,
@@ -146,7 +115,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
 	st := calibrationState
-	if st.Phase == CalPhaseIdle || st.Phase == CalPhaseError || st.Paused {
+	if st.Phase == calibration.PhaseIdle || st.Phase == calibration.PhaseError || st.Paused {
 		return false
 	}
 
@@ -156,19 +125,19 @@ func applyCalibrationWithinLoop(charge int) bool {
 	}).Debug("calibration loop")
 
 	switch st.Phase {
-	case CalPhaseDischarge:
+	case calibration.PhaseDischarge:
 		if charge < st.Threshold {
-			st.Phase = CalPhaseCharge
+			st.Phase = calibration.PhaseCharge
 			if err := smcEnableAdapter(); err != nil {
 				st.LastError = err.Error()
-				st.Phase = CalPhaseError
+				st.Phase = calibration.PhaseError
 				persistCalibrationState()
 				return true
 			}
 			conf.SetUpperLimit(100)
 			if err := conf.Save(); err != nil {
 				st.LastError = err.Error()
-				st.Phase = CalPhaseError
+				st.Phase = calibration.PhaseError
 			}
 		} else {
 			err := smcDisableAdapter()
@@ -176,24 +145,24 @@ func applyCalibrationWithinLoop(charge int) bool {
 				logrus.WithError(err).Error("failed to disable adapter during discharge phase")
 
 				st.LastError = err.Error()
-				st.Phase = CalPhaseError
+				st.Phase = calibration.PhaseError
 				persistCalibrationState()
 				return true
 			}
 		}
-	case CalPhaseCharge:
+	case calibration.PhaseCharge:
 		if charge >= 100 {
-			st.Phase = CalPhaseHold
+			st.Phase = calibration.PhaseHold
 			st.HoldEndTime = time.Now().Add(time.Duration(st.HoldMinutes) * time.Minute)
 		}
-	case CalPhaseHold:
+	case calibration.PhaseHold:
 		if time.Now().After(st.HoldEndTime) {
 			// Begin post-hold discharge back to previous upper limit (if snapshot < 100) or current configured upper.
-			st.Phase = CalPhasePostHold
+			st.Phase = calibration.PhasePostHold
 			// Ensure charging disabled to allow discharge.
 			_ = smcDisableAdapter()
 		}
-	case CalPhasePostHold:
+	case calibration.PhasePostHold:
 		// Determine target (original snapshot upper limit if it was <100, else current config upper limit).
 		// Using snapshotUpperLimit ensures we settle exactly back to prior maintain level before restoring limits & adapter/charging flags.
 		target := st.SnapshotUpperLimit
@@ -201,14 +170,14 @@ func applyCalibrationWithinLoop(charge int) bool {
 			target = conf.UpperLimit()
 		}
 		if charge <= target {
-			st.Phase = CalPhaseRestore
+			st.Phase = calibration.PhaseRestore
 		}
-	case CalPhaseRestore:
+	case calibration.PhaseRestore:
 		conf.SetUpperLimit(st.SnapshotUpperLimit)
 		conf.SetLowerLimit(st.SnapshotLowerLimit)
 		if err := conf.Save(); err != nil {
 			st.LastError = err.Error()
-			st.Phase = CalPhaseError
+			st.Phase = calibration.PhaseError
 			break
 		}
 		if st.SnapshotChargingOn {
@@ -221,7 +190,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 		} else {
 			_ = smcDisableAdapter()
 		}
-		st.Phase = CalPhaseIdle
+		st.Phase = calibration.PhaseIdle
 	}
 	persistCalibrationState()
 	return true
@@ -230,7 +199,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 func pauseCalibration() error {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
-	if calibrationState.Phase == CalPhaseIdle {
+	if calibrationState.Phase == calibration.PhaseIdle {
 		return ErrCalibrationNotRunning
 	}
 	if !calibrationState.Paused {
@@ -244,13 +213,13 @@ func pauseCalibration() error {
 func resumeCalibration() error {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
-	if calibrationState.Phase == CalPhaseIdle {
+	if calibrationState.Phase == calibration.PhaseIdle {
 		return ErrCalibrationNotRunning
 	}
 	if !calibrationState.Paused {
 		return nil
 	}
-	if calibrationState.Phase == CalPhaseHold && !calibrationState.PauseStartedAt.IsZero() {
+	if calibrationState.Phase == calibration.PhaseHold && !calibrationState.PauseStartedAt.IsZero() {
 		pausedDur := time.Since(calibrationState.PauseStartedAt)
 		calibrationState.HoldEndTime = calibrationState.HoldEndTime.Add(pausedDur)
 	}
@@ -263,7 +232,7 @@ func resumeCalibration() error {
 func cancelCalibration() error {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
-	if calibrationState.Phase == CalPhaseIdle {
+	if calibrationState.Phase == calibration.PhaseIdle {
 		return ErrCalibrationNotRunning
 	}
 	st := calibrationState
@@ -282,25 +251,12 @@ func cancelCalibration() error {
 	} else {
 		_ = smcDisableAdapter()
 	}
-	calibrationState = &CalibrationState{Phase: CalPhaseIdle}
+	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
 	persistCalibrationState()
 	return nil
 }
 
-type calibrationStatus struct {
-	Phase             CalibrationPhase `json:"phase"`
-	ChargePercent     int              `json:"chargePercent"`
-	PluggedIn         bool             `json:"pluggedIn"`
-	RemainingHoldSecs int              `json:"remainingHoldSeconds"`
-	StartedAt         time.Time        `json:"startedAt"`
-	Paused            bool             `json:"paused"`
-	CanPause          bool             `json:"canPause"`
-	CanCancel         bool             `json:"canCancel"`
-	Message           string           `json:"message"`
-	TargetPercent     int              `json:"targetPercent,omitempty"`
-}
-
-func getCalibrationStatus() *calibrationStatus {
+func getCalibrationStatus() *calibration.Status {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
 	st := calibrationState
@@ -312,7 +268,7 @@ func getCalibrationStatus() *calibrationStatus {
 	}
 	plugged, _ := smcIsPluggedIn()
 	remain := 0
-	if st.Phase == CalPhaseHold && !st.HoldEndTime.IsZero() {
+	if st.Phase == calibration.PhaseHold && !st.HoldEndTime.IsZero() {
 		effectiveEnd := st.HoldEndTime
 		if st.Paused && !st.PauseStartedAt.IsZero() {
 			effectiveEnd = effectiveEnd.Add(time.Since(st.PauseStartedAt))
@@ -324,18 +280,18 @@ func getCalibrationStatus() *calibrationStatus {
 	msg := st.LastError
 	// Default target for PostHold is the snapshot upper limit (fallback to current conf upper if invalid)
 	target := 0
-	if st.Phase == CalPhasePostHold {
+	if st.Phase == calibration.PhasePostHold {
 		if st.SnapshotUpperLimit > 0 && st.SnapshotUpperLimit <= 100 {
 			target = st.SnapshotUpperLimit
 		} else {
 			target = conf.UpperLimit()
 		}
 	}
-	return &calibrationStatus{
+	return &calibration.Status{
 		Phase: st.Phase, ChargePercent: charge, PluggedIn: plugged,
 		RemainingHoldSecs: remain, StartedAt: st.StartedAt, Paused: st.Paused,
-		CanPause:      st.Phase != CalPhaseIdle && st.Phase != CalPhaseRestore && st.Phase != CalPhaseError,
-		CanCancel:     st.Phase != CalPhaseIdle,
+		CanPause:      st.Phase != calibration.PhaseIdle && st.Phase != calibration.PhaseRestore && st.Phase != calibration.PhaseError,
+		CanCancel:     st.Phase != calibration.PhaseIdle,
 		Message:       msg,
 		TargetPercent: target,
 	}

@@ -416,11 +416,6 @@ func postStartCalibration(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, gin.H{"ok": true})
 }
 
-func getCalibrationStatusHandler(c *gin.Context) {
-	st := getCalibrationStatus()
-	c.IndentedJSON(http.StatusOK, st)
-}
-
 func postPauseCalibration(c *gin.Context) {
 	if err := pauseCalibration(); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())

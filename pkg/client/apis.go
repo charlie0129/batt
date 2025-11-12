@@ -7,6 +7,7 @@ import (
 
 	pkgerrors "github.com/pkg/errors"
 
+	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
 )
@@ -146,23 +147,10 @@ func (c *Client) GetPowerTelemetry() (*powerinfo.PowerTelemetry, error) {
 
 // ===== Auto Calibration APIs =====
 
-type CalibrationStatus struct {
-	Phase             string `json:"phase"`
-	ChargePercent     int    `json:"chargePercent"`
-	PluggedIn         bool   `json:"pluggedIn"`
-	RemainingHoldSecs int    `json:"remainingHoldSeconds"`
-	StartedAt         string `json:"startedAt"`
-	Paused            bool   `json:"paused"`
-	CanPause          bool   `json:"canPause"`
-	CanCancel         bool   `json:"canCancel"`
-	Message           string `json:"message"`
-	TargetPercent     int    `json:"targetPercent"`
-}
-
 // Unified telemetry structures
 type TelemetryResponse struct {
 	Power       *powerinfo.PowerTelemetry `json:"power,omitempty"`
-	Calibration *CalibrationStatus        `json:"calibration,omitempty"`
+	Calibration *calibration.Status       `json:"calibration,omitempty"`
 }
 
 // GetTelemetry fetches unified telemetry; set power or calibration to false to exclude.
