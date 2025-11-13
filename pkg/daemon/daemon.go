@@ -15,12 +15,16 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/events"
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
 var (
 	smcConn *smc.AppleSMC
 	conf    config.Config
+
+	// global hub instance initialized in Run()
+	sseHub *events.EventHub
 )
 
 func setupRoutes() *gin.Engine {
@@ -50,6 +54,7 @@ func setupRoutes() *gin.Engine {
 	// Deprecated
 	router.GET("/power-telemetry", getPowerTelemetry)
 	router.GET("/telemetry", getUnifiedTelemetry)
+	router.GET("/event", getEventStream)
 
 	// Calibration endpoints (status folded into /telemetry)
 	router.POST("/calibration/start", postStartCalibration)
@@ -62,6 +67,9 @@ func setupRoutes() *gin.Engine {
 
 func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	router := setupRoutes()
+
+	// Initialize global SSE hub
+	sseHub = events.NewEventHub()
 
 	var err error
 	conf, err = config.NewFile(configPath)

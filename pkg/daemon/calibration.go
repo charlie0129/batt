@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/events"
 	"github.com/sirupsen/logrus"
 )
 
@@ -115,6 +117,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
 	st := calibrationState
+	prevPhase := st.Phase
 	if st.Phase == calibration.PhaseIdle || st.Phase == calibration.PhaseError || st.Paused {
 		return false
 	}
@@ -166,7 +169,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 		// Determine target (original snapshot upper limit if it was <100, else current config upper limit).
 		// Using snapshotUpperLimit ensures we settle exactly back to prior maintain level before restoring limits & adapter/charging flags.
 		target := st.SnapshotUpperLimit
-		if target <= 0 || target > 100 { // sanity fallback
+		if target <= 50 || target > 100 { // sanity fallback
 			target = conf.UpperLimit()
 		}
 		if charge <= target {
@@ -193,6 +196,36 @@ func applyCalibrationWithinLoop(charge int) bool {
 		st.Phase = calibration.PhaseIdle
 	}
 	persistCalibrationState()
+	// Broadcast phase change if any
+	if sseHub != nil && st.Phase != prevPhase {
+		sseHub.Publish(events.CalibrationPhase, events.CalibrationPhaseEvent{
+			From: string(prevPhase),
+			To:   string(st.Phase),
+			Message: func() string {
+				if st.Phase == calibration.PhaseError {
+					return st.LastError
+				}
+				switch st.Phase {
+				case calibration.PhaseDischarge:
+					return fmt.Sprintf("Start calibration: discharging to %d%%", st.Threshold)
+				case calibration.PhaseCharge:
+					return "Charging to full"
+				case calibration.PhaseHold:
+					return fmt.Sprintf("Holding at full charge for %d minutes (end of %s)", st.HoldMinutes, st.HoldEndTime.Local().Format("03:04 PM"))
+				case calibration.PhasePostHold:
+					return fmt.Sprintf("Discharging to restore limits to %d%%", st.SnapshotUpperLimit)
+				case calibration.PhaseRestore:
+					return fmt.Sprintf("Calibration completed in %s", formatDuration(time.Since(st.StartedAt)))
+				case calibration.PhaseError:
+					return st.LastError
+				}
+				return ""
+			}(),
+			Ts: time.Now().Unix(),
+		})
+
+		logrus.WithField("event", events.CalibrationPhase).Debug("new event")
+	}
 	return true
 }
 

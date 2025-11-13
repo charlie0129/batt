@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -400,6 +401,55 @@ func getUnifiedTelemetry(c *gin.Context) {
 	// Add deprecation header if caller still hitting legacy endpoints (not detectable here), but we can add a generic hint.
 	c.Header("X-Batt-Telemetry-Version", "1")
 	c.IndentedJSON(http.StatusOK, resp)
+}
+
+// SSE endpoint: streams daemon events (first: calibration phase changes)
+func getEventStream(c *gin.Context) {
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	ch := sseHub.Subscribe()
+	defer sseHub.Unsubscribe(ch)
+
+	// Notify client that stream is open and suggest retry interval
+	c.Writer.Write([]byte("retry: 10000\n"))
+	c.Writer.Write([]byte(":ok\n\n"))
+	flusher.Flush()
+
+	// Heartbeat ticker: send SSE comment periodically to keep the connection alive
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	// Stream loop
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case <-ticker.C:
+			// SSE comment line as heartbeat
+			_, _ = c.Writer.Write([]byte(":ping\n\n"))
+			flusher.Flush()
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			// SSE frame: event + data
+			if msg.Name != "" {
+				_, _ = c.Writer.Write([]byte("event: " + msg.Name + "\n"))
+			}
+			_, _ = c.Writer.Write([]byte("data: "))
+			_, _ = c.Writer.Write(msg.Data)
+			_, _ = c.Writer.Write([]byte("\n\n"))
+			flusher.Flush()
+		}
+	}
 }
 
 // ===== Calibration Handlers =====

@@ -16,15 +16,17 @@ import (
 )
 
 // #cgo CFLAGS: -x objective-c
-// #cgo LDFLAGS: -framework Cocoa -framework ServiceManagement -framework CoreFoundation
+// #cgo LDFLAGS: -framework Cocoa -framework ServiceManagement -framework CoreFoundation -framework UserNotifications
 // #include <stdint.h>
 // #include <stdbool.h>
+// #include <stdlib.h>
 // // C/ObjC functions are implemented in bridge.m; only prototypes here.
 // void *batt_attachMenuObserver(uintptr_t menuPtr, uintptr_t handle);
 // void batt_releaseMenuObserver(void *obsPtr);
 // bool registerAppWithSMAppService(void);
 // bool unregisterAppWithSMAppService(void);
 // bool isRegisteredWithSMAppService(void);
+// void batt_showNotification(const char* title, const char* body);
 import "C"
 
 //export battMenuWillOpen
@@ -148,14 +150,23 @@ func escapeShellInAppleScript(in string) string {
 // showNotification displays a macOS notification using AppleScript.
 // It avoids extra framework dependencies and works outside the sandbox.
 func showNotification(title, body string) {
-	// Best-effort: run asynchronously and ignore errors to avoid blocking UI.
+	// Use UNUserNotificationCenter via Objective-C bridge. Best-effort, async.
 	go func() {
-		script := fmt.Sprintf("display notification \"%s\" with title \"%s\"", escapeShellInAppleScript(body), escapeShellInAppleScript(title))
-		cmd := exec.Command("/usr/bin/osascript", "-e", script)
-		if err := cmd.Run(); err != nil {
-			logrus.WithError(err).Debug("failed to display notification")
-		}
+		ctitle := C.CString(title)
+		cbody := C.CString(body)
+		defer C.free(unsafe.Pointer(ctitle))
+		defer C.free(unsafe.Pointer(cbody))
+		C.batt_showNotification(ctitle, cbody)
 	}()
+}
+
+func showAlert(msg, body string) {
+	alert := appkit.NewAlert()
+	alert.SetIcon(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("exclamationmark.triangle", "s"))
+	alert.SetAlertStyle(appkit.AlertStyleWarning)
+	alert.SetMessageText(msg)
+	alert.SetInformativeText(body)
+	alert.RunModal()
 }
 
 // uninstallDaemon removes daemon and resets charging limits.
