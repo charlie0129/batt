@@ -53,7 +53,6 @@ func Run(unixSocketPath string) {
 }
 
 // startEventBridge subscribes to client events and triggers UI refreshes on demand.
-
 func startEventBridge(api *client.Client, ctrl *menuController) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ctrl.eventCancel = cancel

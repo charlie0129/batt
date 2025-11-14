@@ -419,8 +419,14 @@ func getEventStream(c *gin.Context) {
 	defer sseHub.Unsubscribe(ch)
 
 	// Notify client that stream is open and suggest retry interval
-	c.Writer.Write([]byte("retry: 10000\n"))
-	c.Writer.Write([]byte(":ok\n\n"))
+	if _, err := c.Writer.WriteString("retry: 10000\n"); err != nil {
+		logrus.WithError(err).Warn("failed to write initial retry for SSE stream")
+		return
+	}
+	if _, err := c.Writer.WriteString(":ok\n\n"); err != nil {
+		logrus.WithError(err).Warn("failed to write initial comment for SSE stream")
+		return
+	}
 	flusher.Flush()
 
 	// Heartbeat ticker: send SSE comment periodically to keep the connection alive
@@ -434,7 +440,7 @@ func getEventStream(c *gin.Context) {
 			return
 		case <-ticker.C:
 			// SSE comment line as heartbeat
-			_, _ = c.Writer.Write([]byte(":ping\n\n"))
+			_, _ = c.Writer.WriteString(":ping\n\n")
 			flusher.Flush()
 		case msg, ok := <-ch:
 			if !ok {
@@ -442,11 +448,11 @@ func getEventStream(c *gin.Context) {
 			}
 			// SSE frame: event + data
 			if msg.Name != "" {
-				_, _ = c.Writer.Write([]byte("event: " + msg.Name + "\n"))
+				_, _ = c.Writer.WriteString("event: " + msg.Name + "\n")
 			}
-			_, _ = c.Writer.Write([]byte("data: "))
+			_, _ = c.Writer.WriteString("data: ")
 			_, _ = c.Writer.Write(msg.Data)
-			_, _ = c.Writer.Write([]byte("\n\n"))
+			_, _ = c.Writer.WriteString("\n\n")
 			flusher.Flush()
 		}
 	}

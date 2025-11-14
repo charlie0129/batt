@@ -131,6 +131,8 @@ func (e *calibrationError) Error() string { return e.msg }
 
 // applyCalibrationWithinLoop advances calibration phases using a provided charge reading.
 // Returns true if calibration is active (non-idle & non-error & not paused).
+//
+//nolint:gocyclo
 func applyCalibrationWithinLoop(charge int) bool {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()

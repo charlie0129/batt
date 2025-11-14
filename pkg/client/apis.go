@@ -152,7 +152,7 @@ func (c *Client) GetPowerTelemetry() (*powerinfo.PowerTelemetry, error) {
 	return &info, nil
 }
 
-// Unified telemetry structures
+// TelemetryResponse represents unified telemetry returned from the daemon.
 type TelemetryResponse struct {
 	Power       *powerinfo.PowerTelemetry `json:"power,omitempty"`
 	Calibration *calibration.Status       `json:"calibration,omitempty"`
@@ -284,7 +284,6 @@ func (c *Client) SubscribeEvents(ctx context.Context) <-chan events.Event {
 	return ch
 }
 
-// ===== Auto Calibration APIs =====
 func (c *Client) StartCalibration() (string, error) {
 	return c.Send("POST", "/calibration/start", "")
 }
