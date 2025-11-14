@@ -16,7 +16,7 @@ import (
 )
 
 // #cgo CFLAGS: -x objective-c
-// #cgo LDFLAGS: -framework Cocoa -framework ServiceManagement -framework CoreFoundation -framework UserNotifications
+// #cgo LDFLAGS: -framework Cocoa -framework ServiceManagement -framework CoreFoundation
 // #include <stdint.h>
 // #include <stdbool.h>
 // #include <stdlib.h>
@@ -147,8 +147,6 @@ func escapeShellInAppleScript(in string) string {
 	return out.String()
 }
 
-// showNotification displays a macOS notification using AppleScript.
-// It avoids extra framework dependencies and works outside the sandbox.
 func showNotification(title, body string) {
 	// Use UNUserNotificationCenter via Objective-C bridge. Best-effort, async.
 	go func() {
