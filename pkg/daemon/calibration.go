@@ -23,9 +23,12 @@ var (
 	smcDisableAdapter    = func() error { return smcConn.DisableAdapter() }
 	smcIsPluggedIn       = func() (bool, error) { return smcConn.IsPluggedIn() }
 )
-var calibrationMu = &sync.Mutex{}
-var calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-var calibrationStatePath = "" // set during daemon Run? Could derive from config path + suffix.
+
+var (
+	calibrationMu        = &sync.Mutex{}
+	calibrationState     = &calibration.State{Phase: calibration.PhaseIdle}
+	calibrationStatePath = "" // set during daemon Run? Could derive from config path + suffix.
+)
 
 func initCalibrationState(path string) {
 	calibrationStatePath = path
@@ -67,9 +70,11 @@ func persistCalibrationState() {
 func startCalibration(threshold, holdMinutes int) error {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
+
 	if calibrationState.Phase != calibration.PhaseIdle && calibrationState.Phase != calibration.PhaseError {
 		return ErrCalibrationInProgress
 	}
+
 	if threshold < 5 {
 		threshold = 5
 	}
@@ -87,6 +92,17 @@ func startCalibration(threshold, holdMinutes int) error {
 	chargingEnabled, _ := smcIsChargingEnabled()
 	adapterEnabled, _ := smcIsAdapterEnabled()
 
+	if sseHub != nil {
+		sseHub.Publish(events.CalibrationPhase, events.CalibrationPhaseEvent{
+			From:    string(calibrationState.Phase),
+			To:      string(calibration.PhaseDischarge),
+			Message: fmt.Sprintf("Start calibration: discharging to %d%%", threshold),
+			Ts:      time.Now().Unix(),
+		})
+
+		logrus.WithField("event", events.CalibrationPhase).Debug("new event")
+	}
+
 	calibrationState = &calibration.State{
 		Phase:              calibration.PhaseDischarge,
 		StartedAt:          time.Now(),
@@ -99,7 +115,9 @@ func startCalibration(threshold, holdMinutes int) error {
 		Threshold:          threshold,
 		HoldMinutes:        holdMinutes,
 	}
+
 	persistCalibrationState()
+
 	return nil
 }
 
@@ -143,14 +161,26 @@ func applyCalibrationWithinLoop(charge int) bool {
 				st.Phase = calibration.PhaseError
 			}
 		} else {
-			err := smcDisableAdapter()
+			enabled, err := smcIsAdapterEnabled()
 			if err != nil {
-				logrus.WithError(err).Error("failed to disable adapter during discharge phase")
+				logrus.WithError(err).Error("failed to check adapter state during discharge phase")
 
 				st.LastError = err.Error()
 				st.Phase = calibration.PhaseError
 				persistCalibrationState()
 				return true
+			}
+
+			if enabled {
+				err := smcDisableAdapter()
+				if err != nil {
+					logrus.WithError(err).Error("failed to disable adapter during discharge phase")
+
+					st.LastError = err.Error()
+					st.Phase = calibration.PhaseError
+					persistCalibrationState()
+					return true
+				}
 			}
 		}
 	case calibration.PhaseCharge:
@@ -196,6 +226,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 		st.Phase = calibration.PhaseIdle
 	}
 	persistCalibrationState()
+
 	// Broadcast phase change if any
 	if sseHub != nil && st.Phase != prevPhase {
 		sseHub.Publish(events.CalibrationPhase, events.CalibrationPhaseEvent{
@@ -206,10 +237,8 @@ func applyCalibrationWithinLoop(charge int) bool {
 					return st.LastError
 				}
 				switch st.Phase {
-				case calibration.PhaseDischarge:
-					return fmt.Sprintf("Start calibration: discharging to %d%%", st.Threshold)
 				case calibration.PhaseCharge:
-					return "Charging to full"
+					return "Start charging to full"
 				case calibration.PhaseHold:
 					return fmt.Sprintf("Holding at full charge for %d minutes (end of %s)", st.HoldMinutes, st.HoldEndTime.Local().Format("03:04 PM"))
 				case calibration.PhasePostHold:
