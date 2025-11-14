@@ -348,7 +348,7 @@ func setMenubarImage(menubarStatusItem appkit.StatusItem, daemonInstalled, capab
 		return
 	}
 	if !capable {
-		menubarStatusItem.Button().SetImage(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("minus.plus.batteryblock.exclamationmark", "You machine cannot run batt"))
+		menubarStatusItem.Button().SetImage(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("minus.plus.batteryblock.exclamationmark", "Your machine cannot run batt"))
 		return
 	}
 	if needUpgrade {

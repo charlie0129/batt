@@ -152,8 +152,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 			if err := smcEnableAdapter(); err != nil {
 				st.LastError = err.Error()
 				st.Phase = calibration.PhaseError
-				persistCalibrationState()
-				return true
+				break
 			}
 			conf.SetUpperLimit(100)
 			if err := conf.Save(); err != nil {
@@ -167,8 +166,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 
 				st.LastError = err.Error()
 				st.Phase = calibration.PhaseError
-				persistCalibrationState()
-				return true
+				break
 			}
 
 			if enabled {
@@ -178,8 +176,6 @@ func applyCalibrationWithinLoop(charge int) bool {
 
 					st.LastError = err.Error()
 					st.Phase = calibration.PhaseError
-					persistCalibrationState()
-					return true
 				}
 			}
 		}
