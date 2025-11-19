@@ -498,3 +498,26 @@ func postCancelCalibration(c *gin.Context) {
 	}
 	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
 }
+
+func setSchedule(c *gin.Context) {
+	var cronExpr string
+	if err := c.BindJSON(&cronExpr); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	nextRuns, err := schedule(cronExpr)
+	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	resp := gin.H{"ok": true}
+	if nextRuns != nil {
+		resp["next_runs"] = nextRuns
+	}
+
+	c.IndentedJSON(http.StatusCreated, resp)
+}

@@ -420,3 +420,54 @@ func getCalibrationStatus() *calibration.Status {
 		TargetPercent: target,
 	}
 }
+
+// schedule sets the cron expression for scheduled calibrations and returns the next run times.
+func schedule(cronExpr string) ([]time.Time, error) {
+	if cronExpr == "" {
+		conf.SetCron("")
+		if err := conf.Save(); err != nil {
+			logrus.WithError(err).Error("failed to save config")
+			return nil, fmt.Errorf("failed to save config: %w", err)
+		}
+		if sseHub != nil {
+			sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+				Action:  string(calibration.ActionDisableSchedule),
+				Message: "Calibration schedule disabled",
+				Ts:      time.Now().Unix(),
+			})
+		}
+		return nil, nil
+	}
+
+	// Validate cron expression
+	parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	sched, err := parser.Parse(cronExpr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cron expression: %w", err)
+	}
+
+	conf.SetCron(cronExpr)
+	if err := conf.Save(); err != nil {
+		logrus.WithError(err).Error("failed to save config")
+		return nil, fmt.Errorf("failed to save config: %w", err)
+	}
+
+	// generate three next run times for response
+	nextRuns := []time.Time{}
+	now := time.Now()
+	for range 3 {
+		next := sched.Next(now)
+		nextRuns = append(nextRuns, next)
+		now = next
+	}
+
+	if sseHub != nil {
+		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+			Action:  string(calibration.ActionSchedule),
+			Message: fmt.Sprintf("Calibration scheduled for %s ", nextRuns[0].Format("Jan _2 15:04")),
+			Ts:      time.Now().Unix(),
+		})
+	}
+
+	return nextRuns, nil
+}

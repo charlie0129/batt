@@ -19,10 +19,12 @@ const (
 type Action string
 
 const (
-	ActionStart  Action = "Start"
-	ActionPause  Action = "Pause"
-	ActionResume Action = "Resume"
-	ActionCancel Action = "Cancel"
+	ActionStart           Action = "Start"
+	ActionPause           Action = "Pause"
+	ActionResume          Action = "Resume"
+	ActionCancel          Action = "Cancel"
+	ActionSchedule        Action = "Schedule"
+	ActionDisableSchedule Action = "DisableSchedule"
 )
 
 // State holds runtime state persisted to disk.

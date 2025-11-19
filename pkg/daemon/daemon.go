@@ -61,6 +61,7 @@ func setupRoutes() *gin.Engine {
 	router.POST("/calibration/pause", postPauseCalibration)
 	router.POST("/calibration/resume", postResumeCalibration)
 	router.POST("/calibration/cancel", postCancelCalibration)
+	router.PUT("/calibration/schedule", setSchedule)
 
 	return router
 }
