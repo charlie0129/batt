@@ -332,7 +332,13 @@ Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while th
 			alert.SetMessageText("Precautions")
 			alert.SetInformativeText(`1. The lid of your MacBook MUST be open, otherwise your Mac will go to sleep immediately.
 2. Be sure to come back and disable "Force Discharge" when you are done, otherwise the battery of your Mac will drain completely.`)
-			alert.RunModal()
+			alert.AddButtonWithTitle("Start")
+			alert.AddButtonWithTitle("Cancel")
+			response := alert.RunModal()
+			if response != appkit.AlertFirstButtonReturn {
+				logrus.Info("User cancelled force discharge")
+				return
+			}
 		}
 
 		_, err := apiClient.SetAdapter(!checked)

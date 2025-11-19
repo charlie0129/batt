@@ -9,12 +9,28 @@ import (
 	"github.com/charlie0129/batt/pkg/version"
 )
 
+// getVersion fetches the version of both the client and the daemon.
+func getVersion() (string, string, error) {
+	daemonVersion, err := apiClient.GetVersion()
+	if err != nil {
+		return version.Version, "", fmt.Errorf("failed to get daemon version: %v", err)
+	}
+	return version.Version, daemonVersion, nil
+}
+
 func NewVersionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version",
 		Run: func(cmd *cobra.Command, _ []string) {
-			cmd.Printf("%s %s\n", version.Version, version.GitCommit)
+			clientVersion, daemonVersion, err := getVersion()
+			if err != nil {
+				cmd.Printf("Client: %s %s\n", clientVersion)
+				logrus.Errorf("failed to get daemon version: %v", err)
+				return
+			}
+			cmd.Printf("Client: %s\n", clientVersion)
+			cmd.Printf("Daemon: %s\n", daemonVersion)
 		},
 	}
 }
