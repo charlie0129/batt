@@ -15,6 +15,16 @@ const (
 	PhaseError     Phase = "Error"
 )
 
+// Action defines user actions for auto calibration.
+type Action string
+
+const (
+	ActionStart  Action = "Start"
+	ActionPause  Action = "Pause"
+	ActionResume Action = "Resume"
+	ActionCancel Action = "Cancel"
+)
+
 // State holds runtime state persisted to disk.
 type State struct {
 	Phase     Phase     `json:"phase"`

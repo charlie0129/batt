@@ -93,14 +93,11 @@ func startCalibration(threshold, holdMinutes int) error {
 	adapterEnabled, _ := smcIsAdapterEnabled()
 
 	if sseHub != nil {
-		sseHub.Publish(events.CalibrationPhase, events.CalibrationPhaseEvent{
-			From:    string(calibrationState.Phase),
-			To:      string(calibration.PhaseDischarge),
+		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+			Action:  string(calibration.ActionStart),
 			Message: fmt.Sprintf("Start calibration: discharging to %d%%", threshold),
 			Ts:      time.Now().Unix(),
 		})
-
-		logrus.WithField("event", events.CalibrationPhase).Debug("new event")
 	}
 
 	calibrationState = &calibration.State{
@@ -265,8 +262,18 @@ func pauseCalibration() error {
 	if !calibrationState.Paused {
 		calibrationState.Paused = true
 		calibrationState.PauseStartedAt = time.Now()
+
+		if sseHub != nil {
+			sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+				Action:  string(calibration.ActionPause),
+				Message: fmt.Sprintf("Calibration paused at phase %s", calibrationState.Phase),
+				Ts:      time.Now().Unix(),
+			})
+		}
+
+		persistCalibrationState()
 	}
-	persistCalibrationState()
+
 	return nil
 }
 
@@ -283,8 +290,18 @@ func resumeCalibration() error {
 		pausedDur := time.Since(calibrationState.PauseStartedAt)
 		calibrationState.HoldEndTime = calibrationState.HoldEndTime.Add(pausedDur)
 	}
+
+	if sseHub != nil {
+		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+			Action:  string(calibration.ActionResume),
+			Message: fmt.Sprintf("Calibration resumed (paused at %s)", calibrationState.PauseStartedAt.Format("Jan _2 15:04")),
+			Ts:      time.Now().Unix(),
+		})
+	}
+
 	calibrationState.Paused = false
 	calibrationState.PauseStartedAt = time.Time{}
+
 	persistCalibrationState()
 	return nil
 }
@@ -295,12 +312,14 @@ func cancelCalibration() error {
 	if calibrationState.Phase == calibration.PhaseIdle {
 		return ErrCalibrationNotRunning
 	}
+
 	st := calibrationState
 	conf.SetUpperLimit(st.SnapshotUpperLimit)
 	conf.SetLowerLimit(st.SnapshotLowerLimit)
 	if err := conf.Save(); err != nil {
 		logrus.WithError(err).Warn("failed to save config while canceling calibration")
 	}
+
 	if st.SnapshotChargingOn {
 		_ = smcEnableCharging()
 	} else {
@@ -311,6 +330,15 @@ func cancelCalibration() error {
 	} else {
 		_ = smcDisableAdapter()
 	}
+
+	if sseHub != nil {
+		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+			Action:  string(calibration.ActionCancel),
+			Message: fmt.Sprintf("Calibration canceled at phase %s and restored to previous state", st.Phase),
+			Ts:      time.Now().Unix(),
+		})
+	}
+
 	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
 	persistCalibrationState()
 	return nil

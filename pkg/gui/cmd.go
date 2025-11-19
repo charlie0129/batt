@@ -65,7 +65,15 @@ func startEventBridge(api *client.Client, ctrl *menuController) {
 			"data":  string(ev.Data),
 		}).Debug("new event")
 
-		if ev.Name == events.CalibrationPhase {
+		if ev.Name == events.CalibrationAction {
+			payload, err := events.DecodeAs[events.CalibrationActionEvent](ev)
+			if err != nil {
+				logrus.WithError(err).Error("failed to decode calibration.action event")
+				continue
+			}
+
+			showNotification("Calibration", payload.Message)
+		} else if ev.Name == events.CalibrationPhase {
 			payload, err := events.DecodeAs[events.CalibrationPhaseEvent](ev)
 			if err != nil {
 				logrus.WithError(err).Error("failed to decode calibration.phase event")
@@ -345,6 +353,9 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 	autoCalibrationItem.SetAutoenablesItems(false)
 	autoCalibrationSub := appkit.NewSubMenuItem(autoCalibrationItem)
 	autoCalibrationSub.SetTitle("Auto Calibration…")
+	autoCalibrationSub.SetToolTip(`This function helps you calibrate your battery by automatically discharging and charging it according to best practices.
+
+Not recommended to run the calibration mode too frequently.`)
 	advancedMenu.AddItem(autoCalibrationSub)
 
 	// Sub-items
@@ -357,7 +368,16 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 		alert.SetIcon(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("battery.100", "calibration"))
 		alert.SetAlertStyle(appkit.AlertStyleInformational)
 		alert.SetMessageText("Start Auto Calibration?")
-		alert.SetInformativeText("This will:\n• Discharge to threshold, without sleep prevention.\n• Charge to 100%.\n• Hold at full for configured minutes.\n• Restore your original settings.\nYou can pause or cancel anytime from the menu.")
+		alert.SetInformativeText(`This will:
+1. Discharge to threshold, without sleep prevention.
+2. Charge to 100%.
+3. Hold at full for configured minutes.
+4. Restore your original settings.
+
+NOTES:
+• You can pause or cancel anytime from the menu.
+• Highly recommend keeping your Mac connected to power throughout the process to prevent the battery level from dropping below the threshold without timely charging.
+• If you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *Discharging process will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.`)
 		// Explicitly add two buttons and compare first-button response, consistent with update flow
 		alert.AddButtonWithTitle("Start")
 		alert.AddButtonWithTitle("Cancel")
