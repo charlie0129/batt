@@ -286,7 +286,7 @@ func (c *menuController) updateTelemetryOnce() {
 		}
 
 		// Do not let the user change settings when we are trying to calibrate.
-		if st.Phase == calibration.PhaseIdle || st.Phase == calibration.PhaseError {
+		if st.Phase == calibration.PhaseIdle || st.Phase == calibration.PhaseError || st.Paused {
 			c.forceDischargeItem.SetEnabled(true)
 			c.uninstallItem.SetEnabled(true)
 			c.disableItem.SetEnabled(true)
