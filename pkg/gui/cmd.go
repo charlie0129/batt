@@ -358,7 +358,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 	autoCalibrationItem := appkit.NewMenuWithTitle("Auto Calibration")
 	autoCalibrationItem.SetAutoenablesItems(false)
 	autoCalibrationSub := appkit.NewSubMenuItem(autoCalibrationItem)
-	autoCalibrationSub.SetTitle("Auto Calibration…")
+	autoCalibrationSub.SetTitle("Auto Calibration...")
 	autoCalibrationSub.SetToolTip(`This function helps you calibrate your battery by automatically discharging and charging it according to best practices.
 
 Not recommended to run the calibration mode too frequently.`)
@@ -486,7 +486,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		stateItem:                   stateItem,
 		currentLimitItem:            currentLimitItem,
 		quickLimitsItem:             quickLimitsItem,
-		setQuickLimitsItems:         setQuickLimitsItems,
+		quickLimitsItems:            setQuickLimitsItems,
 		advancedSubMenuItem:         advancedSubMenuItem,
 		controlMagSafeLEDItem:       controlMagSafeLEDItem,
 		controlMagSafeEnableItem:    controlMagSafeEnableItem,

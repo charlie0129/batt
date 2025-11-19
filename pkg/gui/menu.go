@@ -6,15 +6,16 @@ import (
 	"math"
 	"os"
 
+	"github.com/progrium/darwinkit/macos/appkit"
+	"github.com/progrium/darwinkit/macos/foundation"
+	"github.com/progrium/darwinkit/objc"
+	"github.com/sirupsen/logrus"
+
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
 	"github.com/charlie0129/batt/pkg/version"
-	"github.com/progrium/darwinkit/macos/appkit"
-	"github.com/progrium/darwinkit/macos/foundation"
-	"github.com/progrium/darwinkit/objc"
-	"github.com/sirupsen/logrus"
 )
 
 // menuController owns the menu updates and avoids darwinkit delegate closures.
@@ -29,12 +30,12 @@ type menuController struct {
 	batteryItem          appkit.MenuItem
 
 	// Core items
-	installItem         appkit.MenuItem
-	upgradeItem         appkit.MenuItem
-	stateItem           appkit.MenuItem
-	currentLimitItem    appkit.MenuItem
-	quickLimitsItem     appkit.MenuItem
-	setQuickLimitsItems map[int]appkit.MenuItem
+	installItem      appkit.MenuItem
+	upgradeItem      appkit.MenuItem
+	stateItem        appkit.MenuItem
+	currentLimitItem appkit.MenuItem
+	quickLimitsItem  appkit.MenuItem
+	quickLimitsItems map[int]appkit.MenuItem
 
 	// Advanced
 	advancedSubMenuItem   appkit.MenuItem
@@ -98,7 +99,7 @@ func (c *menuController) toggleMenusRequiringInstall(battInstalled, capable, nee
 
 	// Show when installed AND capable AND no upgrade needed
 	c.quickLimitsItem.SetHidden(!battInstalled || !capable || needUpgrade)
-	for _, it := range c.setQuickLimitsItems {
+	for _, it := range c.quickLimitsItems {
 		it.SetHidden(!battInstalled || !capable || needUpgrade)
 	}
 
@@ -167,7 +168,7 @@ func (c *menuController) refreshOnOpen() {
 	c.calThreshold = conf.CalibrationDischargeThreshold()
 	c.calHoldMinutes = conf.CalibrationHoldDurationMinutes()
 	c.currentLimitItem.SetTitle(fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
-	for limit, item := range c.setQuickLimitsItems {
+	for limit, item := range c.quickLimitsItems {
 		setCheckboxItem(item, limit == conf.UpperLimit())
 	}
 
@@ -283,6 +284,23 @@ func (c *menuController) updateTelemetryOnce() {
 				c.calStatusItem.SetTitle("Status: Error")
 			}
 		}
+
+		// Do not let the user change settings when we are trying to calibrate.
+		if st.Phase == calibration.PhaseIdle || st.Phase == calibration.PhaseError {
+			c.forceDischargeItem.SetEnabled(true)
+			c.uninstallItem.SetEnabled(true)
+			c.disableItem.SetEnabled(true)
+			for _, i := range c.quickLimitsItems {
+				i.SetEnabled(true)
+			}
+		} else {
+			c.forceDischargeItem.SetEnabled(false)
+			c.uninstallItem.SetEnabled(false)
+			c.disableItem.SetEnabled(false)
+			for _, i := range c.quickLimitsItems {
+				i.SetEnabled(false)
+			}
+		}
 	}
 }
 
@@ -338,7 +356,8 @@ func formatPowerString(label string, value float64) foundation.AttributedString 
 	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSColor"), color, valueRange)
 
 	// Apply the monospaced font to the entire string.
-	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSFont"), font, foundation.Range{Location: 0, Length: uint64(len(fullString))})
+	attrStr.AddAttributeValueRange(foundation.AttributedStringKey("NSFont"), font, foundation.Range{Location: 0,
+		Length: uint64(len(fullString))})
 	return attrStr.AttributedString
 }
 
