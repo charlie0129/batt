@@ -19,12 +19,14 @@ import (
 // #cgo LDFLAGS: -framework Cocoa -framework ServiceManagement -framework CoreFoundation
 // #include <stdint.h>
 // #include <stdbool.h>
+// #include <stdlib.h>
 // // C/ObjC functions are implemented in bridge.m; only prototypes here.
 // void *batt_attachMenuObserver(uintptr_t menuPtr, uintptr_t handle);
 // void batt_releaseMenuObserver(void *obsPtr);
 // bool registerAppWithSMAppService(void);
 // bool unregisterAppWithSMAppService(void);
 // bool isRegisteredWithSMAppService(void);
+// void batt_showNotification(const char* title, const char* body);
 import "C"
 
 //export battMenuWillOpen
@@ -143,6 +145,26 @@ func escapeShellInAppleScript(in string) string {
 		}
 	}
 	return out.String()
+}
+
+func showNotification(title, body string) {
+	// Use UNUserNotificationCenter via Objective-C bridge. Best-effort, async.
+	go func() {
+		ctitle := C.CString(title)
+		cbody := C.CString(body)
+		defer C.free(unsafe.Pointer(ctitle))
+		defer C.free(unsafe.Pointer(cbody))
+		C.batt_showNotification(ctitle, cbody)
+	}()
+}
+
+func showAlert(msg, body string) {
+	alert := appkit.NewAlert()
+	alert.SetIcon(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("exclamationmark.triangle", "s"))
+	alert.SetAlertStyle(appkit.AlertStyleWarning)
+	alert.SetMessageText(msg)
+	alert.SetInformativeText(body)
+	alert.RunModal()
 }
 
 // uninstallDaemon removes daemon and resets charging limits.

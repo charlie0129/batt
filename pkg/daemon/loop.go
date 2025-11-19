@@ -342,15 +342,21 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 		return false
 	}
 
-	// If maintain is disabled, we don't care about the battery charge, enable charging anyway.
-	if !maintain {
-		return handleNoMaintain(isChargingEnabled)
-	}
-
+	// Always get current battery charge to possibly drive calibration first.
 	batteryCharge, err := smcConn.GetBatteryCharge()
 	if err != nil {
 		logrus.Errorf("GetBatteryCharge failed: %v", err)
 		return false
+	}
+
+	// If calibration is active, advance it and skip normal maintain logic.
+	if applyCalibrationWithinLoop(batteryCharge) {
+		return true
+	}
+
+	// If maintain is disabled, we don't care about the battery charge, enable charging anyway.
+	if !maintain {
+		return handleNoMaintain(isChargingEnabled)
 	}
 
 	isPluggedIn, err := smcConn.IsPluggedIn()

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -47,4 +48,40 @@ func ginLogger(logger logrus.FieldLogger) gin.HandlerFunc {
 			}
 		}
 	}
+}
+
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Minute)
+
+	totalHours := int64(d / time.Hour)
+	minutes := int64((d % time.Hour) / time.Minute)
+
+	days := totalHours / 24
+	hours := totalHours % 24
+
+	var parts []string
+
+	if days > 0 {
+		if days == 1 {
+			parts = append(parts, "1 day")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d days", days))
+		}
+	}
+	if hours > 0 {
+		if hours == 1 {
+			parts = append(parts, "1 hour")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d hours", hours))
+		}
+	}
+	if minutes > 0 {
+		parts = append(parts, fmt.Sprintf("%d min", minutes))
+	}
+
+	if len(parts) == 0 {
+		return "0 min"
+	}
+
+	return strings.Join(parts, " ")
 }

@@ -35,6 +35,10 @@ var (
 		PreventSystemSleep:      ptr.To(false),
 		AllowNonRootAccess:      ptr.To(false),
 		LowerLimitDelta:         ptr.To(2),
+
+		CalibrationDischargeThreshold:  ptr.To(15),
+		CalibrationHoldDurationMinutes: ptr.To(120),
+
 		// There are Macs without MagSafe LED. We only do checks when the user
 		// explicitly enables this feature. In the future, we might add a check
 		// that disables this feature if the Mac does not have a MagSafe LED.
@@ -113,6 +117,9 @@ type RawFileConfig struct {
 	AllowNonRootAccess      *bool               `json:"allowNonRootAccess,omitempty"`
 	LowerLimitDelta         *int                `json:"lowerLimitDelta,omitempty"`
 	ControlMagSafeLED       *ControlMagSafeMode `json:"controlMagSafeLED,omitempty"`
+
+	CalibrationDischargeThreshold  *int `json:"calibrationDischargeThreshold,omitempty"`
+	CalibrationHoldDurationMinutes *int `json:"calibrationHoldDurationMinutes,omitempty"`
 }
 
 func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
@@ -264,6 +271,49 @@ func (f *File) ControlMagSafeLED() ControlMagSafeMode {
 	}
 
 	return ControlMagSafeLED
+}
+
+// CalibrationDischargeThreshold returns the discharge threshold percentage (< this value ends discharge phase).
+// Default 15 if not set or invalid (<10 or > 50). We clamp to [10,50] to avoid pathological values.
+func (f *File) CalibrationDischargeThreshold() int {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.CalibrationDischargeThreshold == nil {
+		return 15
+	}
+	val := *f.c.CalibrationDischargeThreshold
+	if val < 10 {
+		return 10
+	}
+	if val > 50 { // upper sanity bound; calibration below 50% is reasonable
+		return 50
+	}
+	return val
+}
+
+// CalibrationHoldDurationMinutes returns duration minutes to hold at full charge.
+// Default 120 if not set or invalid (< 0 or > 1440).
+func (f *File) CalibrationHoldDurationMinutes() int {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.CalibrationHoldDurationMinutes == nil {
+		return 120
+	}
+	val := *f.c.CalibrationHoldDurationMinutes
+	if val < 0 || val > 24*60 { // cap at 24h
+		return 120
+	}
+	return val
 }
 
 func (f *File) SetUpperLimit(i int) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -339,6 +340,8 @@ func getVersion(c *gin.Context) {
 
 func getPowerTelemetry(c *gin.Context) {
 	// Use powerkit-go to fetch a snapshot of system power state
+	c.Header("X-Deprecated", "true")
+	c.Header("X-Deprecation-Info", "Use /telemetry?power=1 instead; /power-telemetry will be removed in a future release")
 	info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
 	if err != nil || info == nil || info.IOKit == nil {
 		if err == nil {
@@ -362,4 +365,136 @@ func getPowerTelemetry(c *gin.Context) {
 	snapshot.Calculations.HealthByMaxCapacity = info.IOKit.Calculations.HealthByMaxCapacity
 
 	c.IndentedJSON(http.StatusOK, snapshot)
+}
+
+// Unified telemetry endpoint: /telemetry?power=1&calibration=1 (flags optional; default all)
+func getUnifiedTelemetry(c *gin.Context) {
+	wantPower := c.Query("power") != "0"
+	wantCal := c.Query("calibration") != "0"
+
+	resp := gin.H{}
+
+	if wantPower {
+		info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
+		if err != nil || info == nil || info.IOKit == nil {
+			if err == nil {
+				err = errors.New("failed to fetch IOKit power data")
+			}
+			logrus.WithError(err).Warn("power telemetry unavailable for unified telemetry")
+		} else {
+			var snapshot powerinfo.PowerTelemetry
+			snapshot.Adapter.InputVoltage = info.IOKit.Adapter.InputVoltage
+			snapshot.Adapter.InputAmperage = info.IOKit.Adapter.InputAmperage
+			snapshot.Battery.CycleCount = info.IOKit.Battery.CycleCount
+			snapshot.Calculations.ACPower = info.IOKit.Calculations.AdapterPower
+			snapshot.Calculations.BatteryPower = info.IOKit.Calculations.BatteryPower
+			snapshot.Calculations.SystemPower = info.IOKit.Calculations.SystemPower
+			snapshot.Calculations.HealthByMaxCapacity = info.IOKit.Calculations.HealthByMaxCapacity
+			resp["power"] = snapshot
+		}
+	}
+
+	if wantCal {
+		resp["calibration"] = getCalibrationStatus()
+	}
+
+	// Add deprecation header if caller still hitting legacy endpoints (not detectable here), but we can add a generic hint.
+	c.Header("X-Batt-Telemetry-Version", "1")
+	c.IndentedJSON(http.StatusOK, resp)
+}
+
+// SSE endpoint: streams daemon events (first: calibration phase changes)
+func getEventStream(c *gin.Context) {
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	ch := sseHub.Subscribe()
+	defer sseHub.Unsubscribe(ch)
+
+	// Notify client that stream is open and suggest retry interval
+	if _, err := c.Writer.WriteString("retry: 10000\n"); err != nil {
+		logrus.WithError(err).Warn("failed to write initial retry for SSE stream")
+		return
+	}
+	if _, err := c.Writer.WriteString(":ok\n\n"); err != nil {
+		logrus.WithError(err).Warn("failed to write initial comment for SSE stream")
+		return
+	}
+	flusher.Flush()
+
+	// Heartbeat ticker: send SSE comment periodically to keep the connection alive
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	// Stream loop
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case <-ticker.C:
+			// SSE comment line as heartbeat
+			_, _ = c.Writer.WriteString(":ping\n\n")
+			flusher.Flush()
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			// SSE frame: event + data
+			if msg.Name != "" {
+				_, _ = c.Writer.WriteString("event: " + msg.Name + "\n")
+			}
+			_, _ = c.Writer.WriteString("data: ")
+			_, _ = c.Writer.Write(msg.Data)
+			_, _ = c.Writer.WriteString("\n\n")
+			flusher.Flush()
+		}
+	}
+}
+
+// ===== Calibration Handlers =====
+
+func postStartCalibration(c *gin.Context) {
+	// Read threshold & hold from current config getters
+	threshold := conf.CalibrationDischargeThreshold()
+	hold := conf.CalibrationHoldDurationMinutes()
+	if err := startCalibration(threshold, hold); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	c.IndentedJSON(http.StatusCreated, gin.H{"ok": true})
+}
+
+func postPauseCalibration(c *gin.Context) {
+	if err := pauseCalibration(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func postResumeCalibration(c *gin.Context) {
+	if err := resumeCalibration(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func postCancelCalibration(c *gin.Context) {
+	if err := cancelCalibration(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
 }

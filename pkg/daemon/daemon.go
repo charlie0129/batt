@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -14,12 +15,16 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/events"
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
 var (
 	smcConn *smc.AppleSMC
 	conf    config.Config
+
+	// global hub instance initialized in Run()
+	sseHub *events.EventHub
 )
 
 func setupRoutes() *gin.Engine {
@@ -46,13 +51,25 @@ func setupRoutes() *gin.Engine {
 	router.GET("/plugged-in", getPluggedIn)
 	router.GET("/charging-control-capable", getChargingControlCapable)
 	router.GET("/version", getVersion)
+	// Deprecated
 	router.GET("/power-telemetry", getPowerTelemetry)
+	router.GET("/telemetry", getUnifiedTelemetry)
+	router.GET("/event", getEventStream)
+
+	// Calibration endpoints (status folded into /telemetry)
+	router.POST("/calibration/start", postStartCalibration)
+	router.POST("/calibration/pause", postPauseCalibration)
+	router.POST("/calibration/resume", postResumeCalibration)
+	router.POST("/calibration/cancel", postCancelCalibration)
 
 	return router
 }
 
 func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	router := setupRoutes()
+
+	// Initialize global SSE hub
+	sseHub = events.NewEventHub()
 
 	var err error
 	conf, err = config.NewFile(configPath)
@@ -124,6 +141,14 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		logrus.Errorf("main loop exited unexpectedly")
 	}()
 
+	// Initialize calibration state file next to config path (derive directory from configPath)
+	if configPath != "" {
+		dir := filepath.Dir(configPath)
+		initCalibrationState(filepath.Join(dir, "batt.state.json"))
+	} else {
+		initCalibrationState("/etc/batt.state.json")
+	}
+
 	// Handle common process-killing signals, so we can gracefully shut down:
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
@@ -148,6 +173,10 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 
 	if err := smcConn.EnableCharging(); err != nil {
 		logrus.Errorf("failed to re-enable charging before exiting: %v", err)
+	}
+
+	if err := smcConn.EnableAdapter(); err != nil {
+		logrus.Errorf("failed to re-enable adapter before exiting: %v", err)
 	}
 
 	logrus.Info("closing smc connection")

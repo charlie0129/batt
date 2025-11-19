@@ -2,6 +2,7 @@
 #import <ServiceManagement/ServiceManagement.h>
 #import <CoreFoundation/CoreFoundation.h>
 #include <stdint.h>
+// #import <UserNotifications/UserNotifications.h>
 
 // The time interval in seconds for the menu update timer.
 static const NSTimeInterval kMenuUpdateTimerInterval = 1.0;
@@ -68,6 +69,50 @@ void batt_releaseMenuObserver(void *obsPtr) {
     [[NSNotificationCenter defaultCenter] removeObserver:obs];
     CFRelease(obsPtr);
 }
+
+void batt_showNotification(const char* title, const char* body) {
+    @autoreleasepool {
+        NSString *nsTitle = title ? [NSString stringWithUTF8String:title] : @"";
+        NSString *nsBody = body ? [NSString stringWithUTF8String:body] : @"";
+        
+        NSUserNotification *notification = [[NSUserNotification alloc] init];
+        notification.title = nsTitle;
+        notification.informativeText = nsBody;
+        notification.soundName = NSUserNotificationDefaultSoundName;
+        [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notification];
+    }
+}
+
+// need codesign app bundle
+// void batt_showNotification(const char* title, const char* body) {
+//     @autoreleasepool {
+//         NSString *nsTitle = title ? [NSString stringWithUTF8String:title] : @"";
+//         NSString *nsBody = body ? [NSString stringWithUTF8String:body] : @"";
+
+//         UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+//         // Request authorization if needed (best-effort)
+//         [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+//                                 completionHandler:^(BOOL granted, NSError * _Nullable error) {
+//             if (granted) {
+//                 NSLog(@"Notification authorization granted");
+
+//                 UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+//                 content.title = nsTitle;
+//                 content.body = nsBody;
+//                 content.sound = [UNNotificationSound defaultSound];
+
+//                 UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:0.1 repeats:NO];
+//                 NSString *identifier = [[NSUUID UUID] UUIDString];
+//                 UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:identifier content:content trigger:trigger];
+//                 [center addNotificationRequest:request withCompletionHandler:nil];
+//             } else if (error) {
+//                 NSLog(@"Notification authorization error: %@", error);
+//             } else {
+//                 NSLog(@"Notification authorization denied");
+//             }
+//         }];
+//     }
+// }
 
 bool registerAppWithSMAppService(void) {
     if (@available(macOS 13.0, *)) {
