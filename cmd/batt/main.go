@@ -6,9 +6,11 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/gui"
@@ -37,9 +39,13 @@ func setupLogger() error {
 		return fmt.Errorf("failed to parse log level: %v", err)
 	}
 	logrus.SetLevel(level)
-	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true,
-	})
+	logrus.SetFormatter(&logrus.TextFormatter{})
+	if term.IsTerminal(int(os.Stderr.Fd())) {
+		logrus.SetFormatter(&logrus.TextFormatter{
+			FullTimestamp:   true,
+			TimestampFormat: time.Kitchen,
+		})
+	}
 
 	return nil
 }

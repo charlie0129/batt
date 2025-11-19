@@ -44,7 +44,7 @@ func ginLogger(logger logrus.FieldLogger) gin.HandlerFunc {
 			} else if statusCode >= http.StatusBadRequest {
 				entry.Warn(msg)
 			} else {
-				entry.Debug(msg)
+				entry.Trace(msg)
 			}
 		}
 	}
