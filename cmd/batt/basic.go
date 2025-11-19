@@ -25,7 +25,7 @@ func NewVersionCommand() *cobra.Command {
 		Run: func(cmd *cobra.Command, _ []string) {
 			clientVersion, daemonVersion, err := getVersion()
 			if err != nil {
-				cmd.Printf("Client: %s %s\n", clientVersion)
+				cmd.Printf("Client: %s\n", clientVersion)
 				logrus.Errorf("failed to get daemon version: %v", err)
 				return
 			}
