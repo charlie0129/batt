@@ -84,7 +84,21 @@ func NewCommand() *cobra.Command {
 Website: https://github.com/charlie0129/batt`,
 		SilenceUsage: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			return setupLogger()
+			err := setupLogger()
+			if err != nil {
+				return err
+			}
+
+			if daemonVersion, clientVersion, err := getVersion(); err == nil {
+				if daemonVersion != clientVersion {
+					logrus.WithFields(logrus.Fields{
+						"clientVersion": clientVersion,
+						"daemonVersion": daemonVersion,
+					}).Warn("Version mismatch between client and daemon. batt may not work as expected. You should follow the installation / upgrade instructions precisely to ensure both client and daemon are the same version.")
+				}
+			}
+
+			return nil
 		},
 	}
 
