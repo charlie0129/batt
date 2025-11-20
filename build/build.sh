@@ -56,7 +56,11 @@ if [ "${DEBUG:-}" != "1" ]; then
   # release build
   # trim paths, disable symbols and DWARF.
   goasmflags="all=-trimpath=$(pwd)"
-  gogcflags="all=-trimpath=$(pwd)"
+  # Disable optimizations. Although I haven't encountered crashes,
+  # there are reports of crashes in optimized builds using go1.25.
+  #
+  # See: https://github.com/progrium/darwinkit/issues/286#issuecomment-3503207641
+  gogcflags="all=\"-trimpath=$(pwd) -N\""
   goldflags="-s -w"
 
   printf "release...\n"
