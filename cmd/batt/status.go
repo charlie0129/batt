@@ -112,6 +112,9 @@ func NewStatusCommand() *cobra.Command {
 					}
 				}
 				cmd.Println()
+			} else {
+				cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
+				cmd.Print("    Your Mac will not charge")
 			}
 
 			if data.adapter {
