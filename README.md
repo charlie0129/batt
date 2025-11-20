@@ -255,6 +255,8 @@ Logs are directed to `/tmp/batt.log`. If something goes wrong, you can check the
 
 You need to install command line developer tools (by running `xcode-select --install`) and Go (follow the official instructions [here](https://go.dev/doc/install)).
 
+There has been reports about crashes using binaries built with Go 1.25+ (https://github.com/progrium/darwinkit/issues/286). It is recommended to use Go 1.24.x to build `batt` until the issue is resolved.
+
 ### CLI
 
 ```shell
