@@ -176,11 +176,11 @@ Phases: `Idle → DischargeToThreshold → ChargeToFull → HoldAfterFull → Di
 Flow:
 1. Discharge below configured threshold (default 15%). Charging is forced off.
 2. Charge to 100%. Upper limit temporarily set to 100.
-3. Hold at 100% for the configured duration (defaults 120 minutes unless changed).
+3. Hold at 100% for the configured duration (defaults to 120 minutes unless changed).
 4. After hold, charging is disabled again and the battery is allowed to naturally discharge back down to the original upper limit snapshot.
 5. Restore original upper/lower limits and adapter/charging states and return to Idle.
 
-You can start, pause, resume, cancel via the GUI (Advanced → Auto Calibration) or CLI (`batt calibrate start|pause|resume|cancel|status`) or HTTP API. Cancel restores immediately.
+You can start, pause, resume, cancel via the GUI (Advanced → Auto Calibration) or CLI (`batt calibrate start|pause|resume|cancel|status`) or HTTP API. Cancel restores original settings immediately.
 
 ### Preventing idle sleep
 

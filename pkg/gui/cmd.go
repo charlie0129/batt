@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/cgo"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
@@ -16,8 +17,6 @@ import (
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/events"
 	"github.com/charlie0129/batt/pkg/version"
-
-	cgo "runtime/cgo"
 )
 
 func NewGUICommand(unixSocketPath string, groupID string) *cobra.Command {
@@ -355,13 +354,13 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 	advancedMenu.AddItem(forceDischargeItem)
 
 	// Auto Calibration menu (after Force Discharge)
-	autoCalibrationItem := appkit.NewMenuWithTitle("Auto Calibration")
+	autoCalibrationItem := appkit.NewMenuWithTitle("Auto Calibration (Experimental)...")
 	autoCalibrationItem.SetAutoenablesItems(false)
 	autoCalibrationSub := appkit.NewSubMenuItem(autoCalibrationItem)
-	autoCalibrationSub.SetTitle("Auto Calibration...")
-	autoCalibrationSub.SetToolTip(`This function helps you calibrate your battery by automatically discharging and charging it according to best practices.
+	autoCalibrationSub.SetTitle("Auto Calibration (Experimental)...")
+	autoCalibrationSub.SetToolTip(`Calibration helps you calibrate your battery by automatically discharging and charging it according to best practices.
 
-Not recommended to run the calibration mode too frequently.`)
+It's recommended to run the calibration process every few months.`)
 	advancedMenu.AddItem(autoCalibrationSub)
 
 	// Sub-items
@@ -375,21 +374,21 @@ Not recommended to run the calibration mode too frequently.`)
 		alert.SetAlertStyle(appkit.AlertStyleInformational)
 		alert.SetMessageText("Start Auto Calibration?")
 		alert.SetInformativeText(`This will:
-1. Discharge to threshold, without sleep prevention.
+1. Discharge (to 15% by default) without sleep prevention.
 2. Charge to 100%.
-3. Hold at full for configured minutes.
-4. Restore your original settings.
+3. Hold at full charge (for 2 hours by default).
+4. Discharge back to previous charge limit.
 
 NOTES:
 • You can pause or cancel anytime from the menu.
 • Highly recommend keeping your Mac connected to power throughout the process to prevent the battery level from dropping below the threshold without timely charging.
-• If you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *Discharging process will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.`)
+• If you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *the discharging process will cause your Mac to go to sleep*. So you should keep the lid open during the calibration process.`)
 		// Explicitly add two buttons and compare first-button response, consistent with update flow
 		alert.AddButtonWithTitle("Start")
 		alert.AddButtonWithTitle("Cancel")
 		response := alert.RunModal()
 		if response != appkit.AlertFirstButtonReturn {
-			logrus.Info("User cancelled auto calibration start")
+			logrus.Info("User cancelled auto calibration")
 			return
 		}
 		if _, err := apiClient.StartCalibration(); err != nil {

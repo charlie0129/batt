@@ -83,6 +83,7 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Println(bold("Charging status:"))
 
 			additionalMsg := " (refreshes can take up to 2 minutes)"
+			//nolint:gocritic
 			if data.charging {
 				cmd.Println("  Allow charging: " + bool2Text(true) + additionalMsg)
 				cmd.Print("    Your Mac will charge")
@@ -112,6 +113,9 @@ func NewStatusCommand() *cobra.Command {
 					}
 				}
 				cmd.Println()
+			} else { // not charging and limit is 100%
+				cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
+				cmd.Print("    Your Mac will not charge")
 			}
 
 			if data.adapter {

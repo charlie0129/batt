@@ -109,7 +109,7 @@ func printCalibrationStatus(st *calibration.Status) {
 		fmt.Printf("Discharge Target: %s\n", bold("%d%%", st.TargetPercent))
 	}
 	if !st.StartedAt.IsZero() {
-		fmt.Printf("Started: %s (%s)\n", st.StartedAt.Format(time.RFC3339), time.Since(st.StartedAt).Round(time.Second))
+		fmt.Printf("Started: %s (%s ago)\n", st.StartedAt.Format(time.RFC3339), time.Since(st.StartedAt).Round(time.Second))
 	}
 	fmt.Printf("Paused: %v\n", st.Paused)
 	fmt.Printf("Can Pause: %v  Can Cancel: %v\n", st.CanPause, st.CanCancel)

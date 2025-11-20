@@ -7,9 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/events"
-	"github.com/sirupsen/logrus"
 )
 
 // smc accessors (function vars) for test seam; default to smcConn methods.
@@ -126,6 +127,13 @@ type calibrationError struct{ msg string }
 
 func (e *calibrationError) Error() string { return e.msg }
 
+type calibrationStatus struct {
+	charge int
+	phase  calibration.Phase
+}
+
+var lastCalibrationStatus calibrationStatus
+
 // applyCalibrationWithinLoop advances calibration phases using a provided charge reading.
 // Returns true if calibration is active (non-idle & non-error & not paused).
 //
@@ -139,16 +147,32 @@ func applyCalibrationWithinLoop(charge int) bool {
 		return false
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"charge": charge,
-		"phase":  st.Phase,
-	}).Debug("calibration loop")
+	log := logrus.WithFields(logrus.Fields{
+		"phase":     st.Phase,
+		"charge":    charge,
+		"operation": "calibration",
+	})
+	// Throttle debug logs to changes only.
+	if lastCalibrationStatus.charge != charge || lastCalibrationStatus.phase != st.Phase {
+		lastCalibrationStatus.charge = charge
+		lastCalibrationStatus.phase = st.Phase
+		log.Debug("calibration loop")
+	}
 
 	switch st.Phase {
 	case calibration.PhaseDischarge:
 		if charge < st.Threshold {
+			// Transition to charge phase.
 			st.Phase = calibration.PhaseCharge
+			logrus.Info("discharge phase complete. starting charge phase")
+			logrus.Info("enabling adapter")
 			if err := smcEnableAdapter(); err != nil {
+				st.LastError = err.Error()
+				st.Phase = calibration.PhaseError
+				break
+			}
+			logrus.Info("enabling charging")
+			if err := smcEnableCharging(); err != nil {
 				st.LastError = err.Error()
 				st.Phase = calibration.PhaseError
 				break
@@ -159,7 +183,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 				st.Phase = calibration.PhaseError
 			}
 		} else {
-			enabled, err := smcIsAdapterEnabled()
+			adapterEnabled, err := smcIsAdapterEnabled()
 			if err != nil {
 				logrus.WithError(err).Error("failed to check adapter state during discharge phase")
 
@@ -167,8 +191,8 @@ func applyCalibrationWithinLoop(charge int) bool {
 				st.Phase = calibration.PhaseError
 				break
 			}
-
-			if enabled {
+			if adapterEnabled {
+				log.Info("disabling adapter to allow discharge")
 				err := smcDisableAdapter()
 				if err != nil {
 					logrus.WithError(err).Error("failed to disable adapter during discharge phase")
@@ -180,27 +204,39 @@ func applyCalibrationWithinLoop(charge int) bool {
 		}
 	case calibration.PhaseCharge:
 		if charge >= 100 {
+			logrus.WithField("holdDuration", time.Duration(st.HoldMinutes)*time.Minute).Info("charge phase complete. starting hold phase")
 			st.Phase = calibration.PhaseHold
 			st.HoldEndTime = time.Now().Add(time.Duration(st.HoldMinutes) * time.Minute)
 		}
 	case calibration.PhaseHold:
 		if time.Now().After(st.HoldEndTime) {
+			logrus.Info("hold phase complete. starting post-hold phase, draining to previous limits")
 			// Begin post-hold discharge back to previous upper limit (if snapshot < 100) or current configured upper.
 			st.Phase = calibration.PhasePostHold
 			// Ensure charging disabled to allow discharge.
-			_ = smcDisableAdapter()
+			err := smcDisableAdapter()
+			if err != nil {
+				logrus.WithError(err).Error("failed to disable adapter during hold phase")
+			}
 		}
 	case calibration.PhasePostHold:
 		// Determine target (original snapshot upper limit if it was <100, else current config upper limit).
 		// Using snapshotUpperLimit ensures we settle exactly back to prior maintain level before restoring limits & adapter/charging flags.
 		target := st.SnapshotUpperLimit
-		if target <= 50 || target > 100 { // sanity fallback
+		if target <= 20 || target > 100 { // sanity fallback
 			target = conf.UpperLimit()
 		}
 		if charge <= target {
+			logrus.Info("post-hold phase complete. starting restore phase")
 			st.Phase = calibration.PhaseRestore
 		}
 	case calibration.PhaseRestore:
+		logrus.WithFields(logrus.Fields{
+			"upperLimit":       st.SnapshotUpperLimit,
+			"lowerLimit":       st.SnapshotLowerLimit,
+			"isCharging":       st.SnapshotChargingOn,
+			"isAdapterEnabled": st.SnapshotAdapterOn,
+		}).Info("restoring previous battery config and finishing calibration")
 		conf.SetUpperLimit(st.SnapshotUpperLimit)
 		conf.SetLowerLimit(st.SnapshotLowerLimit)
 		if err := conf.Save(); err != nil {
