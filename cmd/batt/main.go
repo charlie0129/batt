@@ -95,7 +95,7 @@ Website: https://github.com/charlie0129/batt`,
 				return err
 			}
 
-			if daemonVersion, clientVersion, err := getVersion(); err == nil {
+			if clientVersion, daemonVersion, err := getVersion(); err == nil {
 				if daemonVersion != clientVersion {
 					logrus.WithFields(logrus.Fields{
 						"clientVersion": clientVersion,
