@@ -430,11 +430,11 @@ func printStatus(
 
 	// Skip printing if the last print was less than loopInterval+1 seconds ago and everything is the same.
 	if time.Since(lastPrintTime) < loopInterval+time.Second && reflect.DeepEqual(lastStatus, currentStatus) {
-		logrus.WithFields(fields).Trace("maintain loop status")
+		logrus.WithFields(fields).Trace("status")
 		return
 	}
 
-	logrus.WithFields(fields).Debug("maintain loop status")
+	logrus.WithFields(fields).Debug("status")
 
 	lastStatus = currentStatus
 }
