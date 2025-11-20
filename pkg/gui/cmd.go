@@ -24,6 +24,7 @@ func NewGUICommand(unixSocketPath string, groupID string) *cobra.Command {
 		Use:     "gui",
 		Short:   "Start the batt GUI (debug)",
 		GroupID: groupID,
+		Hidden:  true,
 		Long: `Start the batt GUI.
 
 This command should not be called directly by the user. Users should use the .app bundle to start the GUI.`,
