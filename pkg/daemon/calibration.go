@@ -223,7 +223,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 		// Determine target (original snapshot upper limit if it was <100, else current config upper limit).
 		// Using snapshotUpperLimit ensures we settle exactly back to prior maintain level before restoring limits & adapter/charging flags.
 		target := st.SnapshotUpperLimit
-		if target <= 50 || target > 100 { // sanity fallback
+		if target <= 20 || target > 100 { // sanity fallback
 			target = conf.UpperLimit()
 		}
 		if charge <= target {

@@ -238,12 +238,12 @@ func (c *menuController) updateTelemetryOnce() {
 		// Title of submenu
 		if !isIdle {
 			if st.Paused {
-				c.autoCalSubMenuItem.SetTitle("Auto Calibration (Paused)")
+				c.autoCalSubMenuItem.SetTitle("Auto Calibration (Experimental) Paused...")
 			} else {
-				c.autoCalSubMenuItem.SetTitle("Auto Calibration (In Progress)")
+				c.autoCalSubMenuItem.SetTitle("Auto Calibration (Experimental) In Progress...")
 			}
 		} else {
-			c.autoCalSubMenuItem.SetTitle("Auto Calibration…")
+			c.autoCalSubMenuItem.SetTitle("Auto Calibration (Experimental)...")
 		}
 		// Enable/disable action items
 		c.calStartItem.SetEnabled(isIdle)
@@ -261,22 +261,22 @@ func (c *menuController) updateTelemetryOnce() {
 		case calibration.PhaseIdle:
 			c.calStatusItem.SetTitle("Status: Idle")
 		case calibration.PhaseDischarge:
-			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging %d%% → %d%%", st.ChargePercent, c.calThreshold))
+			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging (%d%% → %d%%)", st.ChargePercent, c.calThreshold))
 		case calibration.PhaseCharge:
-			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Charging %d%% → 100%%", st.ChargePercent))
+			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Charging (%d%% → 100%%)", st.ChargePercent))
 		case calibration.PhaseHold:
 			hrs := st.RemainingHoldSecs / 3600
 			mins := (st.RemainingHoldSecs % 3600) / 60
 			secs := st.RemainingHoldSecs % 60
-			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Holding %02d:%02d:%02d left", hrs, mins, secs))
+			c.calStatusItem.SetTitle(fmt.Sprintf("Status: Holding (%02d:%02d:%02d left)", hrs, mins, secs))
 		case calibration.PhasePostHold:
 			if st.TargetPercent > 0 {
-				c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging %d%% → %d%%", st.ChargePercent, st.TargetPercent))
-			} else {
-				c.calStatusItem.SetTitle("Status: Discharging to previous limit…")
+				c.calStatusItem.SetTitle(fmt.Sprintf("Status: Discharging (%d%% → %d%%)", st.ChargePercent, st.TargetPercent))
+			} else { // Should not happen.
+				c.calStatusItem.SetTitle("Status: Discharging to previous limit...")
 			}
 		case calibration.PhaseRestore:
-			c.calStatusItem.SetTitle("Status: Restoring settings…")
+			c.calStatusItem.SetTitle("Status: Restoring settings...")
 		case calibration.PhaseError:
 			if st.Message != "" {
 				c.calStatusItem.SetTitle("Status: Error - " + st.Message)
