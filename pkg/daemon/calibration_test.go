@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/config"
-	"github.com/sirupsen/logrus"
 )
 
 // NOTE: These tests are simplified and mock minimal parts; smcConn and conf must be
@@ -82,6 +83,9 @@ func TestCalibrationFlow(t *testing.T) {
 	applyCalibrationWithinLoop(fake.charge)
 	if calibrationState.Phase != calibration.PhaseCharge {
 		t.Fatalf("expected charge phase, got %s", calibrationState.Phase)
+	}
+	if !fake.charging {
+		t.Fatalf("expected charging enabled")
 	}
 	// In current implementation, we enable adapter to allow charging to full
 	if !fake.adapter {

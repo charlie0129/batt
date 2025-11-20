@@ -5,8 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charlie0129/batt/pkg/config"
 	"github.com/sirupsen/logrus"
+
+	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/config"
 )
 
 var (
@@ -231,9 +233,8 @@ func maintainLoopForced() bool {
 }
 
 func handleNoMaintain(isChargingEnabled bool) bool {
-	logrus.Debug("limit set to 100%, maintain loop disabled")
 	if !isChargingEnabled {
-		logrus.Debug("charging disabled, enabling")
+		logrus.Debug("limit set to 100%, but charging is disabled, enabling")
 		err := smcConn.EnableCharging()
 		if err != nil {
 			logrus.Errorf("EnableCharging failed: %v", err)
@@ -256,10 +257,6 @@ func handleNoMaintain(isChargingEnabled bool) bool {
 }
 
 func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool, batteryCharge, lower, upper int) bool {
-	maintainedChargingInProgress = isChargingEnabled && isPluggedIn
-
-	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress)
-
 	if batteryCharge < lower && !isChargingEnabled {
 		if !ignoreMissedLoops && checkMissedMaintainLoops() {
 			logrus.WithFields(logrus.Fields{
@@ -349,20 +346,31 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 		return false
 	}
 
+	isPluggedIn, err := smcConn.IsPluggedIn()
+	if err != nil {
+		logrus.Errorf("IsPluggedIn failed: %v", err)
+		return false
+	}
+
+	maintainedChargingInProgress = isChargingEnabled && isPluggedIn && calibrationState.Phase == calibration.PhaseIdle
+	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress, calibrationState.Phase != calibration.PhaseIdle)
+
 	// If calibration is active, advance it and skip normal maintain logic.
 	if applyCalibrationWithinLoop(batteryCharge) {
+		switch conf.ControlMagSafeLED() {
+		case config.ControlMagSafeModeAlwaysOff:
+			_ = smcConn.DisableMagSafeLed()
+		case config.ControlMagSafeModeEnabled:
+			updateMagSafeLed(isChargingEnabled)
+		default:
+			// nothing
+		}
 		return true
 	}
 
 	// If maintain is disabled, we don't care about the battery charge, enable charging anyway.
 	if !maintain {
 		return handleNoMaintain(isChargingEnabled)
-	}
-
-	isPluggedIn, err := smcConn.IsPluggedIn()
-	if err != nil {
-		logrus.Errorf("IsPluggedIn failed: %v", err)
-		return false
 	}
 
 	return handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn, batteryCharge, lower, upper)
@@ -384,6 +392,7 @@ type loopStatus struct {
 	isChargingEnabled            bool
 	isPluggedIn                  bool
 	maintainedChargingInProgress bool
+	calibrationInProgress        bool
 }
 
 var lastStatus loopStatus
@@ -395,6 +404,7 @@ func printStatus(
 	isChargingEnabled bool,
 	isPluggedIn bool,
 	maintainedChargingInProgress bool,
+	calibrationInProgress bool,
 ) {
 	currentStatus := loopStatus{
 		batteryCharge:                batteryCharge,
@@ -403,6 +413,7 @@ func printStatus(
 		isChargingEnabled:            isChargingEnabled,
 		isPluggedIn:                  isPluggedIn,
 		maintainedChargingInProgress: maintainedChargingInProgress,
+		calibrationInProgress:        calibrationInProgress,
 	}
 
 	fields := logrus.Fields{
@@ -412,6 +423,7 @@ func printStatus(
 		"chargingEnabled":              isChargingEnabled,
 		"isPluggedIn":                  isPluggedIn,
 		"maintainedChargingInProgress": maintainedChargingInProgress,
+		"calibrationInProgress":        calibrationInProgress,
 	}
 
 	defer func() { lastPrintTime = time.Now() }()
