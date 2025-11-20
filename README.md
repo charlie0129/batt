@@ -169,7 +169,7 @@ These advanced features are not for most users. Using the default setting for th
 
 ### Auto Calibration (experimental)
 
-Automatically performs a full cycle to help recalibrate reporting:
+Automatically performs a full charging cycle to help calibrate reported battery percentage.
 
 Phases: `Idle → DischargeToThreshold → ChargeToFull → HoldAfterFull → DischargeAfterHold → RestoreAndFinish → Idle`.
 
