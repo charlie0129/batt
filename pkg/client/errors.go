@@ -8,4 +8,7 @@ var (
 
 	// ErrPermissionDenied is returned when the user does not have permission to perform the requested action
 	ErrPermissionDenied = errors.New("permission denied")
+
+	// ErrNotFound is returned when 404 is returned from the daemon
+	ErrNotFound = errors.New("404 not found")
 )

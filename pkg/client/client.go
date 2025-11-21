@@ -89,6 +89,11 @@ func (c *Client) Send(method string, path string, data string) (string, error) {
 	}
 	body := string(b)
 
+	// To handle the case where the daemon is so outdated that it doesn't know about a certain path.
+	if resp.StatusCode == http.StatusNotFound {
+		return "", ErrNotFound
+	}
+
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return "", fmt.Errorf("got %d: %s", resp.StatusCode, body)
 	}

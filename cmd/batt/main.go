@@ -87,7 +87,8 @@ func NewCommand() *cobra.Command {
 		Short: "batt is a tool to control battery charging on Apple Silicon MacBooks",
 		Long: `batt is a tool to control battery charging on Apple Silicon MacBooks.
 
-Website: https://github.com/charlie0129/batt`,
+Website: https://github.com/charlie0129/batt
+Report issues: https://github.com/charlie0129/batt/issues`,
 		SilenceUsage: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			err := setupLogger()
@@ -101,6 +102,10 @@ Website: https://github.com/charlie0129/batt`,
 						"clientVersion": clientVersion,
 						"daemonVersion": daemonVersion,
 					}).Warn("Version mismatch between client and daemon. batt may not work as expected. You should follow the installation / upgrade instructions precisely to ensure both client and daemon are the same version.")
+				}
+			} else {
+				if errors.Is(err, client.ErrNotFound) {
+					logrus.Error("batt daemon is too old to report its version. You should follow the installation / upgrade instructions precisely to ensure both client and daemon are the same version.")
 				}
 			}
 

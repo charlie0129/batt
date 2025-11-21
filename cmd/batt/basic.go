@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -13,7 +14,7 @@ import (
 func getVersion() (string, string, error) {
 	daemonVersion, err := apiClient.GetVersion()
 	if err != nil {
-		return version.Version, "", fmt.Errorf("failed to get daemon version: %v", err)
+		return version.Version, "", errors.Wrap(err, "failed to get version")
 	}
 	return version.Version, daemonVersion, nil
 }
