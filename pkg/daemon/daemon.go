@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
+	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/events"
 	"github.com/charlie0129/batt/pkg/smc"
@@ -23,8 +25,8 @@ var (
 	smcConn *smc.AppleSMC
 	conf    config.Config
 
-	// global hub instance initialized in Run()
-	sseHub *events.EventHub
+	sseHub    *events.EventHub // global hub instance initialized in Run()
+	scheduler *Scheduler
 )
 
 func setupRoutes() *gin.Engine {
@@ -61,7 +63,9 @@ func setupRoutes() *gin.Engine {
 	router.POST("/calibration/pause", postPauseCalibration)
 	router.POST("/calibration/resume", postResumeCalibration)
 	router.POST("/calibration/cancel", postCancelCalibration)
-	router.PUT("/calibration/schedule", setSchedule)
+	router.PUT("/schedule", setSchedule)
+	router.PUT("/schedule/postpone", postponeSchedule)
+	router.PUT("/schedule/skip", skipSchedule)
 
 	return router
 }
@@ -92,6 +96,40 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 			logrus.Infof("config reloaded")
 		}
 	}()
+
+	scheduler = NewScheduler(
+		func() error {
+			threshold := conf.CalibrationDischargeThreshold()
+			hold := conf.CalibrationHoldDurationMinutes()
+			return startCalibration(threshold, hold)
+		},
+		func() error {
+			status := getCalibrationStatus()
+			if status.Phase != calibration.PhaseIdle {
+				return errors.New("calibration already in progress")
+			}
+			if !status.PluggedIn {
+				return errors.New("mac must be plugged in to start calibration")
+			}
+			return nil
+		},
+		func(data any) {
+			runAt := data.(time.Time)
+			sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+				Action:  string(calibration.ActionScheduleUpComing),
+				Message: fmt.Sprintf("Calibration will start at %s", runAt.Format("Jan _2 15:04")),
+				Ts:      time.Now().Unix(),
+			})
+		},
+		func(data any) {
+			err := data.(error)
+			sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+				Action:  string(calibration.ActionScheduleError),
+				Message: fmt.Sprintf("Scheduled error: %s", err.Error()),
+				Ts:      time.Now().Unix(),
+			})
+		},
+	)
 
 	srv := &http.Server{
 		Handler: router,

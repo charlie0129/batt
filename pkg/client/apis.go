@@ -296,6 +296,25 @@ func (c *Client) CancelCalibration() (string, error) {
 	return c.Send("POST", "/calibration/cancel", "")
 }
 
+func (c *Client) Schedule(cronExpr string) ([]time.Time, error) {
+	var nextRuns []time.Time
+	resp, err := c.Put("/schedule", cronExpr)
+	if err != nil {
+		return nextRuns, pkgerrors.Wrapf(err, "failed to set cron expression")
+	}
+
+	if err := json.Unmarshal([]byte(resp), &nextRuns); err != nil {
+		return nextRuns, pkgerrors.Wrapf(err, "failed to read next runs")
+	}
+	return nextRuns, nil
+}
+func (c *Client) PostponeSchedule(d time.Duration) (string, error) {
+	return c.Put("/schedule/postpone", d.String())
+}
+func (c *Client) SkipSchedule() (string, error) {
+	return c.Put("/schedule/skip", "")
+}
+
 func parseBoolResponse(resp string) (bool, error) {
 	switch resp {
 	case "true":

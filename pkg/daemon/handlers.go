@@ -521,3 +521,49 @@ func setSchedule(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusCreated, resp)
 }
+
+func skipSchedule(c *gin.Context) {
+	if err := skipNextSchedule(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func postponeSchedule(c *gin.Context) {
+	var raw string
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	// default 1 hour
+	if raw == "" {
+		raw = "1h"
+	}
+
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if d < leadDuration {
+		err := fmt.Errorf("postpone duration must be at least %s, got %s", leadDuration.String(), d.String())
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if err := postpone(d); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
+}

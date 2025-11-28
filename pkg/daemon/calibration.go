@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
@@ -411,6 +412,12 @@ func getCalibrationStatus() *calibration.Status {
 			target = conf.UpperLimit()
 		}
 	}
+
+	next, running := scheduler.Status()
+	if !running {
+		next = time.Time{}
+	}
+
 	return &calibration.Status{
 		Phase: st.Phase, ChargePercent: charge, PluggedIn: plugged,
 		RemainingHoldSecs: remain, StartedAt: st.StartedAt, Paused: st.Paused,
@@ -418,6 +425,7 @@ func getCalibrationStatus() *calibration.Status {
 		CanCancel:     st.Phase != calibration.PhaseIdle,
 		Message:       msg,
 		TargetPercent: target,
+		ScheduledAt:   next,
 	}
 }
 
@@ -429,9 +437,10 @@ func schedule(cronExpr string) ([]time.Time, error) {
 			logrus.WithError(err).Error("failed to save config")
 			return nil, fmt.Errorf("failed to save config: %w", err)
 		}
+		scheduler.Stop()
 		if sseHub != nil {
 			sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
-				Action:  string(calibration.ActionDisableSchedule),
+				Action:  string(calibration.ActionScheduleDisable),
 				Message: "Calibration schedule disabled",
 				Ts:      time.Now().Unix(),
 			})
@@ -452,6 +461,9 @@ func schedule(cronExpr string) ([]time.Time, error) {
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
+	_ = scheduler.Schedule(cronExpr)
+	scheduler.Start()
+
 	// generate three next run times for response
 	nextRuns := []time.Time{}
 	now := time.Now()
@@ -464,10 +476,40 @@ func schedule(cronExpr string) ([]time.Time, error) {
 	if sseHub != nil {
 		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
 			Action:  string(calibration.ActionSchedule),
-			Message: fmt.Sprintf("Calibration scheduled for %s ", nextRuns[0].Format("Jan _2 15:04")),
+			Message: fmt.Sprintf("Calibration scheduled at %s ", nextRuns[0].Format("Jan _2 15:04")), // TODO: use cron descriptor
 			Ts:      time.Now().Unix(),
 		})
 	}
 
 	return nextRuns, nil
+}
+
+func postpone(duration time.Duration) error {
+	if err := scheduler.Postpone(duration); err != nil {
+		return err
+	}
+
+	if sseHub != nil {
+		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+			Action:  string(calibration.ActionSchedulePostpone),
+			Message: fmt.Sprintf("Calibration postponed for %s", duration.String()),
+			Ts:      time.Now().Unix(),
+		})
+	}
+	return nil
+}
+
+func skipNextSchedule() error {
+	if err := scheduler.Skip(); err != nil {
+		return err
+	}
+
+	if sseHub != nil {
+		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+			Action:  string(calibration.ActionScheduleSkip),
+			Message: "Calibration skipped",
+			Ts:      time.Now().Unix(),
+		})
+	}
+	return nil
 }

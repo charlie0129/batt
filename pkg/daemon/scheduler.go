@@ -17,10 +17,10 @@ type NotifyFunc func(data any)
 type TaskFunc func() error
 
 type Scheduler struct {
-	BeforeRun NotifyFunc // called before running the task
-	Error     NotifyFunc // called on task error
-	Task      TaskFunc   // task callback
-	PreCheck  TaskFunc   // health / condition check callback
+	OnUpcoming NotifyFunc // called before running the task
+	OnError    NotifyFunc // called on task error
+	Task       TaskFunc   // task callback
+	PreCheck   TaskFunc   // health / condition check callback
 
 	parser cron.Parser
 
@@ -48,19 +48,19 @@ type controlMsg struct {
 	data any
 }
 
-func NewScheduler(task, preCheck TaskFunc, beforeRun, error NotifyFunc) *Scheduler {
+func NewScheduler(task, preCheck TaskFunc, onUpcoming, onError NotifyFunc) *Scheduler {
 	if task == nil {
 		panic("task function cannot be nil")
 	}
 
 	s := &Scheduler{
-		BeforeRun: beforeRun,
-		Error:     error,
-		Task:      task,
-		PreCheck:  preCheck,
-		parser:    cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
-		controlCh: make(chan controlMsg, 4),
-		stopCh:    make(chan struct{}),
+		OnUpcoming: onUpcoming,
+		OnError:    onError,
+		Task:       task,
+		PreCheck:   preCheck,
+		parser:     cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
+		controlCh:  make(chan controlMsg, 4),
+		stopCh:     make(chan struct{}),
 	}
 	return s
 }
@@ -119,37 +119,34 @@ func (s *Scheduler) Postpone(d time.Duration) error {
 	running := s.running
 	s.mu.Unlock()
 
+	if !running {
+		return fmt.Errorf("no active schedule to postpone")
+	}
+
 	pp := orig.Add(d).Truncate(time.Second)
 	if pp.Compare(next) >= 0 {
 		return fmt.Errorf("postpone duration too long")
 	}
 
-	if !running {
-		s.mu.Lock()
-		if s.nextRun.Equal(orig) {
-			s.nextRun = pp
-		}
-		s.mu.Unlock()
-		return nil
-	}
 	s.trySendControl(ctrlPostpone, pp)
 	return nil
 }
 
 // Skip skips the next scheduled run.
-func (s *Scheduler) Skip() {
+func (s *Scheduler) Skip() error {
 	s.mu.Lock()
 	if s.schedule == nil || s.nextRun.IsZero() {
 		s.mu.Unlock()
-		return
+		return fmt.Errorf("no active schedule to skip")
 	}
 	if !s.running {
 		s.nextRun = s.schedule.Next(s.nextRun)
 		s.mu.Unlock()
-		return
+		return nil
 	}
 	s.mu.Unlock()
 	s.trySendControl(ctrlSkip, nil)
+	return nil
 }
 
 func (s *Scheduler) Status() (nextRun time.Time, running bool) {
@@ -209,7 +206,11 @@ func (s *Scheduler) runScheduled() {
 					}
 				}
 
-				go s.Task()
+				go func() {
+					if err := s.Task(); err != nil {
+						s.sendError(fmt.Errorf("task failed: %v", err))
+					}
+				}()
 				s.advanceNextRun()
 			case <-s.stopCh:
 				timer.Stop()
@@ -226,9 +227,8 @@ func (s *Scheduler) runScheduled() {
 					s.mu.Unlock()
 				case ctrlPostpone:
 					pp := msg.data.(time.Time)
-					s.mu.Lock()
-					s.nextRun = pp
-					s.mu.Unlock()
+					timer.Reset(time.Until(pp))
+					continue
 				case ctrlSkip:
 					s.mu.Lock()
 					if s.schedule != nil && !s.nextRun.IsZero() {
@@ -258,20 +258,20 @@ func (s *Scheduler) advanceNextRun() {
 	s.nextRun = s.schedule.Next(s.nextRun)
 }
 
-func (s *Scheduler) sendNotify(data any) {
-	if s.BeforeRun == nil {
+func (s *Scheduler) sendNotify(runAt time.Time) {
+	if s.OnUpcoming == nil {
 		return
 	}
 
-	go s.BeforeRun(data)
+	go s.OnUpcoming(runAt)
 }
 
 func (s *Scheduler) sendError(err error) {
-	if s.Error == nil {
+	if s.OnError == nil {
 		return
 	}
 
-	go s.Error(err)
+	go s.OnError(err)
 }
 
 func (s *Scheduler) trySendControl(kind controlKind, data any) {

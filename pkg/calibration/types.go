@@ -19,12 +19,16 @@ const (
 type Action string
 
 const (
-	ActionStart           Action = "Start"
-	ActionPause           Action = "Pause"
-	ActionResume          Action = "Resume"
-	ActionCancel          Action = "Cancel"
-	ActionSchedule        Action = "Schedule"
-	ActionDisableSchedule Action = "DisableSchedule"
+	ActionStart            Action = "Start"
+	ActionPause            Action = "Pause"
+	ActionResume           Action = "Resume"
+	ActionCancel           Action = "Cancel"
+	ActionSchedule         Action = "Schedule"
+	ActionScheduleUpComing Action = "ScheduleUpcoming"
+	ActionScheduleDisable  Action = "ScheduleDisable"
+	ActionScheduleSkip     Action = "ScheduleSkip"
+	ActionSchedulePostpone Action = "SchedulePostpone"
+	ActionScheduleError    Action = "ScheduleError"
 )
 
 // State holds runtime state persisted to disk.
@@ -60,4 +64,5 @@ type Status struct {
 	CanCancel         bool      `json:"canCancel"`
 	Message           string    `json:"message"`
 	TargetPercent     int       `json:"targetPercent,omitempty"`
+	ScheduledAt       time.Time `json:"scheduledAt"`
 }
