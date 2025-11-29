@@ -479,7 +479,7 @@ func schedule(cronExpr string) ([]time.Time, error) {
 	if sseHub != nil {
 		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
 			Action:  string(calibration.ActionSchedule),
-			Message: fmt.Sprintf("Calibration scheduled at %s ", nextRuns[0].Format("Jan _2 15:04")), // TODO: use cron descriptor
+			Message: fmt.Sprintf("Calibration scheduled at %s", nextRuns[0].Format("Jan _2 15:04")), // TODO: use cron descriptor
 			Ts:      time.Now().Unix(),
 		})
 	}

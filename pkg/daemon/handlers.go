@@ -552,13 +552,6 @@ func postponeSchedule(c *gin.Context) {
 		return
 	}
 
-	if d < leadDuration {
-		err := fmt.Errorf("postpone duration must be at least %s, got %s", leadDuration.String(), d.String())
-		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		_ = c.AbortWithError(http.StatusBadRequest, err)
-		return
-	}
-
 	if err := postpone(d); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)

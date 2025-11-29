@@ -241,6 +241,9 @@ func (s *Scheduler) runScheduled() {
 				s.advanceNextRun()
 			case <-s.stopCh:
 				timer.Stop()
+				s.mu.Lock()
+				s.running = false
+				s.mu.Unlock()
 				return
 			case msg := <-s.controlCh: // internal control messages
 				logrus.WithFields(logrus.Fields{

@@ -132,6 +132,16 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	)
 	defer scheduler.Stop()
 
+	// Load persisted schedule from config
+	if cronExpr := conf.Cron(); cronExpr != "" {
+		if err := scheduler.Schedule(cronExpr); err != nil {
+			logrus.WithError(err).Warn("failed to restore schedule from config")
+		} else {
+			scheduler.Start()
+			logrus.WithField("cron", cronExpr).Info("restored schedule from config")
+		}
+	}
+
 	srv := &http.Server{
 		Handler: router,
 	}
