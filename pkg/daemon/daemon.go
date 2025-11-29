@@ -106,7 +106,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		func() error {
 			status := getCalibrationStatus()
 			if status.Phase != calibration.PhaseIdle {
-				return errors.New("calibration already in progress")
+				return ErrCalibrationInProgress
 			}
 			if !status.PluggedIn {
 				return errors.New("mac must be plugged in to start calibration")
@@ -125,11 +125,12 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 			err := data.(error)
 			sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
 				Action:  string(calibration.ActionScheduleError),
-				Message: fmt.Sprintf("Scheduled error: %s", err.Error()),
+				Message: err.Error(),
 				Ts:      time.Now().Unix(),
 			})
 		},
 	)
+	defer scheduler.Stop()
 
 	srv := &http.Server{
 		Handler: router,

@@ -296,20 +296,24 @@ func (c *Client) CancelCalibration() (string, error) {
 	return c.Send("POST", "/calibration/cancel", "")
 }
 
-func (c *Client) Schedule(cronExpr string) ([]time.Time, error) {
-	var nextRuns []time.Time
-	resp, err := c.Put("/schedule", cronExpr)
-	if err != nil {
-		return nextRuns, pkgerrors.Wrapf(err, "failed to set cron expression")
-	}
+type scheduleResponse struct {
+	OK       bool        `json:"ok"`
+	NextRuns []time.Time `json:"next_runs"`
+}
 
-	if err := json.Unmarshal([]byte(resp), &nextRuns); err != nil {
-		return nextRuns, pkgerrors.Wrapf(err, "failed to read next runs")
+func (c *Client) Schedule(cronExpr string) ([]time.Time, error) {
+	body, err := c.Put("/schedule", strconv.Quote(cronExpr))
+	if err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to set cron expression")
 	}
-	return nextRuns, nil
+	var resp scheduleResponse
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to read next runs")
+	}
+	return resp.NextRuns, nil
 }
 func (c *Client) PostponeSchedule(d time.Duration) (string, error) {
-	return c.Put("/schedule/postpone", d.String())
+	return c.Put("/schedule/postpone", strconv.Quote(d.String()))
 }
 func (c *Client) SkipSchedule() (string, error) {
 	return c.Put("/schedule/skip", "")

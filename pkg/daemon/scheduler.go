@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
+	"github.com/sirupsen/logrus"
 )
 
 // leadDuration is the duration before the scheduled time to ask for confirmation.
@@ -163,7 +164,10 @@ func (s *Scheduler) runScheduled() {
 		s.mu.Lock()
 		s.running = false
 		s.mu.Unlock()
+		logrus.Debug("scheduler stopped")
 	}()
+
+	logrus.Debug("scheduler started")
 
 	for {
 		leading := true
@@ -187,6 +191,7 @@ func (s *Scheduler) runScheduled() {
 				}
 
 				if leading {
+					logrus.Debugf("upcoming scheduled task at %s", nextRun.Format(time.DateTime))
 					leading = false
 					runWait := time.Until(nextRun)
 					if runWait < 0 {
@@ -196,6 +201,8 @@ func (s *Scheduler) runScheduled() {
 					s.sendNotify(nextRun)
 					continue
 				}
+
+				logrus.Debugf("running scheduled task at %s", nextRun.Format(time.DateTime))
 
 				timer.Stop()
 				if s.PreCheck != nil {
@@ -216,10 +223,14 @@ func (s *Scheduler) runScheduled() {
 				timer.Stop()
 				return
 			case msg := <-s.controlCh: // internal control messages
-				timer.Stop()
+				logrus.WithFields(logrus.Fields{
+					"kind": msg.kind,
+					"data": msg.data,
+				}).Debug("received control msg")
 
 				switch msg.kind {
 				case ctrlRecalculate:
+					timer.Stop()
 					sh := msg.data.(cron.Schedule)
 					s.mu.Lock()
 					s.schedule = sh
@@ -230,11 +241,8 @@ func (s *Scheduler) runScheduled() {
 					timer.Reset(time.Until(pp))
 					continue
 				case ctrlSkip:
-					s.mu.Lock()
-					if s.schedule != nil && !s.nextRun.IsZero() {
-						s.nextRun = s.schedule.Next(s.nextRun)
-					}
-					s.mu.Unlock()
+					timer.Stop()
+					s.advanceNextRun()
 				}
 			}
 

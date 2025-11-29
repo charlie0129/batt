@@ -461,7 +461,10 @@ func schedule(cronExpr string) ([]time.Time, error) {
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
-	_ = scheduler.Schedule(cronExpr)
+	if err := scheduler.Schedule(cronExpr); err != nil {
+		logrus.WithError(err).Error("failed to schedule calibration")
+		return nil, err
+	}
 	scheduler.Start()
 
 	// generate three next run times for response
@@ -486,6 +489,7 @@ func schedule(cronExpr string) ([]time.Time, error) {
 
 func postpone(duration time.Duration) error {
 	if err := scheduler.Postpone(duration); err != nil {
+		logrus.WithError(err).Error("failed to postpone calibration")
 		return err
 	}
 
@@ -501,6 +505,7 @@ func postpone(duration time.Duration) error {
 
 func skipNextSchedule() error {
 	if err := scheduler.Skip(); err != nil {
+		logrus.WithError(err).Error("failed to skip next scheduled calibration")
 		return err
 	}
 
