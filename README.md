@@ -182,6 +182,24 @@ Flow:
 
 You can start, pause, resume, cancel via the GUI (Advanced → Auto Calibration) or CLI (`batt calibrate start|pause|resume|cancel|status`) or HTTP API. Cancel restores original settings immediately.
 
+#### Scheduling automatic calibration
+
+> [!NOTE]
+> This feature is CLI-only and is not available in the GUI version.
+
+Use `batt schedule` to let the daemon trigger calibration runs on a cron cadence. Examples:
+
+```bash
+batt schedule '0 10 * * 0'   # every Sunday at 10:00 (quote * so the shell doesn't expand it)
+batt schedule disable        # remove the schedule and stop future runs
+batt schedule postpone 90m   # push the next run back by 90 minutes (defaults to 1h if omitted)
+batt schedule skip           # skip only the upcoming run and keep the schedule
+```
+
+After setting a cron expression, the CLI prints the next few run times returned by the daemon so you can verify the schedule. `postpone` and `skip` operate on the next scheduled execution only; `disable` clears the stored cron configuration.
+
+Before a scheduled calibration actually begins, `batt` checks that the Mac is plugged into wall power. If it is not, the scheduler posts a reminder notification (GUI) and keeps waiting for roughly five minutes. If power is still unavailable after that grace period, the pending run is skipped automatically so later schedules are not blocked.
+
 ### Preventing idle sleep
 
 Set whether to prevent idle sleep during a charging session.
