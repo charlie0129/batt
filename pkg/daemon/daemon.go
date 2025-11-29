@@ -109,7 +109,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 				return ErrCalibrationInProgress
 			}
 			if !status.PluggedIn {
-				return errors.New("mac must be plugged in to start calibration")
+				return errors.New("the Mac must be plugged in to start calibration")
 			}
 			return nil
 		},

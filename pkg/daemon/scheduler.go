@@ -9,8 +9,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// leadDuration is the duration before the scheduled time to ask for confirmation.
-const leadDuration = time.Minute * 5
+const (
+	leadDuration     = time.Minute * 5 // leadDuration is the duration before the scheduled time to ask for confirmation.
+	preCheckMaxTimes = 30
+	preCheckInterval = time.Second * 10
+)
 
 type NotifyFunc func(data any)
 
@@ -171,6 +174,10 @@ func (s *Scheduler) runScheduled() {
 
 	for {
 		leading := true
+
+		attempts := 0
+		var precheckErr error
+
 		schedule, nextRun := s.snapshot()
 		var timer *time.Timer
 		if schedule == nil || nextRun.IsZero() {
@@ -204,14 +211,27 @@ func (s *Scheduler) runScheduled() {
 
 				logrus.Debugf("running scheduled task at %s", nextRun.Format(time.DateTime))
 
-				timer.Stop()
 				if s.PreCheck != nil {
 					if err := s.PreCheck(); err != nil {
-						s.sendError(fmt.Errorf("precheck failed: %v", err))
+						if precheckErr == nil || err.Error() != precheckErr.Error() {
+							precheckErr = err
+							s.sendError(fmt.Errorf("precheck failed: %v", err))
+						}
+
+						attempts++
+						if attempts <= preCheckMaxTimes {
+							logrus.Debugf("precheck failed (%d/%d): %v; retrying in %s", attempts, preCheckMaxTimes, err, preCheckInterval)
+							timer.Reset(preCheckInterval)
+							continue
+						}
+
+						timer.Stop()
 						s.advanceNextRun()
 						break
 					}
 				}
+
+				timer.Stop()
 
 				go func() {
 					if err := s.Task(); err != nil {
