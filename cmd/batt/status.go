@@ -66,6 +66,7 @@ func fetchStatusData() (*statusData, error) {
 	}, nil
 }
 
+//nolint:gocyclo
 func NewStatusCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "status",
