@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
@@ -205,6 +207,25 @@ func NewStatusCommand() *cobra.Command {
 				ledStatus += " (" + bold("always off") + ")"
 			}
 			cmd.Printf("  Control MagSafe LED: %s\n", ledStatus)
+
+			cmd.Println()
+
+			tr, err := apiClient.GetTelemetry(false, true)
+			if err == nil {
+				cmd.Println(bold("Calibration status:"))
+				cmd.Printf("  Phase: %s\n", bold("%s", string(tr.Calibration.Phase)))
+				if tr.Calibration.Phase != calibration.PhaseIdle {
+					cmd.Printf("  Start: %s\n", bold("%s", tr.Calibration.StartedAt.Format(time.DateTime)))
+				}
+
+				cron := cfg.Cron()
+				if cron == "" {
+					cmd.Printf("  Schedule: %s\n", bold("disabled"))
+				} else {
+					cmd.Printf("  Schedule: %s (%s)\n", bold("%s", tr.Calibration.ScheduledAt.Format(time.DateTime)), cfg.Cron())
+				}
+			}
+
 			return nil
 		},
 	}
