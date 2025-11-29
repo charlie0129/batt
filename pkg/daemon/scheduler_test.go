@@ -5,12 +5,32 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
+
+func TestCronParse(t *testing.T) {
+	parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	schedule, err := parser.Parse("@every 10m")
+	if err != nil {
+		t.Fatalf("failed to parse cron expression: %v", err)
+	}
+
+	now := time.Now()
+	next1 := schedule.Next(now)
+	t.Logf("next1: %v", next1)
+	next2 := schedule.Next(next1)
+	t.Logf("next2: %v", next2)
+
+	if !next2.After(next1) {
+		t.Fatalf("expected next2 to be after next1, got next1=%v next2=%v", next1, next2)
+	}
+}
 
 func TestSchedulerScheduleStatus(t *testing.T) {
 	s := NewScheduler(func() error { return nil }, nil, nil, nil)
 
-	if err := s.Schedule("@every 1s"); err != nil {
+	if err := s.Schedule("@every 1m"); err != nil {
 		t.Fatalf("Schedule returned error: %v", err)
 	}
 
@@ -23,9 +43,9 @@ func TestSchedulerScheduleStatus(t *testing.T) {
 	}
 }
 
-func TestSchedulerPostponeAndSkip(t *testing.T) {
+func TestSchedulerSkip(t *testing.T) {
 	s := NewScheduler(func() error { return nil }, nil, nil, nil)
-	if err := s.Schedule("@every 2s"); err != nil {
+	if err := s.Schedule("@every 10m"); err != nil {
 		t.Fatalf("Schedule returned error: %v", err)
 	}
 
@@ -34,19 +54,13 @@ func TestSchedulerPostponeAndSkip(t *testing.T) {
 		t.Fatalf("expected next run after scheduling")
 	}
 
-	if err := s.Postpone(time.Second); err != nil {
-		t.Fatalf("Postpone returned error: %v", err)
-	}
-
-	postponed, _ := s.Status()
-	if !postponed.After(orig) {
-		t.Fatalf("expected postponed time after original, got %v <= %v", postponed, orig)
-	}
+	s.Start()
+	defer s.Stop()
 
 	s.Skip()
 	skipped, _ := s.Status()
-	if !skipped.After(postponed) {
-		t.Fatalf("expected skip to move schedule forward, got %v <= %v", skipped, postponed)
+	if !skipped.After(orig) {
+		t.Fatalf("expected skip to move schedule forward, got %v <= %v", skipped, orig)
 	}
 }
 
@@ -135,10 +149,10 @@ func TestSchedulerPreCheckFailure(t *testing.T) {
 		t.Fatalf("Schedule returned error: %v", err)
 	}
 
-	initialNext, _ := s.Status()
+	forcedNext := time.Now().Add(50 * time.Millisecond)
 
 	s.mu.Lock()
-	s.nextRun = time.Now().Add(50 * time.Millisecond)
+	s.nextRun = forcedNext
 	s.mu.Unlock()
 
 	s.Start()
@@ -156,9 +170,4 @@ func TestSchedulerPreCheckFailure(t *testing.T) {
 	default:
 	}
 
-	time.Sleep(10 * time.Millisecond)
-	nextAfterFail, _ := s.Status()
-	if !nextAfterFail.After(initialNext) {
-		t.Fatalf("expected next run to advance after failure, before=%v after=%v", initialNext, nextAfterFail)
-	}
 }

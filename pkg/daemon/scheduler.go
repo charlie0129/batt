@@ -143,11 +143,13 @@ func (s *Scheduler) Skip() error {
 		s.mu.Unlock()
 		return fmt.Errorf("no active schedule to skip")
 	}
+	next := s.schedule.Next(s.nextRun)
 	if !s.running {
-		s.nextRun = s.schedule.Next(s.nextRun)
+		s.nextRun = next
 		s.mu.Unlock()
 		return nil
 	}
+	s.nextRun = next
 	s.mu.Unlock()
 	s.trySendControl(ctrlSkip, nil)
 	return nil
@@ -259,13 +261,12 @@ func (s *Scheduler) runScheduled() {
 					s.schedule = sh
 					s.nextRun = sh.Next(time.Now())
 					s.mu.Unlock()
-				case ctrlPostpone:
+				case ctrlPostpone: // only postpone current run
 					pp := msg.data.(time.Time)
 					timer.Reset(time.Until(pp))
 					continue
 				case ctrlSkip:
 					timer.Stop()
-					s.advanceNextRun()
 				}
 			}
 
