@@ -14,7 +14,10 @@ func NewScheduleCommand() *cobra.Command {
 		Aliases: []string{"sch"},
 		Short:   "Manage automatic calibration schedule",
 		Long: `Examples:
-  batt schedule '0 10 * * 0' # Note: Cron expressions containing * must be quoted!
+  batt schedule 'minute hour day month weekday' (cron expression)
+  batt schedule '0 10 * * 0' (At 10:00 on Sunday)
+  batt schedule '0 10 1 * *' (At 10:00 on the first day of every month)
+  batt schedule '0 10 1 */2 *' (At 10:00 on the first day of every two months)
   batt schedule disable
   batt schedule postpone 90m
   batt schedule skip`,
