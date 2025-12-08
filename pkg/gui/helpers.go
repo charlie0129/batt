@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime/cgo"
 	"strings"
 	"unsafe"
-
-	"runtime/cgo"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/progrium/darwinkit/macos/appkit"
@@ -208,8 +207,9 @@ set -e
 
 	shellScript += fmt.Sprintf(`
 "%s" install --allow-non-root-access
+mkdir -p "$(dirname "%s")" # For whatever reason, some users don't have /usr/local/bin.
 /bin/ln -sf "%s" "%s" || true
-`, exe, exe, battSymlinkLocation)
+`, exe, exe, battSymlinkLocation, battSymlinkLocation)
 
 	logrus.WithField("script", shellScript).Info("Installing daemon")
 
