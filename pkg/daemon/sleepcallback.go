@@ -140,6 +140,10 @@ func systemHasPoweredOnCallback() {
 	logrus.Debugln("received kIOMessageSystemHasPoweredOn notification, system has finished waking up")
 	lastWakeTime = time.Now()
 
+	if scheduler != nil {
+		scheduler.HandleWakeUp()
+	}
+
 	if conf.UpperLimit() < 100 {
 		if conf.PreventSystemSleep() {
 			logrus.Debugf("prevent-system-sleep is active, so next loop is not delayed")

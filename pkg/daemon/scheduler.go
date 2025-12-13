@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	leadDuration     = time.Minute * 5 // leadDuration is the duration before the scheduled time to ask for confirmation.
+	overdueTaskDelay = time.Second * 20 // delay for overdue tasks
+	leadDuration     = time.Minute * 5  // leadDuration is the duration before the scheduled time to ask for confirmation.
 	preCheckMaxTimes = 30
 	preCheckInterval = time.Second * 10
 )
@@ -45,6 +46,7 @@ const (
 	ctrlRecalculate controlKind = iota // timer needs recalculation due to schedule change
 	ctrlPostpone                       // next run postponed
 	ctrlSkip                           // next run skipped
+	ctrlWake                           // system woke up
 )
 
 type controlMsg struct {
@@ -105,6 +107,12 @@ func (s *Scheduler) Schedule(cronExpr string) error {
 		s.trySendControl(ctrlRecalculate, sh)
 	}
 	return nil
+}
+
+// HandleWakeUp notifies the scheduler that the system has woken up.
+// It triggers a recalculation of the timer to account for time spent in sleep.
+func (s *Scheduler) HandleWakeUp() {
+	s.trySendControl(ctrlWake, nil)
 }
 
 // Postpone postpones the next scheduled run by the given duration.
@@ -203,11 +211,12 @@ func (s *Scheduler) runScheduled() {
 					logrus.Debugf("upcoming scheduled task at %s", nextRun.Format(time.DateTime))
 					leading = false
 					runWait := time.Until(nextRun)
-					if runWait < 0 {
-						runWait = 0
+					if runWait <= 0 {
+						runWait = overdueTaskDelay
+						logrus.Debugf("task overdue/due, delaying %s", runWait)
 					}
 					timer.Reset(runWait)
-					s.sendNotify(nextRun)
+					s.sendNotify(time.Now().Add(runWait))
 					continue
 				}
 
@@ -267,6 +276,32 @@ func (s *Scheduler) runScheduled() {
 					continue
 				case ctrlSkip:
 					timer.Stop()
+				case ctrlWake:
+					if !timer.Stop() {
+						select {
+						case <-timer.C:
+						default:
+						}
+					}
+					if schedule == nil || nextRun.IsZero() {
+						timer.Reset(time.Hour * 10000)
+						continue
+					}
+					var target time.Time
+					if leading {
+						target = nextRun.Add(-leadDuration)
+					} else {
+						target = nextRun
+					}
+					wait := time.Until(target)
+					if wait <= 0 {
+						wait = overdueTaskDelay
+						logrus.Debugf("system woke up, task overdue/due, delaying %s", wait)
+					} else {
+						logrus.Debugf("system woke up, resetting timer to %s", wait)
+					}
+					timer.Reset(wait)
+					continue
 				}
 			}
 
