@@ -498,3 +498,65 @@ func postCancelCalibration(c *gin.Context) {
 	}
 	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
 }
+
+func setSchedule(c *gin.Context) {
+	var cronExpr string
+	if err := c.BindJSON(&cronExpr); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	nextRuns, err := schedule(cronExpr)
+	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	resp := gin.H{"ok": true}
+	if nextRuns != nil {
+		resp["next_runs"] = nextRuns
+	}
+
+	c.IndentedJSON(http.StatusCreated, resp)
+}
+
+func skipSchedule(c *gin.Context) {
+	if err := skipNextSchedule(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func postponeSchedule(c *gin.Context) {
+	var raw string
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	// default 1 hour
+	if raw == "" {
+		raw = "1h"
+	}
+
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if err := postpone(d); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
+}

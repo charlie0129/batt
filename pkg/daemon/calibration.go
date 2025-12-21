@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
@@ -411,6 +412,12 @@ func getCalibrationStatus() *calibration.Status {
 			target = conf.UpperLimit()
 		}
 	}
+
+	next, running := scheduler.Status()
+	if !running {
+		next = time.Time{}
+	}
+
 	return &calibration.Status{
 		Phase: st.Phase, ChargePercent: charge, PluggedIn: plugged,
 		RemainingHoldSecs: remain, StartedAt: st.StartedAt, Paused: st.Paused,
@@ -418,5 +425,96 @@ func getCalibrationStatus() *calibration.Status {
 		CanCancel:     st.Phase != calibration.PhaseIdle,
 		Message:       msg,
 		TargetPercent: target,
+		ScheduledAt:   next,
 	}
+}
+
+// schedule sets the cron expression for scheduled calibrations and returns the next run times.
+func schedule(cronExpr string) ([]time.Time, error) {
+	if cronExpr == "" {
+		conf.SetCron("")
+		if err := conf.Save(); err != nil {
+			logrus.WithError(err).Error("failed to save config")
+			return nil, fmt.Errorf("failed to save config: %w", err)
+		}
+		scheduler.Stop()
+		if sseHub != nil {
+			sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+				Action:  string(calibration.ActionScheduleDisable),
+				Message: "Calibration schedule disabled",
+				Ts:      time.Now().Unix(),
+			})
+		}
+		return nil, nil
+	}
+
+	// Validate cron expression
+	parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	sched, err := parser.Parse(cronExpr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cron expression: %w", err)
+	}
+
+	conf.SetCron(cronExpr)
+	if err := conf.Save(); err != nil {
+		logrus.WithError(err).Error("failed to save config")
+		return nil, fmt.Errorf("failed to save config: %w", err)
+	}
+
+	if err := scheduler.Schedule(cronExpr); err != nil {
+		logrus.WithError(err).Error("failed to schedule calibration")
+		return nil, err
+	}
+	scheduler.Start()
+
+	// generate three next run times for response
+	nextRuns := []time.Time{}
+	now := time.Now()
+	for range 3 {
+		next := sched.Next(now)
+		nextRuns = append(nextRuns, next)
+		now = next
+	}
+
+	if sseHub != nil {
+		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+			Action:  string(calibration.ActionSchedule),
+			Message: fmt.Sprintf("Calibration scheduled at %s", nextRuns[0].Format("Jan _2 15:04")), // TODO: use cron descriptor
+			Ts:      time.Now().Unix(),
+		})
+	}
+
+	return nextRuns, nil
+}
+
+func postpone(duration time.Duration) error {
+	if err := scheduler.Postpone(duration); err != nil {
+		logrus.WithError(err).Error("failed to postpone calibration")
+		return err
+	}
+
+	if sseHub != nil {
+		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+			Action:  string(calibration.ActionSchedulePostpone),
+			Message: fmt.Sprintf("Calibration postponed for %s", duration.String()),
+			Ts:      time.Now().Unix(),
+		})
+	}
+	return nil
+}
+
+func skipNextSchedule() error {
+	if err := scheduler.Skip(); err != nil {
+		logrus.WithError(err).Error("failed to skip next scheduled calibration")
+		return err
+	}
+
+	if sseHub != nil {
+		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+			Action:  string(calibration.ActionScheduleSkip),
+			Message: "Calibration skipped",
+			Ts:      time.Now().Unix(),
+		})
+	}
+	return nil
 }

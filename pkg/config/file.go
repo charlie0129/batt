@@ -118,8 +118,9 @@ type RawFileConfig struct {
 	LowerLimitDelta         *int                `json:"lowerLimitDelta,omitempty"`
 	ControlMagSafeLED       *ControlMagSafeMode `json:"controlMagSafeLED,omitempty"`
 
-	CalibrationDischargeThreshold  *int `json:"calibrationDischargeThreshold,omitempty"`
-	CalibrationHoldDurationMinutes *int `json:"calibrationHoldDurationMinutes,omitempty"`
+	CalibrationDischargeThreshold  *int    `json:"calibrationDischargeThreshold,omitempty"`
+	CalibrationHoldDurationMinutes *int    `json:"calibrationHoldDurationMinutes,omitempty"`
+	Cron                           *string `json:"cron,omitempty"`
 }
 
 func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
@@ -135,6 +136,7 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 		AllowNonRootAccess:      ptr.To(c.AllowNonRootAccess()),
 		LowerLimitDelta:         ptr.To(c.UpperLimit() - c.LowerLimit()),
 		ControlMagSafeLED:       ptr.To(c.ControlMagSafeLED()),
+		Cron:                    ptr.To(c.Cron()),
 	}
 
 	return rawConfig, nil
@@ -397,6 +399,34 @@ func (f *File) SetControlMagSafeLED(mode ControlMagSafeMode) {
 	defer f.mu.Unlock()
 
 	f.c.ControlMagSafeLED = ptr.To(mode)
+}
+
+func (f *File) Cron() string {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	var cron string
+
+	if f.c.Cron != nil {
+		cron = *f.c.Cron
+	}
+
+	return cron
+}
+
+func (f *File) SetCron(cron string) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.Cron = ptr.To(cron)
 }
 
 func (f *File) Load() error {

@@ -40,6 +40,8 @@ func (m *mockConf) SetControlMagSafeLED(config.ControlMagSafeMode) {}
 func (m *mockConf) LogrusFields() logrus.Fields                    { return logrus.Fields{} }
 func (m *mockConf) Load() error                                    { return nil }
 func (m *mockConf) Save() error                                    { return nil }
+func (m *mockConf) Cron() string                                   { return "" }
+func (m *mockConf) SetCron(string)                                 {}
 
 // Fake smcConn implementation.
 type fakeSMC struct {

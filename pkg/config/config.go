@@ -14,6 +14,7 @@ type Config interface {
 	ControlMagSafeLED() ControlMagSafeMode
 	CalibrationDischargeThreshold() int
 	CalibrationHoldDurationMinutes() int
+	Cron() string
 
 	SetUpperLimit(int)
 	SetLowerLimit(int)
@@ -22,6 +23,7 @@ type Config interface {
 	SetPreventSystemSleep(bool)
 	SetAllowNonRootAccess(bool)
 	SetControlMagSafeLED(ControlMagSafeMode)
+	SetCron(string)
 
 	LogrusFields() logrus.Fields
 
