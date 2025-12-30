@@ -27,6 +27,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 - Control MagSafe LED (if present) according to charge status. [Docs](#control-magsafe-led)
 - Cut power from the wall (even if the adapter is physically plugged in) to use battery power. [Docs](#enabledisable-power-adapter)
 - It solves common sleep-related issues when controlling charging. [Docs1](#preventing-idle-sleep) [Docs2](#disabling-charging-before-sleep)
+- Calibrate battery automatically. [Docs](#auto-calibration-experimental)
 
 ## How is it different from XXX?
 
@@ -34,7 +35,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 
 **It is simple but well-thought.** It only does charge limiting and does it well. For example, when using other free/unpaid tools, your MacBook will sometimes charge to 100% during sleep even if you set the limit to, like, 60%. `batt` have taken these edge cases into consideration and will behave as intended (in case you do encounter problems, please raise an issue so that we can solve it). Other features is intentionally limited to keep it simple. If you want some additional features, feel free to raise an issue, then we can discuss.
 
-**It is light-weight.** As a command-line tool, it is light-weight by design. No electron GUIs hogging your system resources. However, a native GUI that sits in the menubar is a good addition.
+**It is light-weight.** No electron GUIs hogging your system resources like some other tools. You can use batt on the command-line, or use the native macOS menubar app if you prefer a GUI. The GUI is written using native macOS APIs, so it is light-weight and fast.
 
 ## But macOS have similar features built-in, is it?
 
@@ -45,17 +46,19 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 ## Compatibility Matrix
 
 | Firmware Version        | GUI | CLI (Prebuilt) | CLI (Build from Source) |
-|-------------------------|-----| -------------- | ----------------------- |
-| `6723.x.x`              | ❌   | ❌              | ✅                       |
-| `7429.x.x` / `7459.x.x` | ❌   | ✅              | ✅                       |
-| `8419.x.x` / `8422.x.x` | ✅   | ✅              | ✅                       |
-| `10151.x.x`             | ✅   | ✅              | ✅                       |
+| ----------------------- | --- | -------------- | ----------------------- |
+| `6723.x.x`              | ❌   | ❌              | ⚠️                       |
+| `7429.x.x` / `7459.x.x` | ❌   | ⚠️              | ✅                       |
+| `8419.x.x` / `8422.x.x` | ⚠️   | ⚠️              | ✅                       |
+| `10151.x.x`             | ⚠️   | ⚠️              | ✅                       |
 | `11881.x.x`             | ✅   | ✅              | ✅                       |
-| `13822+`                | ✅   | ✅              | ✅                       |
+| `13822.x.x`             | ✅   | ✅              | ✅                       |
+| Other                   | ❓   | ❓              | ❓                       |
 
 - ❌: Unsupported
 - ✅: Supported
-- ⚠️: Partially supported, more tests are needed to verify the compatibility. Read [#34](https://github.com/charlie0129/batt/issues/34) for details.
+- ⚠️: Not verified, but expected to work.
+- ❓: Unknown, please raise an issue if you have tested it.
 
 > [!NOTE]
 > Firmware version is different from macOS version. You can check your firmware version by running `system_profiler SPHardwareDataType | grep -i firmware` in Terminal.
@@ -82,7 +85,6 @@ GUI version is a native macOS menubar app. It's not as feature-complete as the c
 > [!TIP]
 > There are 3rd-party GUI versions built around `batt` by some amazing opensource developers:
 > 1. [BattGUI](https://github.com/clzoc/BattGUI) by [@clzoc](https://github.com/clzoc)
-
 
 ## Installation (Command-Line Version)
 
@@ -168,6 +170,8 @@ To do so, run `sudo batt status`.
 These advanced features are not for most users. Using the default setting for these options should work the best.
 
 ### Auto Calibration (experimental)
+
+> Thanks @brookqin for implementing the initial version of this feature.
 
 Automatically performs a full charging cycle to help calibrate reported battery percentage.
 
@@ -434,7 +438,9 @@ If you absolutely need to charge your Mac _immediately_ after waking up from sle
 - [@exidler](https://github.com/exidler) for building the MagSafe LED controlling logic.
 - [@pichxyaponn](https://github.com/pichxyaponn) for the initial version of GUI.
 - [@MabaKalox](https://github.com/MabaKalox) for prevent-system-sleep feature.
-- [@peterneutron](https://github.com/peterneutron) for refactoring the power metrics code and the power flow feature
+- [@peterneutron](https://github.com/peterneutron) for refactoring the power metrics code and the power flow feature.
+- [@invisiblepixel](https://github.com/invisiblepixel) for app icon design.
+- [@brookqin](https://github.com/brookqin) for implementing auto calibration.
 
 ## Star History
 
