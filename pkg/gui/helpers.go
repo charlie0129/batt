@@ -209,7 +209,7 @@ set -e
 "%s" install --allow-non-root-access
 mkdir -p "$(dirname "%s")" # For whatever reason, some users don't have /usr/local/bin.
 /bin/ln -sf "%s" "%s" || true
-`, exe, exe, battSymlinkLocation, battSymlinkLocation)
+`, exe, battSymlinkLocation, exe, battSymlinkLocation)
 
 	logrus.WithField("script", shellScript).Info("Installing daemon")
 

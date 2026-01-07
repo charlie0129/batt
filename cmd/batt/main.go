@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path"
 	"runtime"
@@ -21,6 +23,7 @@ var (
 	logLevel       = "info"
 	unixSocketPath = "/var/run/batt.sock"
 	configPath     = "/etc/batt.json"
+	pprofAddr      = ""
 )
 
 var (
@@ -62,17 +65,27 @@ func handleCmdError(err error) {
 }
 
 func main() {
-	if !osver.IsAtLeast(11, 0, 0) {
-		fmt.Fprintln(os.Stderr, "batt requires macOS 11.0 or later")
-		os.Exit(1)
-	}
-
 	// Reduce the number of CPUs used by the batt.
 	// batt does not need to use much.
 	if os.Getenv("GOMAXPROCS") == "" {
 		runtime.GOMAXPROCS(2)
 	}
 	runtime.LockOSThread()
+
+	if !osver.IsAtLeast(11, 0, 0) {
+		fmt.Fprintln(os.Stderr, "batt requires macOS 11.0 or later")
+		os.Exit(1)
+	}
+
+	// Start pprof server if enabled
+	if pprofAddr != "" {
+		go func() {
+			logrus.Infof("Starting pprof server on %s", pprofAddr)
+			if err := http.ListenAndServe(pprofAddr, nil); err != nil {
+				logrus.Errorf("Failed to start pprof server: %v", err)
+			}
+		}()
+	}
 
 	cmd := NewCommand()
 	if err := cmd.Execute(); err != nil {
@@ -123,6 +136,7 @@ Report issues: https://github.com/charlie0129/batt/issues`,
 	globalFlags.StringVarP(&logLevel, "log-level", "l", "info", "log level (trace, debug, info, warn, error, fatal, panic)")
 	globalFlags.StringVar(&configPath, "config", configPath, "config file path")
 	globalFlags.StringVar(&unixSocketPath, "daemon-socket", unixSocketPath, "batt daemon unix socket path")
+	globalFlags.StringVar(&pprofAddr, "pprof", "", "enable pprof HTTP server on the specified address (e.g., localhost:6060)")
 
 	for _, i := range commandGroups {
 		cmd.AddGroup(&cobra.Group{
