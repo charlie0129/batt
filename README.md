@@ -435,6 +435,14 @@ This is expected. batt will prevent your Mac from charging temporarily if your M
 
 If you absolutely need to charge your Mac _immediately_ after waking up from sleep, you can disable this feature by running `sudo batt disable-charging-pre-sleep disable`. However, this is not recommended (see [Disabling charging before sleep](#disabling-charging-before-sleep)).
 
+### Why does my Mac starts charging after entering sleep?
+
+If you are using the default batt settings (i.e., `prevent-idle-sleep` and `disable-charging-pre-sleep` are both enabled), this should not happen.
+
+However, there are some cases like [#101](https://github.com/charlie0129/batt/issues/101) where hibernation mode is unexpectedly changed by the user. Your Mac may enter hibernation immediately instead of sleep, and Mac firmware resets SMC keys after hibernation, causing batt to lose control of charging.
+
+To see if you are in always-hibernate mode, run `pmset -g | grep hibernatemode`. If the value is not `0` nor `3`, you are in always-hibernate mode. To change it back to sleep mode, run `sudo pmset -a hibernatemode 3` (factory default for MacBooks, hibernates after several hours) or `sudo pmset -a hibernatemode 0` (never hibernate). After changing the mode, reboot your Mac for the change to take effect.
+
 ## Acknowledgements
 
 - [actuallymentor/battery](https://github.com/actuallymentor/battery) for various SMC keys.
