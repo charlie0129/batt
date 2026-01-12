@@ -443,6 +443,16 @@ However, there are some cases like [#101](https://github.com/charlie0129/batt/is
 
 To see if you are in always-hibernate mode, run `pmset -g | grep hibernatemode`. If the value is not `0` nor `3`, you are in always-hibernate mode. To change it back to sleep mode, run `sudo pmset -a hibernatemode 3` (factory default for MacBooks, hibernates after several hours) or `sudo pmset -a hibernatemode 0` (never hibernate). After changing the mode, reboot your Mac for the change to take effect.
 
+### Can I quit the GUI app?
+
+Yes.
+
+As in [#62](https://github.com/charlie0129/batt/issues/62), you can quit the GUI app and expect batt to continue working, provided that you have installed the daemon during the first run.
+
+You may also want to remove the GUI app from *System Settings* -> *General* -> *Login Items & Extensions* to prevent it from starting automatically on login. Important: only remove the GUI app from *Open at Login*, do NOT remove the daemon from *Allow in Background*.
+
+The reason behind is that the GUI app does not do the actual battery charge controlling. The daemon does. As long as the daemon is not uninstalled, charging control will work. The GUI app is just a client to communicate with the daemon. Quitting the GUI app will not affect the daemon. You can save some menu bar space if you rarely change settings.
+
 ## Acknowledgements
 
 - [actuallymentor/battery](https://github.com/actuallymentor/battery) for various SMC keys.
