@@ -178,13 +178,16 @@ Automatically performs a full charging cycle to help calibrate reported battery 
 Phases: `Idle → DischargeToThreshold → ChargeToFull → HoldAfterFull → DischargeAfterHold → RestoreAndFinish → Idle`.
 
 Flow:
-1. Discharge below configured threshold (default 15%). Charging is forced off.
+1. Discharge below configured threshold (defaults to 15%). Charging is forced off.
 2. Charge to 100%. Upper limit temporarily set to 100.
 3. Hold at 100% for the configured duration (defaults to 120 minutes unless changed).
 4. After hold, charging is disabled again and the battery is allowed to naturally discharge back down to the original upper limit snapshot.
 5. Restore original upper/lower limits and adapter/charging states and return to Idle.
 
-You can start, pause, resume, cancel via the GUI (Advanced → Auto Calibration) or CLI (`batt calibrate start|pause|resume|cancel|status`) or HTTP API. Cancel restores original settings immediately.
+You can start, pause, resume, cancel via the GUI (Advanced → Auto Calibration) or CLI (`batt calibration start|pause|resume|cancel|status`) or HTTP API. Cancel restores original settings immediately.
+
+To change the discharge threshold (defaults to 15%), run `batt calibration discharge-threshold <percentage>`.
+To change the hold duration (defaults to 120 minutes), run `batt calibration hold-duration <minutes>`.
 
 #### Scheduling automatic calibration
 
@@ -195,6 +198,8 @@ Use `batt schedule` to let the daemon trigger calibration runs on a cron cadence
 
 ```bash
 batt schedule '0 10 * * 0'   # every Sunday at 10:00 (quote * so the shell doesn't expand it)
+batt schedule '0 10 1 * *'   # At 10:00 on the first day of every month
+batt schedule '0 10 1 */2 *' # At 10:00 on the first day of every two months
 batt schedule disable        # remove the schedule and stop future runs
 batt schedule postpone 90m   # push the next run back by 90 minutes (defaults to 1h if omitted)
 batt schedule skip           # skip only the upcoming run and keep the schedule
@@ -271,7 +276,7 @@ To force the MagSafe LED to stay off, run `sudo batt magsafe-led always-off`.
 
 ### Check logs
 
-Logs are directed to `/tmp/batt.log`. If something goes wrong, you can check the logs to see what happened. Raise an issue with the logs attached, so we can debug together.
+Logs are directed to `/tmp/batt.log`. If something goes wrong, you can check the logs to see what happened. Raise an issue with the logs attached.
 
 ## Building
 
@@ -331,7 +336,7 @@ If you don't remember how you installed it, you can check the binary location by
 Script-installed:
 
 1. Run `sudo batt uninstall` to remove the daemon.
-2. Remove the config by `sudo rm /etc/batt.json`.
+2. Remove the config by `sudo rm -f /etc/batt*`.
 3. Remove the `batt` binary itself by `sudo rm $(which batt)`.
 
 Homebrew-installed:
@@ -339,7 +344,7 @@ Homebrew-installed:
 1. Run `sudo batt disable` to restore the default charge limit.
 2. Run `sudo brew services stop batt` to stop the daemon.
 3. Run `brew uninstall batt` to uninstall the binary.
-4. Remove the config by `sudo rm /opt/homebrew/etc/batt.json`.
+4. Remove the config by `sudo rm -f /opt/homebrew/etc/batt.json && sudo rm -f /etc/batt*`.
 
 ### How to upgrade?
 
@@ -422,7 +427,7 @@ If you believe you will not encounter any problem in the future and still want t
 
 You are probably using Clamshell mode, i.e., using a Mac laptop with an external monitor and the lid closed. This is a limitation of macOS. Clamshell mode MUST have power connected, otherwise, the Mac will go to sleep.
 
-If you want to prevent this, you can use a third-party app like [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704?mt=12) to prevent sleep.
+If you want to prevent this, you need to disable sleep globally using pmset, or you can use a third-party app like [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704?mt=12) to prevent sleep.
 
 ### My Mac does not start charging after waking up from sleep
 

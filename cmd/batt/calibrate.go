@@ -11,9 +11,10 @@ import (
 	"github.com/charlie0129/batt/pkg/calibration"
 )
 
-func NewCalibrateCommand() *cobra.Command {
+func NewCalibrationCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "calibrate",
+		Use:     "calibration",
+		Aliases: []string{"calibrate", "cali"},
 		Short:   "Manage battery auto-calibration workflow",
 		Long:    "Start, monitor, and control the multi-phase battery auto-calibration (discharge -> charge -> hold -> post-hold discharge -> restore).",
 		GroupID: gAdvanced,
@@ -93,7 +94,56 @@ func NewCalibrateCommand() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(startCmd, pauseCmd, resumeCmd, cancelCmd, statusCmd)
+	// discharge-threshold
+	dischargeThresholdCmd := &cobra.Command{
+		Use:   "discharge-threshold <percentage>",
+		Short: "Set the calibration discharge threshold percentage",
+		Long: `Set the battery discharge threshold percentage for calibration.
+The calibration will discharge the battery to this level before starting the charge phase.
+Must be between 10 and 50 percent. Default is 15%.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			var threshold int
+			if _, err := fmt.Sscanf(args[0], "%d", &threshold); err != nil {
+				return fmt.Errorf("invalid threshold: %w", err)
+			}
+			if threshold < 10 || threshold > 50 {
+				return fmt.Errorf("threshold must be between 10 and 50, got %d", threshold)
+			}
+			msg, err := apiClient.SetCalibrationDischargeThreshold(threshold)
+			if err != nil {
+				return fmt.Errorf("failed to set discharge threshold: %w", err)
+			}
+			fmt.Println(msg)
+			return nil
+		},
+	}
+
+	// hold-duration
+	holdDurationCmd := &cobra.Command{
+		Use:   "hold-duration <minutes>",
+		Short: "Set the calibration hold duration in minutes",
+		Long: `Set the duration to hold at 100% charge during calibration.
+Must be between 10 and 1440 minutes (24 hours). Default is 120 minutes.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			var minutes int
+			if _, err := fmt.Sscanf(args[0], "%d", &minutes); err != nil {
+				return fmt.Errorf("invalid duration: %w", err)
+			}
+			if minutes < 10 || minutes > 1440 {
+				return fmt.Errorf("duration must be between 10 and 1440 minutes (24 hours), got %d", minutes)
+			}
+			msg, err := apiClient.SetCalibrationHoldDurationMinutes(minutes)
+			if err != nil {
+				return fmt.Errorf("failed to set hold duration: %w", err)
+			}
+			fmt.Println(msg)
+			return nil
+		},
+	}
+
+	cmd.AddCommand(startCmd, pauseCmd, resumeCmd, cancelCmd, statusCmd, dischargeThresholdCmd, holdDurationCmd)
 	return cmd
 }
 

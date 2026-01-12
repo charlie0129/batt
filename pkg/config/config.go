@@ -24,6 +24,8 @@ type Config interface {
 	SetAllowNonRootAccess(bool)
 	SetControlMagSafeLED(ControlMagSafeMode)
 	SetCron(string)
+	SetCalibrationDischargeThreshold(int)
+	SetCalibrationHoldDurationMinutes(int)
 
 	LogrusFields() logrus.Fields
 

@@ -429,6 +429,28 @@ func (f *File) SetCron(cron string) {
 	f.c.Cron = ptr.To(cron)
 }
 
+func (f *File) SetCalibrationDischargeThreshold(i int) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.CalibrationDischargeThreshold = &i
+}
+
+func (f *File) SetCalibrationHoldDurationMinutes(i int) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.CalibrationHoldDurationMinutes = &i
+}
+
 func (f *File) Load() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

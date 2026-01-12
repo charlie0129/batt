@@ -312,11 +312,21 @@ func (c *Client) Schedule(cronExpr string) ([]time.Time, error) {
 	}
 	return resp.NextRuns, nil
 }
+
 func (c *Client) PostponeSchedule(d time.Duration) (string, error) {
 	return c.Put("/schedule/postpone", strconv.Quote(d.String()))
 }
+
 func (c *Client) SkipSchedule() (string, error) {
 	return c.Put("/schedule/skip", "")
+}
+
+func (c *Client) SetCalibrationDischargeThreshold(threshold int) (string, error) {
+	return c.Put("/calibration/discharge-threshold", strconv.Itoa(threshold))
+}
+
+func (c *Client) SetCalibrationHoldDurationMinutes(minutes int) (string, error) {
+	return c.Put("/calibration/hold-duration", strconv.Itoa(minutes))
 }
 
 func parseBoolResponse(resp string) (bool, error) {

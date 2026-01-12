@@ -272,7 +272,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 				case calibration.PhaseCharge:
 					return "Start charging to full"
 				case calibration.PhaseHold:
-					return fmt.Sprintf("Holding at full charge for %d minutes (end of %s)", st.HoldMinutes, st.HoldEndTime.Local().Format("03:04 PM"))
+					return fmt.Sprintf("Holding at full charge for %d minutes (ends %s)", st.HoldMinutes, st.HoldEndTime.Local().Format("03:04 PM"))
 				case calibration.PhasePostHold:
 					return fmt.Sprintf("Discharging to restore limits to %d%%", st.SnapshotUpperLimit)
 				case calibration.PhaseRestore:
@@ -432,6 +432,12 @@ func getCalibrationStatus() *calibration.Status {
 // schedule sets the cron expression for scheduled calibrations and returns the next run times.
 func schedule(cronExpr string) ([]time.Time, error) {
 	if cronExpr == "" {
+		prevCron := conf.Cron()
+		if prevCron == "" {
+			// Already disabled
+			return nil, nil
+		}
+
 		conf.SetCron("")
 		if err := conf.Save(); err != nil {
 			logrus.WithError(err).Error("failed to save config")

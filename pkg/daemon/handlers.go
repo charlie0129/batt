@@ -12,6 +12,7 @@ import (
 
 	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 
+	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
 	"github.com/charlie0129/batt/pkg/version"
@@ -559,4 +560,74 @@ func postponeSchedule(c *gin.Context) {
 	}
 
 	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func setCalibrationDischargeThreshold(c *gin.Context) {
+	var threshold int
+	if err := c.BindJSON(&threshold); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if threshold < 10 || threshold > 50 {
+		err := fmt.Errorf("calibration discharge threshold must be between 10 and 50, got %d", threshold)
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	conf.SetCalibrationDischargeThreshold(threshold)
+	if err := conf.Save(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	logrus.Infof("set calibration discharge threshold to %d", threshold)
+
+	// Check if calibration is running
+	st := getCalibrationStatus()
+	msg := fmt.Sprintf("Calibration discharge threshold set to %d%%", threshold)
+	if st.Phase != calibration.PhaseIdle && st.Phase != calibration.PhaseRestore && st.Phase != calibration.PhaseError {
+		msg += ". Note: A calibration is currently in progress. The new threshold will take effect on the next calibration."
+	}
+
+	c.IndentedJSON(http.StatusCreated, msg)
+}
+
+func setCalibrationHoldDurationMinutes(c *gin.Context) {
+	var minutes int
+	if err := c.BindJSON(&minutes); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if minutes < 10 || minutes > 24*60 {
+		err := fmt.Errorf("calibration hold duration must be between 10 and 1440 minutes (24 hours), got %d", minutes)
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	conf.SetCalibrationHoldDurationMinutes(minutes)
+	if err := conf.Save(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	logrus.Infof("set calibration hold duration to %d minutes", minutes)
+
+	// Check if calibration is running
+	st := getCalibrationStatus()
+	msg := fmt.Sprintf("Calibration hold duration set to %d minutes", minutes)
+	if st.Phase != calibration.PhaseIdle && st.Phase != calibration.PhaseRestore && st.Phase != calibration.PhaseError {
+		msg += ". Note: A calibration is currently in progress. The new hold duration will take effect on the next calibration."
+	}
+
+	c.IndentedJSON(http.StatusCreated, msg)
 }

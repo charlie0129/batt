@@ -67,6 +67,10 @@ func setupRoutes() *gin.Engine {
 	router.PUT("/schedule/postpone", postponeSchedule)
 	router.PUT("/schedule/skip", skipSchedule)
 
+	// Calibration settings endpoints
+	router.PUT("/calibration/discharge-threshold", setCalibrationDischargeThreshold)
+	router.PUT("/calibration/hold-duration", setCalibrationHoldDurationMinutes)
+
 	return router
 }
 
