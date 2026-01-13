@@ -453,6 +453,10 @@ You may also want to remove the GUI app from *System Settings* -> *General* -> *
 
 The reason behind is that the GUI app does not do the actual battery charge controlling. The daemon does. As long as the daemon is not uninstalled, charging control will work. The GUI app is just a client to communicate with the daemon. Quitting the GUI app will not affect the daemon. You can save some menu bar space if you rarely change settings.
 
+### Will batt work after shutdown?
+
+No. batt only works when macOS is running. After shutdown, there is no way to control battery charging until macOS boots up again.
+
 ## Acknowledgements
 
 - [actuallymentor/battery](https://github.com/actuallymentor/battery) for various SMC keys.
