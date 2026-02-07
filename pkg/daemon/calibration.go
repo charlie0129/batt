@@ -381,6 +381,39 @@ func cancelCalibration() error {
 	return nil
 }
 
+// cancelCalibrationNoRestoreNoError cancels calibration without restoring previous
+// charging state and does not return error if not running.
+//
+// It does restore the adapter and charging state to the snapshot values.
+//
+// This is used when disabling batt (limit=100%) to ensure calibration is not left
+// in a non-idle state.
+func cancelCalibrationNoRestoreNoError() {
+	calibrationMu.Lock()
+	defer calibrationMu.Unlock()
+	if calibrationState.Phase == calibration.PhaseIdle {
+		return
+	}
+
+	st := calibrationState
+	if st.SnapshotAdapterOn {
+		_ = smcEnableAdapter()
+	} else {
+		_ = smcDisableAdapter()
+	}
+
+	if sseHub != nil {
+		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
+			Action:  string(calibration.ActionCancel),
+			Message: fmt.Sprintf("Calibration cancelled because at phase %s", calibrationState.Phase),
+			Ts:      time.Now().Unix(),
+		})
+	}
+
+	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
+	persistCalibrationState()
+}
+
 func getCalibrationStatus() *calibration.Status {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()

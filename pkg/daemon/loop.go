@@ -287,6 +287,14 @@ func handleNoMaintain(isChargingEnabled bool) bool {
 		}
 	}
 
+	// Calling this multiple times is no-op.
+	err = AllowSleepOnAC()
+	if err != nil {
+		logrus.Errorf("AllowSleepOnAC failed: %v", err)
+	}
+
+	cancelCalibrationNoRestoreNoError()
+
 	maintainedChargingInProgress = false
 	return true
 }
