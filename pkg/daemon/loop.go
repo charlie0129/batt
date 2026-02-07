@@ -9,6 +9,7 @@ import (
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/smc"
 )
 
 var (
@@ -240,18 +241,52 @@ func handleNoMaintain(isChargingEnabled bool) bool {
 			logrus.Errorf("EnableCharging failed: %v", err)
 			return false
 		}
+
 		switch conf.ControlMagSafeLED() {
 		case config.ControlMagSafeModeAlwaysOff:
-			_ = smcConn.DisableMagSafeLed()
-		case config.ControlMagSafeModeEnabled:
-			batteryCharge, err := smcConn.GetBatteryCharge()
-			if err == nil {
-				_ = smcConn.SetMagSafeCharging(batteryCharge < 100)
+			err := smcConn.DisableMagSafeLed()
+			if err != nil {
+				// no fail
+				logrus.Errorf("DisableMagSafeLed failed: %v", err)
 			}
 		default:
-			// nothing
+			// Reset MagSafe LED to system state.
+			err = smcConn.SetMagSafeLedState(smc.LEDSystem)
+			if err != nil {
+				// no fail
+				logrus.Errorf("SetMagSafeLedState(LEDSystem) failed: %v", err)
+			}
 		}
 	}
+
+	// Set MagSafe LED according to config.
+	currentMagSafeLEDState, err := smcConn.GetMagSafeLedState()
+	if err != nil {
+		logrus.Errorf("GetMagSafeLedState failed: %v", err)
+	}
+	switch conf.ControlMagSafeLED() {
+	case config.ControlMagSafeModeAlwaysOff:
+		if currentMagSafeLEDState != smc.LEDOff {
+			err := smcConn.DisableMagSafeLed()
+			if err != nil {
+				// no fail
+				logrus.Errorf("DisableMagSafeLed failed: %v", err)
+			}
+		}
+	default:
+		// This applies to both ControlMagSafeModeEnabled and ControlMagSafeModeDisabled
+		// modes. Because in Disabled mode we should not interfere with the LED state,
+		// in Enabled mode we want to show the system state (which is the same as
+		// apple's default behavior when limit=100%).
+		if currentMagSafeLEDState != smc.LEDSystem {
+			err := smcConn.SetMagSafeLedState(smc.LEDSystem)
+			if err != nil {
+				// no fail
+				logrus.Errorf("SetMagSafeLedState(LEDSystem) failed: %v", err)
+			}
+		}
+	}
+
 	maintainedChargingInProgress = false
 	return true
 }
