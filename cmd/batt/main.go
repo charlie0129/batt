@@ -36,6 +36,8 @@ var (
 	}
 )
 
+var apiClient *client.Client
+
 func setupLogger() error {
 	level, err := logrus.ParseLevel(logLevel)
 	if err != nil {
@@ -109,6 +111,8 @@ Report issues: https://github.com/charlie0129/batt/issues`,
 				return err
 			}
 
+			apiClient = client.NewClient(unixSocketPath)
+
 			if clientVersion, daemonVersion, err := getVersion(); err == nil {
 				if daemonVersion != clientVersion {
 					logrus.WithFields(logrus.Fields{
@@ -133,10 +137,10 @@ Report issues: https://github.com/charlie0129/batt/issues`,
 	}
 
 	globalFlags := cmd.PersistentFlags()
-	globalFlags.StringVarP(&logLevel, "log-level", "l", "info", "log level (trace, debug, info, warn, error, fatal, panic)")
+	globalFlags.StringVarP(&logLevel, "log-level", "l", logLevel, "log level (trace, debug, info, warn, error, fatal, panic)")
 	globalFlags.StringVar(&configPath, "config", configPath, "config file path")
 	globalFlags.StringVar(&unixSocketPath, "daemon-socket", unixSocketPath, "batt daemon unix socket path")
-	globalFlags.StringVar(&pprofAddr, "pprof", "", "enable pprof HTTP server on the specified address (e.g., localhost:6060)")
+	globalFlags.StringVar(&pprofAddr, "pprof", pprofAddr, "enable pprof HTTP server on the specified address (e.g., localhost:6060)")
 
 	for _, i := range commandGroups {
 		cmd.AddGroup(&cobra.Group{
@@ -161,7 +165,7 @@ Report issues: https://github.com/charlie0129/batt/issues`,
 		NewInstallCommand(),
 		NewUninstallCommand(),
 		NewScheduleCommand(),
-		gui.NewGUICommand(unixSocketPath, ""),
+		gui.NewGUICommand(""),
 	)
 
 	return cmd

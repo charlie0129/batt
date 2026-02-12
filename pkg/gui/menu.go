@@ -61,6 +61,7 @@ type menuController struct {
 
 	// Quit/disable
 	disableItem appkit.MenuItem
+	quitItem    appkit.MenuItem
 
 	// Calibration cached parameters
 	calThreshold   int
@@ -113,6 +114,13 @@ func (c *menuController) toggleMenusRequiringInstall(battInstalled, capable, nee
 	c.uninstallItem.SetHidden(!battInstalled)
 
 	c.disableItem.SetHidden(!battInstalled || !capable || needUpgrade)
+
+	// Display difference quit tooltip based on whether daemon is installed.
+	if battInstalled {
+		c.quitItem.SetToolTip(quitTooltipInstalled)
+	} else {
+		c.quitItem.SetToolTip(quitTooltipNotInstalled)
+	}
 }
 
 func (c *menuController) refreshOnOpen() {

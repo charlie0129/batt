@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/calibration"
-	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
 )
@@ -21,8 +20,6 @@ type statusData struct {
 	batteryInfo   *powerinfo.Battery
 	config        *config.RawFileConfig
 }
-
-var apiClient = client.NewClient("/var/run/batt.sock")
 
 // fetchStatusData gathers all data required for the status command from the daemon.
 func fetchStatusData() (*statusData, error) {
