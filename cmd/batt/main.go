@@ -136,6 +136,12 @@ Report issues: https://github.com/charlie0129/batt/issues`,
 		}
 	}
 
+	// Direct cmd.Print* output to stdout instead of the default stderr.
+	// This ensures normal command output (e.g., batt status) goes to stdout,
+	// while only errors and diagnostics go to stderr.
+	// See: https://github.com/charlie0129/batt/issues/120
+	cmd.SetOut(os.Stdout)
+
 	globalFlags := cmd.PersistentFlags()
 	globalFlags.StringVarP(&logLevel, "log-level", "l", logLevel, "log level (trace, debug, info, warn, error, fatal, panic)")
 	globalFlags.StringVar(&configPath, "config", configPath, "config file path")
