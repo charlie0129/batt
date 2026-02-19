@@ -1,3 +1,6 @@
+> [!TIP]
+> Feb 17, 2026 UPDATE: Finally, after more than 5 years, macOS 26.4 and later supports charge limiting natively (adjustable from 80% to 100%), so **`batt` is not needed if you are using macOS 26.4 or later**. However, `batt` won't go anywhere so if you are on an older version of macOS or you want to set a charge limit lower than 80%, you can still use `batt`.
+
 Note: Use table of contents of quickly navigate to the section you want, e.g., `Installation`. 👆↗
 
 # batt
