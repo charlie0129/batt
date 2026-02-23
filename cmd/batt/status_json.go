@@ -13,11 +13,11 @@ import (
 )
 
 type statusJSON struct {
-	Charging      statusChargingJSON     `json:"charging"`
-	Battery       statusBatteryJSON      `json:"battery"`
-	Configuration statusConfigJSON       `json:"configuration"`
+	Charging      statusChargingJSON `json:"charging"`
+	Battery       statusBatteryJSON  `json:"battery"`
+	Configuration statusConfigJSON   `json:"configuration"`
 	// Calibration is omitted when telemetry data is unavailable (e.g. API error).
-	Calibration   *statusCalibrationJSON `json:"calibration,omitempty"`
+	Calibration *statusCalibrationJSON `json:"calibration,omitempty"`
 }
 
 type statusChargingJSON struct {
