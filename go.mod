@@ -46,4 +46,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
+// See: https://github.com/progrium/darwinkit/issues/286
 replace github.com/progrium/darwinkit => github.com/gysddn/darwinkit v0.0.0-20250116163834-ed09efd73eea
