@@ -21,6 +21,39 @@ type statusData struct {
 	config        *config.RawFileConfig
 }
 
+// computeTimeToLimit calculates the estimated minutes until the charge limit is
+// reached. Returns nil when not applicable (not charging, limit >= 100, charge
+// already at/above limit, or result is zero).
+func computeTimeToLimit(data *statusData, cfg *config.File) *int {
+	if data.batteryInfo.State != powerinfo.Charging || cfg.UpperLimit() >= 100 || data.currentCharge >= cfg.UpperLimit() {
+		return nil
+	}
+
+	// Work in mAh directly (no Wh conversions)
+	designCapacitymAh := float64(data.batteryInfo.Design)
+	targetCapacitymAh := float64(cfg.UpperLimit()) / 100.0 * designCapacitymAh
+	currentCapacitymAh := float64(data.currentCharge) / 100.0 * designCapacitymAh
+	capacityToChargemAh := targetCapacitymAh - currentCapacitymAh
+
+	// Convert charge rate (mW) to mA using V: mA = mW / V
+	var chargeRatemA float64
+	if data.batteryInfo.DesignVoltage > 0 {
+		chargeRatemA = float64(data.batteryInfo.ChargeRate) / data.batteryInfo.DesignVoltage
+	}
+
+	if chargeRatemA <= 0 || capacityToChargemAh <= 0 {
+		return nil
+	}
+
+	timeToLimitHours := capacityToChargemAh / chargeRatemA
+	minutes := int(timeToLimitHours * 60)
+	if minutes <= 0 {
+		return nil
+	}
+
+	return &minutes
+}
+
 // fetchStatusData gathers all data required for the status command from the daemon.
 func fetchStatusData() (*statusData, error) {
 	charging, err := apiClient.GetCharging()
@@ -65,7 +98,9 @@ func fetchStatusData() (*statusData, error) {
 
 //nolint:gocyclo
 func NewStatusCommand() *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
 		Use:     "status",
 		GroupID: gBasic,
 		Short:   "Get the current status of batt",
@@ -78,6 +113,10 @@ func NewStatusCommand() *cobra.Command {
 			}
 
 			cfg := config.NewFileFromConfig(data.config, "")
+
+			if jsonOutput {
+				return printStatusJSON(cmd, data, cfg)
+			}
 
 			// Charging status.
 			cmd.Println(bold("Charging status:"))
@@ -133,41 +172,26 @@ func NewStatusCommand() *cobra.Command {
 
 			cmd.Printf("  Current charge: %s\n", bold("%d%%", data.currentCharge))
 
-			if data.batteryInfo.State == powerinfo.Charging && cfg.UpperLimit() < 100 && data.currentCharge < cfg.UpperLimit() {
-				// Work in mAh directly (no Wh conversions)
-				designCapacitymAh := float64(data.batteryInfo.Design)
-				targetCapacitymAh := float64(cfg.UpperLimit()) / 100.0 * designCapacitymAh
-				currentCapacitymAh := float64(data.currentCharge) / 100.0 * designCapacitymAh
-				capacityToChargemAh := targetCapacitymAh - currentCapacitymAh
-
-				// Convert charge rate (mW) to mA using V: mA = mW / V
-				var chargeRatemA float64
-				if data.batteryInfo.DesignVoltage > 0 {
-					chargeRatemA = float64(data.batteryInfo.ChargeRate) / data.batteryInfo.DesignVoltage
-				}
-
-				if chargeRatemA > 0 && capacityToChargemAh > 0 {
-					timeToLimitHours := capacityToChargemAh / chargeRatemA
-					timeToLimitMinutes := float64(timeToLimitHours * 60)
-
-					if timeToLimitMinutes > 0.00 {
-						cmd.Printf("  Time to limit (%d%%): %s\n", cfg.UpperLimit(), bold("~%d minutes", int(timeToLimitMinutes)))
-					}
-				}
+			if ttl := computeTimeToLimit(data, cfg); ttl != nil {
+				cmd.Printf("  Time to limit (%d%%): %s\n", cfg.UpperLimit(), bold("~%d minutes", *ttl))
 			}
 
-			state := "not charging"
+			var displayState string
 			switch data.batteryInfo.State {
 			case powerinfo.Charging:
-				state = color.GreenString("charging")
+				displayState = color.GreenString("charging")
 			case powerinfo.Discharging:
 				if data.batteryInfo.ChargeRate != 0 {
-					state = color.RedString("discharging")
+					displayState = color.RedString("discharging")
+				} else {
+					displayState = "not charging"
 				}
 			case powerinfo.Full:
-				state = "full"
+				displayState = "full"
+			default:
+				displayState = "not charging"
 			}
-			cmd.Printf("  State: %s\n", bold("%s", state))
+			cmd.Printf("  State: %s\n", bold("%s", displayState))
 			cmd.Printf("  Full capacity: %s\n", bold("%d mAh", data.batteryInfo.Design))
 			// Show charge rate in Watts with sign (+ charging, - discharging) and bright color (bold)
 			watts := float64(data.batteryInfo.ChargeRate) / 1e3
@@ -227,6 +251,10 @@ func NewStatusCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output status in JSON format")
+
+	return cmd
 }
 
 func bool2Text(b bool) string {
