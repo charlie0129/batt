@@ -22,159 +22,6 @@ var (
 	continuousLoopThreshold = 1*time.Minute + 20*time.Second // add 20s to be sure
 )
 
-// TimeSeriesRecorder records the last N maintain loop times.
-type TimeSeriesRecorder struct {
-	MaxRecordCount        int
-	LastMaintainLoopTimes []time.Time
-	mu                    *sync.Mutex
-}
-
-// NewTimeSeriesRecorder returns a new TimeSeriesRecorder.
-func NewTimeSeriesRecorder(maxRecordCount int) *TimeSeriesRecorder {
-	return &TimeSeriesRecorder{
-		MaxRecordCount:        maxRecordCount,
-		LastMaintainLoopTimes: make([]time.Time, 0),
-		mu:                    &sync.Mutex{},
-	}
-}
-
-// AddRecordNow adds a new record with the current time.
-func (r *TimeSeriesRecorder) AddRecordNow() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if len(r.LastMaintainLoopTimes) >= r.MaxRecordCount {
-		r.LastMaintainLoopTimes = r.LastMaintainLoopTimes[1:]
-	}
-	// Round to strip monotonic clock reading.
-	// This will prevent time.Since from returning values that are not accurate (especially when the system is in sleep mode).
-	r.LastMaintainLoopTimes = append(r.LastMaintainLoopTimes, time.Now().Round(0))
-}
-
-// ClearRecords clears all records.
-func (r *TimeSeriesRecorder) ClearRecords() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.LastMaintainLoopTimes = make([]time.Time, 0)
-}
-
-// GetRecords returns the records.
-func (r *TimeSeriesRecorder) GetRecords() []time.Time {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	return r.LastMaintainLoopTimes
-}
-
-// GetRecordsString returns the records in string format.
-func (r *TimeSeriesRecorder) GetRecordsString() []string {
-	records := r.GetRecords()
-	var recordsString []string
-	for _, record := range records {
-		recordsString = append(recordsString, record.Format(time.RFC3339))
-	}
-	return recordsString
-}
-
-// AddRecord adds a new record.
-func (r *TimeSeriesRecorder) AddRecord(t time.Time) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Strip monotonic clock reading.
-	t = t.Round(0)
-
-	if len(r.LastMaintainLoopTimes) >= r.MaxRecordCount {
-		r.LastMaintainLoopTimes = r.LastMaintainLoopTimes[1:]
-	}
-	r.LastMaintainLoopTimes = append(r.LastMaintainLoopTimes, t)
-}
-
-// GetRecordsIn returns the number of continuous records in the last duration.
-func (r *TimeSeriesRecorder) GetRecordsIn(last time.Duration) int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// The last record must be within the last duration.
-	if len(r.LastMaintainLoopTimes) > 0 && time.Since(r.LastMaintainLoopTimes[len(r.LastMaintainLoopTimes)-1]) >= loopInterval+time.Second {
-		return 0
-	}
-
-	// Find continuous records from the end of the list.
-	// Continuous records are defined as the time difference between
-	// two adjacent records is less than loopInterval+1 second.
-	count := 0
-	for i := len(r.LastMaintainLoopTimes) - 1; i >= 0; i-- {
-		record := r.LastMaintainLoopTimes[i]
-		if time.Since(record) > last {
-			break
-		}
-
-		theRecordAfter := record
-		if i+1 < len(r.LastMaintainLoopTimes) {
-			theRecordAfter = r.LastMaintainLoopTimes[i+1]
-		}
-
-		if theRecordAfter.Sub(record) >= loopInterval+time.Second {
-			break
-		}
-		count++
-	}
-
-	return count
-}
-
-// GetLastRecords returns the time differences between the records and the current time.
-func (r *TimeSeriesRecorder) GetLastRecords(last time.Duration) []time.Time {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if len(r.LastMaintainLoopTimes) == 0 {
-		return nil
-	}
-
-	var records []time.Time
-	for i := len(r.LastMaintainLoopTimes) - 1; i >= 0; i-- {
-		record := r.LastMaintainLoopTimes[i]
-		if time.Since(record) > last {
-			break
-		}
-		records = append(records, record)
-	}
-
-	return records
-}
-
-//nolint:unused // .
-func formatTimes(times []time.Time) []string {
-	var timesString []string
-	for _, t := range times {
-		timesString = append(timesString, t.Format(time.RFC3339))
-	}
-	return timesString
-}
-
-func formatRelativeTimes(times []time.Time) []string {
-	var timesString []string
-	for _, t := range times {
-		timesString = append(timesString, time.Since(t).String())
-	}
-	return timesString
-}
-
-// GetLastRecord returns the last record.
-func (r *TimeSeriesRecorder) GetLastRecord() time.Time {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if len(r.LastMaintainLoopTimes) == 0 {
-		return time.Time{}
-	}
-
-	return r.LastMaintainLoopTimes[len(r.LastMaintainLoopTimes)-1]
-}
-
 // infiniteLoop runs forever and maintains the battery charge,
 // which is called by the daemon.
 func infiniteLoop() {
@@ -184,21 +31,45 @@ func infiniteLoop() {
 	}
 }
 
-func checkMissedMaintainLoops() bool {
+// checkMissedMaintainLoops checks if there are too many missed maintain loops,
+// which could indicate that the system was in sleep mode or there is some issue
+// with the maintain loop execution.
+// It returns true if there are too many missed loops.
+func checkMissedMaintainLoops(logStatus bool) bool {
 	maintainLoopCount := loopRecorder.GetRecordsIn(continuousLoopThreshold)
 	expectedMaintainLoopCount := int(continuousLoopThreshold / loopInterval)
 	minMaintainLoopCount := expectedMaintainLoopCount - 1
 	relativeTimes := loopRecorder.GetLastRecords(continuousLoopThreshold)
 
 	if maintainLoopCount < minMaintainLoopCount {
-		logrus.WithFields(logrus.Fields{
-			"maintainLoopCount":         maintainLoopCount,
-			"expectedMaintainLoopCount": expectedMaintainLoopCount,
-			"minMaintainLoopCount":      minMaintainLoopCount,
-			"recentRecords":             formatRelativeTimes(relativeTimes),
-		}).Infof("Possibly missed maintain loop")
+		if logStatus {
+			logrus.WithFields(logrus.Fields{
+				"maintainLoopCount":         maintainLoopCount,
+				"expectedMaintainLoopCount": expectedMaintainLoopCount,
+				"minMaintainLoopCount":      minMaintainLoopCount,
+				"recentRecords":             formatRelativeTimes(relativeTimes),
+			}).Infof("Possibly missed maintain loop")
+		}
+
 		return true
 	}
+
+	// Another loopInterval is added to the threshold so we can get
+	// loop counts greater than minMaintainLoopCount, so we only print
+	// once when the maintain loop is stabilized, instead of printing
+	// every time when maintainLoopCount == minMaintainLoopCount (always
+	// this case if using maintainLoopCount), which could be very spammy.
+	if loopRecorder.GetRecordsIn(continuousLoopThreshold+loopInterval) == minMaintainLoopCount {
+		if logStatus {
+			logrus.WithFields(logrus.Fields{
+				"maintainLoopCount":         maintainLoopCount,
+				"expectedMaintainLoopCount": expectedMaintainLoopCount,
+				"minMaintainLoopCount":      minMaintainLoopCount,
+				"recentRecords":             formatRelativeTimes(relativeTimes),
+			}).Infof("Maintain loop has been stabilized")
+		}
+	}
+
 	return false
 }
 
@@ -206,6 +77,8 @@ func checkMissedMaintainLoops() bool {
 // prevent parallel runs. So if one maintain loop is already running,
 // the next one will need to wait until the first one finishes.
 func maintainLoop() bool {
+	defer loopRecorder.AddRecordNow()
+
 	if conf.PreventSystemSleep() {
 		// No need to keep track missed loops and wait post/before sleep delays, since
 		// prevent-system-sleep would prevent unexpected sleep during charging.
@@ -220,9 +93,9 @@ func maintainLoop() bool {
 		logrus.Debugf("this maintain loop waited %d seconds after being initiated, now ready to execute", int(tsAfterWait.Sub(tsBeforeWait).Seconds()))
 	}
 
-	checkMissedMaintainLoops()
+	// just log status, not doing anything, yet
+	_ = checkMissedMaintainLoops(true)
 
-	loopRecorder.AddRecordNow()
 	return maintainLoopInner(false)
 }
 
@@ -300,8 +173,41 @@ func handleNoMaintain(isChargingEnabled bool) bool {
 }
 
 func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool, batteryCharge, lower, upper int) bool {
+	maintainLoopsMissed := checkMissedMaintainLoops(false)
+
+	// Fix for #123.
+	// Consider this case:
+	//   1. charging is enabled (batteryCharge < lower)
+	//   2. batt execution is interrupted constantly (maintain loop is executed with unexpected interval), the maintain loop is missed for some reason (macOS didn't send a sleep notification)
+	//   3. batt could not disable charging in-time because it's constantly interrupted, and the battery keeps charging, which could cause overcharging.
+	//
+	// In this case, we can stop charging immediately when we detect that
+	// there are too many missed maintain loops, even if the battery charge is
+	// below the lower limit, to prevent overcharging.
+	if isChargingEnabled && maintainLoopsMissed {
+		logrus.WithFields(logrus.Fields{
+			"batteryCharge": batteryCharge,
+			"lower":         lower,
+			"upper":         upper,
+		}).Infof("Too many missed maintain loops detected while charging is enabled. Disabling charging to prevent overcharging.")
+		err := smcConn.DisableCharging()
+		if err != nil {
+			logrus.Errorf("DisableCharging failed: %v", err)
+			return false
+		}
+		isChargingEnabled = false
+		maintainedChargingInProgress = false
+	}
+
+	// Should enable charging.
 	if batteryCharge < lower && !isChargingEnabled {
-		if !ignoreMissedLoops && checkMissedMaintainLoops() {
+		// If there are too many missed maintain loops, it could indicate that
+		// the system was in sleep mode, or macOS interrupted executing the
+		// maintain loop for some reason, or system has just woken up.
+		// In this case, we should wait until the maintain loops are stable
+		// before enabling charging, to avoid enabling charging when the
+		// system is in sleep mode, which could overcharge.
+		if !ignoreMissedLoops && maintainLoopsMissed {
 			logrus.WithFields(logrus.Fields{
 				"batteryCharge": batteryCharge,
 				"lower":         lower,
@@ -324,6 +230,7 @@ func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool,
 		maintainedChargingInProgress = true
 	}
 
+	// Should disable charging.
 	if batteryCharge >= upper && isChargingEnabled {
 		logrus.WithFields(logrus.Fields{
 			"batteryCharge": batteryCharge,

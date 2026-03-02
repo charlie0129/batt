@@ -210,11 +210,12 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	sig := <-sigc
 	logrus.Infof("caught signal \"%s\": shutting down.", sig)
 
-	logrus.Info("shutting down http server")
+	logrus.Info("gracefully shutting down http server")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	err = srv.Shutdown(ctx)
 	if err != nil {
-		logrus.Errorf("failed to shutdown http server: %v", err)
+		logrus.Errorf("failed to gracefully shutdown http server, closing it immediately: %v", err)
+		_ = srv.Close()
 	}
 	cancel()
 
