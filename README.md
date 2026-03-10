@@ -88,6 +88,7 @@ GUI version is a native macOS menubar app. It's not as feature-complete as the c
 > [!TIP]
 > There are 3rd-party GUI versions built around `batt` by some amazing opensource developers:
 > 1. [BattGUI](https://github.com/clzoc/BattGUI) by [@clzoc](https://github.com/clzoc)
+> 2. [batt-helper](https://github.com/zxw5775/batt-helper) by [@zxw5775](https://github.com/zxw5775)
 
 ## Installation (Command-Line Version)
 
