@@ -115,53 +115,58 @@ func handleNoMaintain(isChargingEnabled bool) bool {
 			return false
 		}
 
-		switch conf.ControlMagSafeLED() {
-		case config.ControlMagSafeModeAlwaysOff:
-			err := smcConn.DisableMagSafeLed()
-			if err != nil {
-				// no fail
-				logrus.Errorf("DisableMagSafeLed failed: %v", err)
-			}
-		default:
-			// Reset MagSafe LED to system state.
-			err = smcConn.SetMagSafeLedState(smc.LEDSystem)
-			if err != nil {
-				// no fail
-				logrus.Errorf("SetMagSafeLedState(LEDSystem) failed: %v", err)
+		if smcConn.CheckMagSafeExistence() {
+			switch conf.ControlMagSafeLED() {
+			case config.ControlMagSafeModeAlwaysOff:
+				err := smcConn.DisableMagSafeLed()
+				if err != nil {
+					// no fail
+					logrus.Errorf("DisableMagSafeLed failed: %v", err)
+				}
+			default:
+				// Reset MagSafe LED to system state.
+				err = smcConn.SetMagSafeLedState(smc.LEDSystem)
+				if err != nil {
+					// no fail
+					logrus.Errorf("SetMagSafeLedState(LEDSystem) failed: %v", err)
+				}
 			}
 		}
 	}
 
-	// Set MagSafe LED according to config.
-	currentMagSafeLEDState, err := smcConn.GetMagSafeLedState()
-	if err != nil {
-		logrus.Errorf("GetMagSafeLedState failed: %v", err)
-	}
-	switch conf.ControlMagSafeLED() {
-	case config.ControlMagSafeModeAlwaysOff:
-		if currentMagSafeLEDState != smc.LEDOff {
-			err := smcConn.DisableMagSafeLed()
-			if err != nil {
-				// no fail
-				logrus.Errorf("DisableMagSafeLed failed: %v", err)
-			}
+	if smcConn.CheckMagSafeExistence() {
+		// Set MagSafe LED according to config.
+		currentMagSafeLEDState, err := smcConn.GetMagSafeLedState()
+		if err != nil {
+			// no fail
+			logrus.Errorf("GetMagSafeLedState failed: %v", err)
 		}
-	default:
-		// This applies to both ControlMagSafeModeEnabled and ControlMagSafeModeDisabled
-		// modes. Because in Disabled mode we should not interfere with the LED state,
-		// in Enabled mode we want to show the system state (which is the same as
-		// apple's default behavior when limit=100%).
-		if currentMagSafeLEDState != smc.LEDSystem {
-			err := smcConn.SetMagSafeLedState(smc.LEDSystem)
-			if err != nil {
-				// no fail
-				logrus.Errorf("SetMagSafeLedState(LEDSystem) failed: %v", err)
+		switch conf.ControlMagSafeLED() {
+		case config.ControlMagSafeModeAlwaysOff:
+			if currentMagSafeLEDState != smc.LEDOff {
+				err := smcConn.DisableMagSafeLed()
+				if err != nil {
+					// no fail
+					logrus.Errorf("DisableMagSafeLed failed: %v", err)
+				}
+			}
+		default:
+			// This applies to both ControlMagSafeModeEnabled and ControlMagSafeModeDisabled
+			// modes. Because in Disabled mode we should not interfere with the LED state,
+			// in Enabled mode we want to show the system state (which is the same as
+			// apple's default behavior when limit=100%).
+			if currentMagSafeLEDState != smc.LEDSystem {
+				err := smcConn.SetMagSafeLedState(smc.LEDSystem)
+				if err != nil {
+					// no fail
+					logrus.Errorf("SetMagSafeLedState(LEDSystem) failed: %v", err)
+				}
 			}
 		}
 	}
 
 	// Calling this multiple times is no-op.
-	err = AllowSleepOnAC()
+	err := AllowSleepOnAC()
 	if err != nil {
 		logrus.Errorf("AllowSleepOnAC failed: %v", err)
 	}
