@@ -124,7 +124,7 @@ $install_cmd
 info "Installation finished."
 echo "Further instructions:"
 echo '- If you see an alert says "batt cannot be opened because XXX", please go to System Preferences -> Security & Privacy -> General -> Open Anyway.'
-echo -e "- Be sure to ${bold}disable${reset} macOS's optimized charging: Go to System Preferences -> Battery -> uncheck Optimized battery charging."
+echo -e "- Be sure to ${bold}disable${reset} macOS's optimized charging: Go to System Preferences -> Battery -> uncheck Optimized battery charging. Built-in charge limit also need to be disabled if you are on macOS 26.4 or later."
 echo '- To set charge limit to 80%, run "batt limit 80".'
 echo '- To see batt help: run "batt help".'
 echo '- To see disable charge limit: run "batt disable".'
