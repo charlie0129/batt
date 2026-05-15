@@ -22,6 +22,11 @@ import (
 // // C/ObjC functions are implemented in bridge.m; only prototypes here.
 // void *batt_attachMenuObserver(uintptr_t menuPtr, uintptr_t handle);
 // void batt_releaseMenuObserver(void *obsPtr);
+// void *batt_newTemperatureSliderMenuItem(uintptr_t handle, int minValue, int maxValue, int value);
+// void batt_setTemperatureSliderHandle(void *itemPtr, uintptr_t handle);
+// void batt_setTemperatureSliderValue(void *itemPtr, int value);
+// void batt_setTemperatureSliderEnabled(void *itemPtr, bool enabled);
+// void batt_releaseObject(void *objPtr);
 // bool registerAppWithSMAppService(void);
 // bool unregisterAppWithSMAppService(void);
 // bool isRegisteredWithSMAppService(void);
@@ -73,6 +78,21 @@ func battMenuTimerFired(h C.uintptr_t) {
 	}
 }
 
+//export battTemperatureThresholdChanged
+func battTemperatureThresholdChanged(h C.uintptr_t, value C.int) {
+	defer func() {
+		if r := recover(); r != nil {
+			logrus.Errorf("panic in battTemperatureThresholdChanged: %v", r)
+		}
+	}()
+	handle := cgo.Handle(h)
+	if v := handle.Value(); v != nil {
+		if c, ok := v.(*menuController); ok {
+			c.setTemperatureProtectionThreshold(int(value))
+		}
+	}
+}
+
 // AttachPowerFlowObserver wires an Objective-C NSMenu notifications observer to a Go handle.
 // It returns an opaque pointer retained on the ObjC side; call ReleasePowerFlowObserver to free.
 func AttachPowerFlowObserver(menu appkit.Menu, h cgo.Handle) unsafe.Pointer {
@@ -81,6 +101,27 @@ func AttachPowerFlowObserver(menu appkit.Menu, h cgo.Handle) unsafe.Pointer {
 
 func ReleasePowerFlowObserver(ptr unsafe.Pointer) {
 	C.batt_releaseMenuObserver(ptr)
+}
+
+func NewTemperatureSliderMenuItem(minValue, maxValue, value int) (appkit.MenuItem, unsafe.Pointer) {
+	ptr := C.batt_newTemperatureSliderMenuItem(0, C.int(minValue), C.int(maxValue), C.int(value))
+	return appkit.MenuItemFrom(ptr), ptr
+}
+
+func SetTemperatureSliderHandle(ptr unsafe.Pointer, h cgo.Handle) {
+	C.batt_setTemperatureSliderHandle(ptr, C.uintptr_t(h))
+}
+
+func SetTemperatureSliderValue(ptr unsafe.Pointer, value int) {
+	C.batt_setTemperatureSliderValue(ptr, C.int(value))
+}
+
+func SetTemperatureSliderEnabled(ptr unsafe.Pointer, enabled bool) {
+	C.batt_setTemperatureSliderEnabled(ptr, C.bool(enabled))
+}
+
+func ReleaseObject(ptr unsafe.Pointer) {
+	C.batt_releaseObject(ptr)
 }
 
 // RegisterLoginItem registers the application to start at login using SMAppService

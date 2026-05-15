@@ -8,6 +8,7 @@ import (
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/temperature"
 )
 
 // NOTE: These tests are simplified and mock minimal parts; smcConn and conf must be
@@ -30,8 +31,14 @@ func (m *mockConf) ControlMagSafeLED() config.ControlMagSafeMode {
 }
 func (m *mockConf) CalibrationDischargeThreshold() int             { return 15 }
 func (m *mockConf) CalibrationHoldDurationMinutes() int            { return 1 }
+func (m *mockConf) TemperatureMonitoringEnabled() bool             { return false }
+func (m *mockConf) TemperatureProtectionThresholdCelsius() int      { return 40 }
+func (m *mockConf) TemperatureReferences() temperature.References   { return temperature.References{} }
 func (m *mockConf) SetCalibrationDischargeThreshold(int)           {}
 func (m *mockConf) SetCalibrationHoldDurationMinutes(int)          {}
+func (m *mockConf) SetTemperatureMonitoringEnabled(bool)           {}
+func (m *mockConf) SetTemperatureProtectionThresholdCelsius(int)    {}
+func (m *mockConf) SetTemperatureReference(temperature.Scenario, float64) {}
 func (m *mockConf) SetUpperLimit(i int)                            { m.upper = i }
 func (m *mockConf) SetLowerLimit(i int)                            { m.lower = i }
 func (m *mockConf) SetPreventIdleSleep(bool)                       {}

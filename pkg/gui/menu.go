@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"unsafe"
 
 	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/progrium/darwinkit/macos/foundation"
@@ -15,6 +16,7 @@ import (
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
+	"github.com/charlie0129/batt/pkg/temperature"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
@@ -49,6 +51,14 @@ type menuController struct {
 	disableChargingPreSleepItem appkit.MenuItem
 	preventSystemSleepItem      appkit.MenuItem
 	forceDischargeItem          appkit.MenuItem
+	temperatureSubMenuItem         appkit.MenuItem
+	temperatureMonitoringItem      appkit.MenuItem
+	temperatureCurrentItem         appkit.MenuItem
+	temperatureProtectionItem      appkit.MenuItem
+	temperatureProtectionSliderPtr unsafe.Pointer
+	temperatureIdleNotChargingItem appkit.MenuItem
+	temperatureIdleChargingItem    appkit.MenuItem
+	temperatureActiveChargingItem  appkit.MenuItem
 	uninstallItem               appkit.MenuItem
 
 	// Auto Calibration
@@ -110,6 +120,7 @@ func (c *menuController) toggleMenusRequiringInstall(battInstalled, capable, nee
 	c.disableChargingPreSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.preventSystemSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.forceDischargeItem.SetHidden(!battInstalled || !capable || needUpgrade)
+	c.temperatureSubMenuItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.autoCalSubMenuItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.uninstallItem.SetHidden(!battInstalled)
 
@@ -215,6 +226,9 @@ func (c *menuController) refreshOnOpen() {
 	setCheckboxItem(c.preventIdleSleepItem, conf.PreventIdleSleep())
 	setCheckboxItem(c.disableChargingPreSleepItem, conf.DisableChargingPreSleep())
 	setCheckboxItem(c.preventSystemSleepItem, conf.PreventSystemSleep())
+	setCheckboxItem(c.temperatureMonitoringItem, conf.TemperatureMonitoringEnabled())
+	SetTemperatureSliderValue(c.temperatureProtectionSliderPtr, conf.TemperatureProtectionThresholdCelsius())
+	SetTemperatureSliderEnabled(c.temperatureProtectionSliderPtr, conf.TemperatureMonitoringEnabled())
 	if adapter, err := c.api.GetAdapter(); err == nil {
 		setCheckboxItem(c.forceDischargeItem, !adapter)
 	} else {
@@ -310,6 +324,46 @@ func (c *menuController) updateTelemetryOnce() {
 			}
 		}
 	}
+	if tr.Temperature != nil {
+		c.updateTemperatureItems(tr.Temperature)
+	}
+}
+
+func (c *menuController) updateTemperatureItems(status *temperature.Status) {
+	setCheckboxItem(c.temperatureMonitoringItem, status.MonitoringEnabled)
+	SetTemperatureSliderValue(c.temperatureProtectionSliderPtr, status.ProtectionThresholdCelsius)
+	SetTemperatureSliderEnabled(c.temperatureProtectionSliderPtr, status.MonitoringEnabled)
+
+	current := "Current: No temperature data"
+	if status.CurrentCelsius != nil {
+		state := ""
+		if status.ProtectionActive {
+			state = " (Protecting)"
+		}
+		current = fmt.Sprintf("Current: %.1f°C%s", *status.CurrentCelsius, state)
+	} else if status.TemperatureUnavailableReason != "" {
+		current = "Current: Unavailable"
+	}
+	c.temperatureCurrentItem.SetTitle(current)
+
+	c.temperatureIdleNotChargingItem.SetTitle(formatTemperatureReference("Idle + Not Charging", status.References.IdleNotCharging))
+	c.temperatureIdleChargingItem.SetTitle(formatTemperatureReference("Idle + Charging", status.References.IdleCharging))
+	c.temperatureActiveChargingItem.SetTitle(formatTemperatureReference("Active + Charging", status.References.ActiveCharging))
+}
+
+func (c *menuController) setTemperatureProtectionThreshold(threshold int) {
+	if _, err := c.api.SetTemperatureProtectionThresholdCelsius(threshold); err != nil {
+		logrus.WithError(err).Error("Failed to set temperature protection threshold")
+		showAlert("Failed to set temperature protection", err.Error())
+		return
+	}
+}
+
+func formatTemperatureReference(label string, value *float64) string {
+	if value == nil {
+		return label + ": No data yet"
+	}
+	return fmt.Sprintf("%s: %.1f°C", label, *value)
 }
 
 func formatPowerString(label string, value float64) foundation.AttributedString {

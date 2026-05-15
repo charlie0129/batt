@@ -147,6 +147,62 @@ func setPreventSystemSleep(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, "ok")
 }
 
+func setTemperatureMonitoring(c *gin.Context) {
+	var enabled bool
+	if err := c.BindJSON(&enabled); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	conf.SetTemperatureMonitoringEnabled(enabled)
+	conf.SetTemperatureProtectionThresholdCelsius(conf.TemperatureProtectionThresholdCelsius())
+	if err := conf.Save(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	logrus.Infof("set temperature monitoring to %t", enabled)
+	maintainLoopForced()
+
+	c.IndentedJSON(http.StatusCreated, "ok")
+}
+
+func setTemperatureProtectionThreshold(c *gin.Context) {
+	var threshold int
+	if err := c.BindJSON(&threshold); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if threshold < 30 || threshold > 55 {
+		err := fmt.Errorf("temperature protection threshold must be between 30°C and 55°C, got %d°C", threshold)
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	conf.SetTemperatureProtectionThresholdCelsius(threshold)
+	if err := conf.Save(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	logrus.Infof("set temperature protection threshold to %d°C", threshold)
+	maintainLoopForced()
+
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("Temperature protection threshold set to %d°C", threshold))
+}
+
+func getTemperatureStatus(c *gin.Context) {
+	c.IndentedJSON(http.StatusOK, getTemperatureStatusSnapshot())
+}
+
 func setAdapter(c *gin.Context) {
 	var d bool
 	if err := c.BindJSON(&d); err != nil {
@@ -372,6 +428,7 @@ func getPowerTelemetry(c *gin.Context) {
 func getUnifiedTelemetry(c *gin.Context) {
 	wantPower := c.Query("power") != "0"
 	wantCal := c.Query("calibration") != "0"
+	wantTemperature := c.Query("temperature") != "0"
 
 	resp := gin.H{}
 
@@ -397,6 +454,10 @@ func getUnifiedTelemetry(c *gin.Context) {
 
 	if wantCal {
 		resp["calibration"] = getCalibrationStatus()
+	}
+
+	if wantTemperature {
+		resp["temperature"] = getTemperatureStatusSnapshot()
 	}
 
 	// Add deprecation header if caller still hitting legacy endpoints (not detectable here), but we can add a generic hint.

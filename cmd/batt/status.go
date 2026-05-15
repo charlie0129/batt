@@ -221,6 +221,8 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Printf("  Disable charging before sleep if charge limit is enabled: %s\n", bool2Text(cfg.DisableChargingPreSleep()))
 			cmd.Printf("  Prevent system-sleep when charging: %s\n", bool2Text(cfg.PreventSystemSleep()))
 			cmd.Printf("  Allow non-root users to access the daemon: %s\n", bool2Text(cfg.AllowNonRootAccess()))
+			cmd.Printf("  Temperature monitoring: %s\n", bool2Text(cfg.TemperatureMonitoringEnabled()))
+			cmd.Printf("  Temperature protection threshold: %s\n", bold("%d°C", cfg.TemperatureProtectionThresholdCelsius()))
 
 			mode := cfg.ControlMagSafeLED()
 			enabled := mode != config.ControlMagSafeModeDisabled

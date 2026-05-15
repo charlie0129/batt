@@ -310,6 +310,38 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 	maintainedChargingInProgress = isChargingEnabled && isPluggedIn && calibrationState.Phase == calibration.PhaseIdle
 	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress, calibrationState.Phase != calibration.PhaseIdle)
 
+	temperatureResult := handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn)
+	if temperatureResult.protected {
+		maintainedChargingInProgress = false
+		switch conf.ControlMagSafeLED() {
+		case config.ControlMagSafeModeAlwaysOff:
+			_ = smcConn.DisableMagSafeLed()
+		case config.ControlMagSafeModeEnabled:
+			updateMagSafeLed(false)
+		default:
+			// nothing
+		}
+		if conf.PreventSystemSleep() {
+			if err := AllowSleepOnAC(); err != nil {
+				logrus.Errorf("AllowSleepOnAC failed: %v", err)
+			}
+		}
+		return true
+	}
+
+	if temperatureResult.recovered && calibrationState.Phase == calibration.PhaseIdle && isPluggedIn && !isChargingEnabled && batteryCharge < upper {
+		logrus.WithFields(logrus.Fields{
+			"batteryCharge": batteryCharge,
+			"upper":         upper,
+		}).Info("temperature protection recovered, enabling charging")
+		if err := smcConn.EnableCharging(); err != nil {
+			logrus.Errorf("EnableCharging failed after temperature recovery: %v", err)
+			return false
+		}
+		isChargingEnabled = true
+		maintainedChargingInProgress = true
+	}
+
 	// If calibration is active, advance it and skip normal maintain logic.
 	if applyCalibrationWithinLoop(batteryCharge) {
 		switch conf.ControlMagSafeLED() {

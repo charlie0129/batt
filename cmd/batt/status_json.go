@@ -44,6 +44,8 @@ type statusConfigJSON struct {
 	PreventSystemSleep      bool                 `json:"preventSystemSleep"`
 	AllowNonRootAccess      bool                 `json:"allowNonRootAccess"`
 	ControlMagSafeLed       statusMagSafeLedJSON `json:"controlMagSafeLed"`
+	TemperatureMonitoring       bool             `json:"temperatureMonitoring"`
+	TemperatureThresholdCelsius int              `json:"temperatureThresholdCelsius"`
 }
 
 type statusMagSafeLedJSON struct {
@@ -118,6 +120,8 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 			DisableChargingPreSleep: cfg.DisableChargingPreSleep(),
 			PreventSystemSleep:      cfg.PreventSystemSleep(),
 			AllowNonRootAccess:      cfg.AllowNonRootAccess(),
+			TemperatureMonitoring:       cfg.TemperatureMonitoringEnabled(),
+			TemperatureThresholdCelsius: cfg.TemperatureProtectionThresholdCelsius(),
 			ControlMagSafeLed: statusMagSafeLedJSON{
 				Enabled: mode != config.ControlMagSafeModeDisabled,
 				Mode:    string(mode),
