@@ -47,6 +47,7 @@ func setupRoutes() *gin.Engine {
 	router.PUT("/temperature-monitoring", setTemperatureMonitoring)
 	router.PUT("/temperature-protection-threshold", setTemperatureProtectionThreshold)
 	router.GET("/temperature-status", getTemperatureStatus)
+	router.PUT("/tray-icon-style", setTrayIconStyle)
 	router.PUT("/adapter", setAdapter)
 	router.GET("/adapter", getAdapter)
 	router.GET("/charging", getCharging)

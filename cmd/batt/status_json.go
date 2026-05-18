@@ -46,6 +46,7 @@ type statusConfigJSON struct {
 	ControlMagSafeLed           statusMagSafeLedJSON `json:"controlMagSafeLed"`
 	TemperatureMonitoring       bool                 `json:"temperatureMonitoring"`
 	TemperatureThresholdCelsius int                  `json:"temperatureThresholdCelsius"`
+	TrayIconStyle               string               `json:"trayIconStyle"`
 }
 
 type statusMagSafeLedJSON struct {
@@ -122,6 +123,7 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 			AllowNonRootAccess:          cfg.AllowNonRootAccess(),
 			TemperatureMonitoring:       cfg.TemperatureMonitoringEnabled(),
 			TemperatureThresholdCelsius: cfg.TemperatureProtectionThresholdCelsius(),
+			TrayIconStyle:               string(cfg.TrayIconStyle()),
 			ControlMagSafeLed:           statusMagSafeLedJSON{
 				Enabled: mode != config.ControlMagSafeModeDisabled,
 				Mode:    string(mode),

@@ -25,6 +25,15 @@ type menuController struct {
 	api         *client.Client
 	menubarIcon appkit.StatusItem
 
+	daemonInstalled       bool
+	capable               bool
+	needUpgrade           bool
+	trayIconStyle         config.TrayIconStyle
+	lastCharge            int
+	lastCharging          bool
+	lastPaused            bool
+	hasBatteryStatus      bool
+
 	// Power Flow
 	powerFlowSubMenuItem appkit.MenuItem
 	systemItem           appkit.MenuItem
@@ -46,6 +55,9 @@ type menuController struct {
 	controlMagSafeEnableItem    appkit.MenuItem
 	controlMagSafeDisableItem   appkit.MenuItem
 	controlMagSafeAlwaysOffItem appkit.MenuItem
+	trayIconStyleSubMenuItem    appkit.MenuItem
+	trayIconBatteryItem         appkit.MenuItem
+	trayIconPercentageItem      appkit.MenuItem
 
 	preventIdleSleepItem             appkit.MenuItem
 	disableChargingPreSleepItem      appkit.MenuItem
@@ -93,10 +105,14 @@ func (c *menuController) onTimerTick() {
 }
 
 func (c *menuController) toggleMenusRequiringInstall(battInstalled, capable, needUpgrade bool) {
+	c.daemonInstalled = battInstalled
+	c.capable = capable
+	c.needUpgrade = needUpgrade
+
 	if v := os.Getenv("BATT_GUI_NO_COMPATIBILITY_CHECK"); v == "1" || v == "true" {
 		return
 	}
-	setMenubarImage(c.menubarIcon, battInstalled, capable, needUpgrade)
+	c.applyMenubarImage()
 
 	// Visible when installed, capable, and no upgrade needed.
 	c.powerFlowSubMenuItem.SetHidden(!battInstalled || !capable || needUpgrade)
@@ -116,6 +132,7 @@ func (c *menuController) toggleMenusRequiringInstall(battInstalled, capable, nee
 
 	c.advancedSubMenuItem.SetHidden(!battInstalled)
 	c.controlMagSafeLEDItem.SetHidden(!battInstalled || !capable || needUpgrade)
+	c.trayIconStyleSubMenuItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.preventIdleSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.disableChargingPreSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.preventSystemSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
@@ -183,6 +200,8 @@ func (c *menuController) refreshOnOpen() {
 
 	conf := config.NewFileFromConfig(rawConfig, "")
 	logrus.WithFields(conf.LogrusFields()).Info("Got config")
+	c.trayIconStyle = conf.TrayIconStyle()
+	c.updateTrayIconStyleItems()
 	// Cache calibration params for formatting
 	c.calThreshold = conf.CalibrationDischargeThreshold()
 	c.calHoldMinutes = conf.CalibrationHoldDurationMinutes()
@@ -206,6 +225,7 @@ func (c *menuController) refreshOnOpen() {
 	if !isCharging && isPluggedIn && conf.UpperLimit() < 100 && currentCharge < conf.LowerLimit() {
 		c.stateItem.SetTitle("State: Will Charge Soon")
 	}
+	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, c.lastPaused)
 
 	magSafeMode := conf.ControlMagSafeLED()
 	switch magSafeMode {
@@ -235,6 +255,80 @@ func (c *menuController) refreshOnOpen() {
 		logrus.WithError(err).Error("Failed to get adapter")
 		c.forceDischargeItem.SetEnabled(false)
 	}
+}
+
+func (c *menuController) updateTrayIconStyleItems() {
+	setCheckboxItem(c.trayIconBatteryItem, c.trayIconStyle == config.TrayIconStyleBattery)
+	setCheckboxItem(c.trayIconPercentageItem, c.trayIconStyle == config.TrayIconStylePercentage)
+}
+
+func (c *menuController) setTrayIconStyle(style config.TrayIconStyle) {
+	if _, err := c.api.SetTrayIconStyle(style); err != nil {
+		logrus.WithError(err).Error("Failed to set tray icon style")
+		showAlert("Failed to set tray icon style", err.Error())
+		c.updateTrayIconStyleItems()
+		return
+	}
+
+	c.trayIconStyle = style
+	c.updateTrayIconStyleItems()
+	c.applyMenubarImage()
+}
+
+func (c *menuController) refreshTrayIcon() {
+	if !c.daemonInstalled || !c.capable || c.needUpgrade {
+		c.applyMenubarImage()
+		return
+	}
+
+	currentCharge, err := c.api.GetCurrentCharge()
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to get current charge for tray icon")
+		return
+	}
+	batteryInfo, err := c.api.GetBatteryInfo()
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to get battery info for tray icon")
+		c.setTrayBatteryStatus(currentCharge, false, c.lastPaused)
+		return
+	}
+
+	paused := c.lastPaused
+	if status, err := c.api.GetTemperatureStatus(); err == nil {
+		paused = status.ProtectionActive
+	} else {
+		logrus.WithError(err).Debug("Failed to get temperature status for tray icon")
+	}
+
+	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, paused)
+}
+
+func (c *menuController) setTrayBatteryStatus(charge int, charging, paused bool) {
+	if charge < 0 {
+		charge = 0
+	}
+	if charge > 100 {
+		charge = 100
+	}
+
+	c.lastCharge = charge
+	c.lastCharging = charging
+	c.lastPaused = paused
+	c.hasBatteryStatus = true
+	c.applyMenubarImage()
+}
+
+func (c *menuController) applyMenubarImage() {
+	if !c.daemonInstalled || !c.capable || c.needUpgrade || !c.hasBatteryStatus {
+		setMenubarImage(c.menubarIcon, c.daemonInstalled, c.capable, c.needUpgrade)
+		return
+	}
+
+	style := c.trayIconStyle
+	if !style.IsValid() {
+		style = config.TrayIconStylePercentage
+	}
+	SetMenubarBatteryIcon(c.menubarIcon, string(style), c.lastCharge, c.lastCharging, c.lastPaused)
 }
 
 // updateTelemetryOnce fetches both power and calibration in a single call and updates the UI.
@@ -333,6 +427,8 @@ func (c *menuController) updateTemperatureItems(status *temperature.Status) {
 	setCheckboxItem(c.temperatureMonitoringItem, status.MonitoringEnabled)
 	SetTemperatureSliderValue(c.temperatureProtectionSliderPtr, status.ProtectionThresholdCelsius)
 	SetTemperatureSliderEnabled(c.temperatureProtectionSliderPtr, status.MonitoringEnabled)
+	c.lastPaused = status.ProtectionActive
+	c.applyMenubarImage()
 
 	current := "Current: No temperature data"
 	if status.CurrentCelsius != nil {

@@ -223,6 +223,7 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Printf("  Allow non-root users to access the daemon: %s\n", bool2Text(cfg.AllowNonRootAccess()))
 			cmd.Printf("  Temperature monitoring: %s\n", bool2Text(cfg.TemperatureMonitoringEnabled()))
 			cmd.Printf("  Temperature protection threshold: %s\n", bold("%d°C", cfg.TemperatureProtectionThresholdCelsius()))
+			cmd.Printf("  Tray icon style: %s\n", bold("%s", cfg.TrayIconStyle()))
 
 			mode := cfg.ControlMagSafeLED()
 			enabled := mode != config.ControlMagSafeModeDisabled

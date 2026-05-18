@@ -49,6 +49,38 @@ func TestFileLoadWithTemperatureReferenceComments(t *testing.T) {
 	}
 }
 
+func TestFileTrayIconStyle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "batt.json")
+	if err := os.WriteFile(path, []byte(`{
+  "trayIconStyle": "battery"
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := NewFile(path)
+	if err != nil {
+		t.Fatalf("NewFile returned error: %v", err)
+	}
+	if got := cfg.TrayIconStyle(); got != TrayIconStyleBattery {
+		t.Fatalf("tray icon style = %s, want %s", got, TrayIconStyleBattery)
+	}
+
+	cfg.SetTrayIconStyle(TrayIconStylePercentage)
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if got := string(content); !strings.Contains(got, `"trayIconStyle": "percentage"`) {
+		t.Fatalf("saved config missing tray icon style:\n%s", got)
+	}
+}
+
 func TestFileSaveWritesTemperatureReferenceComments(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "batt.json")

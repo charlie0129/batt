@@ -106,6 +106,8 @@ func startEventBridge(api *client.Client, ctrl *menuController) {
 
 //nolint:gocyclo
 func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menuController) {
+	var ctrl *menuController
+
 	menubarIcon := appkit.StatusBar_SystemStatusBar().StatusItemWithLength(appkit.VariableStatusItemLength)
 	objc.Retain(&menubarIcon)
 	setMenubarImage(menubarIcon, false, false, false)
@@ -161,7 +163,12 @@ func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menu
 			return
 		}
 
-		setMenubarImage(menubarIcon, true, true, false)
+		if ctrl != nil {
+			ctrl.toggleMenusRequiringInstall(true, true, false)
+			ctrl.refreshTrayIcon()
+		} else {
+			setMenubarImage(menubarIcon, true, true, false)
+		}
 	}
 
 	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", uninstallOrUpgrade)
@@ -274,6 +281,28 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`)
 - Off: Woke from sleep, charging is off and batt is awaiting control.`)
 	controlMagSafeDisableItem.SetToolTip(`Disable MagSafe LED control. The LED will stay in its default state (mostly orange).`)
 	controlMagSafeAlwaysOffItem.SetToolTip(`Force the MagSafe LED to stay off regardless of charging state.`)
+
+	trayIconStyleMenu := appkit.NewMenuWithTitle("Tray Icon Style")
+	trayIconStyleSubMenuItem := appkit.NewSubMenuItem(trayIconStyleMenu)
+	trayIconStyleSubMenuItem.SetTitle("Tray Icon Style")
+	trayIconStyleSubMenuItem.SetToolTip(`Choose how much battery information the menubar icon shows.`)
+	advancedMenu.AddItem(trayIconStyleSubMenuItem)
+
+	trayIconBatteryItem := appkit.NewMenuItemWithAction("Battery Fill", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStyleBattery)
+		}
+	})
+	trayIconBatteryItem.SetToolTip(`Show a battery outline with a fill area that follows the current charge percentage.`)
+	trayIconStyleMenu.AddItem(trayIconBatteryItem)
+
+	trayIconPercentageItem := appkit.NewMenuItemWithAction("Percentage Fill", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStylePercentage)
+		}
+	})
+	trayIconPercentageItem.SetToolTip(`Show the charge percentage inside a rounded icon with a fill area that follows the current charge percentage.`)
+	trayIconStyleMenu.AddItem(trayIconPercentageItem)
 
 	preventIdleSleepItem := checkBoxItem("Prevent Idle Sleep when Charging", "", func(checked bool) {
 		// Perform action based on new state
@@ -496,7 +525,12 @@ NOTES:
 			return
 		}
 
-		setMenubarImage(menubarIcon, false, true, false)
+		if ctrl != nil {
+			ctrl.hasBatteryStatus = false
+			ctrl.toggleMenusRequiringInstall(false, true, false)
+		} else {
+			setMenubarImage(menubarIcon, false, true, false)
+		}
 	})
 	uninstallItem.SetToolTip(`Uninstall the batt daemon. This will remove the batt daemon from your system. You must enter your password to uninstall it.
 
@@ -520,9 +554,10 @@ After uninstalling the batt daemon, no charging control will be present on your 
 	menubarIcon.SetMenu(menu)
 
 	// ==================== CALLBACKS & OBSERVER ====================
-	ctrl := &menuController{
+	ctrl = &menuController{
 		api:                         apiClient,
 		menubarIcon:                 menubarIcon,
+		trayIconStyle:               config.TrayIconStylePercentage,
 		powerFlowSubMenuItem:        powerFlowSubMenuItem,
 		installItem:                 installItem,
 		upgradeItem:                 upgradeItem,
@@ -535,20 +570,23 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		controlMagSafeEnableItem:    controlMagSafeEnableItem,
 		controlMagSafeDisableItem:   controlMagSafeDisableItem,
 		controlMagSafeAlwaysOffItem: controlMagSafeAlwaysOffItem,
+		trayIconStyleSubMenuItem:    trayIconStyleSubMenuItem,
+		trayIconBatteryItem:         trayIconBatteryItem,
+		trayIconPercentageItem:      trayIconPercentageItem,
 		preventIdleSleepItem:        preventIdleSleepItem,
 		disableChargingPreSleepItem: disableChargingPreSleepItem,
 		preventSystemSleepItem:      preventSystemSleepItem,
-		forceDischargeItem:          forceDischargeItem,
-		temperatureSubMenuItem:         temperatureSub,
-		temperatureMonitoringItem:      temperatureMonitoringItem,
-		temperatureCurrentItem:         temperatureCurrentItem,
-		temperatureProtectionItem:      temperatureSliderItem,
-		temperatureProtectionSliderPtr: temperatureSliderPtr,
-		temperatureIdleNotChargingItem: temperatureIdleNotChargingItem,
-		temperatureIdleChargingItem:    temperatureIdleChargingItem,
-		temperatureActiveChargingItem:  temperatureActiveChargingItem,
-		uninstallItem:               uninstallItem,
-		disableItem:                 disableItem,
+		forceDischargeItem:               forceDischargeItem,
+		temperatureSubMenuItem:           temperatureSub,
+		temperatureMonitoringItem:        temperatureMonitoringItem,
+		temperatureCurrentItem:           temperatureCurrentItem,
+		temperatureProtectionItem:        temperatureSliderItem,
+		temperatureProtectionSliderPtr:   temperatureSliderPtr,
+		temperatureIdleNotChargingItem:   temperatureIdleNotChargingItem,
+		temperatureIdleChargingItem:      temperatureIdleChargingItem,
+		temperatureActiveChargingItem:    temperatureActiveChargingItem,
+		uninstallItem:                    uninstallItem,
+		disableItem:                      disableItem,
 		// Auto Calibration
 		autoCalSubMenuItem: autoCalibrationSub,
 		calStatusItem:      calStatusItem,
@@ -565,9 +603,11 @@ After uninstalling the batt daemon, no charging control will be present on your 
 	h := cgo.NewHandle(ctrl)
 	SetTemperatureSliderHandle(temperatureSliderPtr, h)
 	observerPtr := AttachPowerFlowObserver(menu, h)
+	trayIconTimerPtr := AttachTrayIconTimer(h, 60.0)
 
 	cleanupFunc := func() {
 		logrus.Info("Cleaning up resources")
+		ReleaseTrayIconTimer(trayIconTimerPtr)
 		ReleasePowerFlowObserver(observerPtr)
 		ReleaseObject(temperatureSliderPtr)
 		h.Delete()
@@ -601,6 +641,8 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		}
 		conf := config.NewFileFromConfig(rawConfig, "")
 		logrus.WithFields(conf.LogrusFields()).Info("Got config")
+		ctrl.trayIconStyle = conf.TrayIconStyle()
+		ctrl.updateTrayIconStyleItems()
 		logrus.Info("Getting charging control capability")
 		capable, err := apiClient.GetChargingControlCapable()
 		if err != nil {
@@ -618,6 +660,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 			ctrl.toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
 		}
 		logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
+		ctrl.refreshTrayIcon()
 	}
 
 	return cleanupFunc, ctrl

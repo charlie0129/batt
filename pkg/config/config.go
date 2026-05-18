@@ -18,6 +18,7 @@ type Config interface {
 	CalibrationHoldDurationMinutes() int
 	TemperatureMonitoringEnabled() bool
 	TemperatureProtectionThresholdCelsius() int
+	TrayIconStyle() TrayIconStyle
 	TemperatureReferences() temperature.References
 	Cron() string
 
@@ -33,6 +34,7 @@ type Config interface {
 	SetCalibrationHoldDurationMinutes(int)
 	SetTemperatureMonitoringEnabled(bool)
 	SetTemperatureProtectionThresholdCelsius(int)
+	SetTrayIconStyle(TrayIconStyle)
 	SetTemperatureReference(temperature.Scenario, float64)
 
 	LogrusFields() logrus.Fields

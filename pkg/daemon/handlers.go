@@ -203,6 +203,35 @@ func getTemperatureStatus(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, getTemperatureStatusSnapshot())
 }
 
+func setTrayIconStyle(c *gin.Context) {
+	var raw string
+	if err := c.BindJSON(&raw); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	style, ok := config.ParseTrayIconStyle(raw)
+	if !ok {
+		err := fmt.Errorf("tray icon style must be one of: %s, %s", config.TrayIconStyleBattery, config.TrayIconStylePercentage)
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	conf.SetTrayIconStyle(style)
+	if err := conf.Save(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	logrus.Infof("set tray icon style to %s", style)
+
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("Tray icon style set to %s", style))
+}
+
 func setAdapter(c *gin.Context) {
 	var d bool
 	if err := c.BindJSON(&d); err != nil {

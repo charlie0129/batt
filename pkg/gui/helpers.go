@@ -27,6 +27,9 @@ import (
 // void batt_setTemperatureSliderValue(void *itemPtr, int value);
 // void batt_setTemperatureSliderEnabled(void *itemPtr, bool enabled);
 // void batt_releaseObject(void *objPtr);
+// void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int percent, bool charging, bool paused);
+// void *batt_attachTrayIconTimer(uintptr_t handle, double intervalSeconds);
+// void batt_releaseTrayIconTimer(void *timerPtr);
 // bool registerAppWithSMAppService(void);
 // bool unregisterAppWithSMAppService(void);
 // bool isRegisteredWithSMAppService(void);
@@ -122,6 +125,35 @@ func SetTemperatureSliderEnabled(ptr unsafe.Pointer, enabled bool) {
 
 func ReleaseObject(ptr unsafe.Pointer) {
 	C.batt_releaseObject(ptr)
+}
+
+//export battTrayIconTimerFired
+func battTrayIconTimerFired(h C.uintptr_t) {
+	defer func() {
+		if r := recover(); r != nil {
+			logrus.Errorf("panic in battTrayIconTimerFired: %v", r)
+		}
+	}()
+	handle := cgo.Handle(h)
+	if v := handle.Value(); v != nil {
+		if c, ok := v.(*menuController); ok {
+			c.refreshTrayIcon()
+		}
+	}
+}
+
+func SetMenubarBatteryIcon(item appkit.StatusItem, style string, percent int, charging, paused bool) {
+	cstyle := C.CString(style)
+	defer C.free(unsafe.Pointer(cstyle))
+	C.batt_setMenubarBatteryIcon(C.uintptr_t(uintptr(item.Ptr())), cstyle, C.int(percent), C.bool(charging), C.bool(paused))
+}
+
+func AttachTrayIconTimer(h cgo.Handle, intervalSeconds float64) unsafe.Pointer {
+	return C.batt_attachTrayIconTimer(C.uintptr_t(h), C.double(intervalSeconds))
+}
+
+func ReleaseTrayIconTimer(ptr unsafe.Pointer) {
+	C.batt_releaseTrayIconTimer(ptr)
 }
 
 // RegisterLoginItem registers the application to start at login using SMAppService

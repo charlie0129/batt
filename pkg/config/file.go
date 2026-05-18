@@ -21,14 +21,20 @@ const (
 	ctrlMagSafeModeEnabledStr   = "enabled"
 	ctrlMagSafeModeDisabledStr  = "disabled"
 	ctrlMagSafeModeAlwaysOffStr = "always-off"
+	trayIconStyleBatteryStr     = "battery"
+	trayIconStylePercentageStr  = "percentage"
 )
 
 type ControlMagSafeMode string
+type TrayIconStyle string
 
 const (
 	ControlMagSafeModeEnabled   ControlMagSafeMode = ctrlMagSafeModeEnabledStr
 	ControlMagSafeModeDisabled  ControlMagSafeMode = ctrlMagSafeModeDisabledStr
 	ControlMagSafeModeAlwaysOff ControlMagSafeMode = ctrlMagSafeModeAlwaysOffStr
+
+	TrayIconStyleBattery    TrayIconStyle = trayIconStyleBatteryStr
+	TrayIconStylePercentage TrayIconStyle = trayIconStylePercentageStr
 )
 
 var (
@@ -44,6 +50,7 @@ var (
 		CalibrationHoldDurationMinutes:         ptr.To(120),
 		TemperatureMonitoringEnabled:           ptr.To(false),
 		TemperatureProtectionThresholdCelsius:  ptr.To(40),
+		TrayIconStyle:                          ptr.To(TrayIconStylePercentage),
 
 		// There are Macs without MagSafe LED. We only do checks when the user
 		// explicitly enables this feature. In the future, we might add a check
@@ -116,6 +123,36 @@ func (c *ControlMagSafeMode) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func ParseTrayIconStyle(s string) (TrayIconStyle, bool) {
+	switch s {
+	case trayIconStyleBatteryStr:
+		return TrayIconStyleBattery, true
+	case trayIconStylePercentageStr:
+		return TrayIconStylePercentage, true
+	default:
+		return TrayIconStylePercentage, false
+	}
+}
+
+func (s TrayIconStyle) IsValid() bool {
+	_, ok := ParseTrayIconStyle(string(s))
+	return ok
+}
+
+func (s *TrayIconStyle) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	style, ok := ParseTrayIconStyle(raw)
+	if !ok {
+		logrus.Warnf("invalid TrayIconStyle %q, falling back to %q", raw, TrayIconStylePercentage)
+	}
+	*s = style
+	return nil
+}
+
 type RawFileConfig struct {
 	Limit                   *int                `json:"limit,omitempty"`
 	PreventIdleSleep        *bool               `json:"preventIdleSleep,omitempty"`
@@ -125,11 +162,12 @@ type RawFileConfig struct {
 	LowerLimitDelta         *int                `json:"lowerLimitDelta,omitempty"`
 	ControlMagSafeLED       *ControlMagSafeMode `json:"controlMagSafeLED,omitempty"`
 
-	CalibrationDischargeThreshold          *int    `json:"calibrationDischargeThreshold,omitempty"`
-	CalibrationHoldDurationMinutes         *int    `json:"calibrationHoldDurationMinutes,omitempty"`
-	TemperatureMonitoringEnabled           *bool   `json:"temperatureMonitoringEnabled,omitempty"`
-	TemperatureProtectionThresholdCelsius  *int    `json:"temperatureProtectionThresholdCelsius,omitempty"`
-	Cron                                   *string `json:"cron,omitempty"`
+	CalibrationDischargeThreshold         *int           `json:"calibrationDischargeThreshold,omitempty"`
+	CalibrationHoldDurationMinutes        *int           `json:"calibrationHoldDurationMinutes,omitempty"`
+	TemperatureMonitoringEnabled          *bool          `json:"temperatureMonitoringEnabled,omitempty"`
+	TemperatureProtectionThresholdCelsius *int           `json:"temperatureProtectionThresholdCelsius,omitempty"`
+	TrayIconStyle                         *TrayIconStyle `json:"trayIconStyle,omitempty"`
+	Cron                                  *string        `json:"cron,omitempty"`
 }
 
 func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
@@ -149,6 +187,7 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 		CalibrationHoldDurationMinutes:         ptr.To(c.CalibrationHoldDurationMinutes()),
 		TemperatureMonitoringEnabled:           ptr.To(c.TemperatureMonitoringEnabled()),
 		TemperatureProtectionThresholdCelsius:  ptr.To(c.TemperatureProtectionThresholdCelsius()),
+		TrayIconStyle:                          ptr.To(c.TrayIconStyle()),
 		Cron:                                   ptr.To(c.Cron()),
 	}
 
@@ -366,6 +405,20 @@ func (f *File) TemperatureProtectionThresholdCelsius() int {
 	return val
 }
 
+func (f *File) TrayIconStyle() TrayIconStyle {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.TrayIconStyle == nil || !f.c.TrayIconStyle.IsValid() {
+		return *defaultFileConfig.TrayIconStyle
+	}
+	return *f.c.TrayIconStyle
+}
+
 func (f *File) TemperatureReferences() temperature.References {
 	if f.c == nil {
 		panic("config is nil")
@@ -530,6 +583,21 @@ func (f *File) SetTemperatureProtectionThresholdCelsius(i int) {
 	defer f.mu.Unlock()
 
 	f.c.TemperatureProtectionThresholdCelsius = &i
+}
+
+func (f *File) SetTrayIconStyle(style TrayIconStyle) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	if !style.IsValid() {
+		style = TrayIconStylePercentage
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.TrayIconStyle = ptr.To(style)
 }
 
 func (f *File) SetTemperatureReference(s temperature.Scenario, value float64) {
@@ -733,5 +801,6 @@ func (f *File) LogrusFields() logrus.Fields {
 		"controlMagsafeLed":       f.ControlMagSafeLED(),
 		"temperatureMonitoring":   f.TemperatureMonitoringEnabled(),
 		"temperatureThreshold":    f.TemperatureProtectionThresholdCelsius(),
+		"trayIconStyle":           f.TrayIconStyle(),
 	}
 }
