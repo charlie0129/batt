@@ -35,7 +35,7 @@ type menuController struct {
 	lastCharge                     int
 	lastCharging                   bool
 	lastPaused                     bool
-	lastChargeLimitReached         bool
+	lastThermalPaused              bool
 	hasBatteryStatus               bool
 
 	// Power Flow
@@ -230,7 +230,7 @@ func (c *menuController) refreshOnOpen() {
 	if !isCharging && isPluggedIn && c.upperLimit < 100 && currentCharge < conf.LowerLimit() {
 		c.stateItem.SetTitle("State: Will Charge Soon")
 	}
-	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, c.lastPaused)
+	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, c.lastPaused, c.lastThermalPaused)
 
 	magSafeMode := conf.ControlMagSafeLED()
 	switch magSafeMode {
@@ -272,9 +272,6 @@ func (c *menuController) updateTrayIconStyleItems() {
 func (c *menuController) applyTrayConfig(conf *config.File) {
 	c.trayIconStyle = conf.TrayIconStyle()
 	c.upperLimit = conf.UpperLimit()
-	if c.hasBatteryStatus {
-		c.lastChargeLimitReached = chargeLimitReached(c.lastCharge, c.upperLimit)
-	}
 	c.updateTrayIconRefreshInterval(conf.TrayIconRefreshIntervalSeconds())
 	c.updateTrayIconStyleItems()
 }
@@ -318,10 +315,10 @@ func (c *menuController) refreshTrayIcon() {
 		logrus.WithError(err).Debug("Failed to get config for tray icon")
 	}
 
-	paused := c.lastPaused
+	thermalPaused := c.lastThermalPaused
 	if status, err := c.api.GetTemperatureStatus(); err == nil {
-		paused = status.ProtectionActive
-		c.lastPaused = paused
+		thermalPaused = status.ProtectionActive
+		c.lastThermalPaused = thermalPaused
 		c.applyMenubarImage()
 	} else {
 		logrus.WithError(err).Debug("Failed to get temperature status for tray icon")
@@ -335,14 +332,14 @@ func (c *menuController) refreshTrayIcon() {
 	batteryInfo, err := c.api.GetBatteryInfo()
 	if err != nil {
 		logrus.WithError(err).Debug("Failed to get battery info for tray icon")
-		c.setTrayBatteryStatus(currentCharge, false, c.lastPaused)
+		c.setTrayBatteryStatus(currentCharge, false, c.lastPaused, c.lastThermalPaused)
 		return
 	}
 
-	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, paused)
+	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, c.lastPaused, thermalPaused)
 }
 
-func (c *menuController) setTrayBatteryStatus(charge int, charging, paused bool) {
+func (c *menuController) setTrayBatteryStatus(charge int, charging, paused, thermalPaused bool) {
 	if charge < 0 {
 		charge = 0
 	}
@@ -353,7 +350,7 @@ func (c *menuController) setTrayBatteryStatus(charge int, charging, paused bool)
 	c.lastCharge = charge
 	c.lastCharging = charging
 	c.lastPaused = paused
-	c.lastChargeLimitReached = chargeLimitReached(charge, c.upperLimit)
+	c.lastThermalPaused = thermalPaused
 	c.hasBatteryStatus = true
 	c.applyMenubarImage()
 }
@@ -372,11 +369,7 @@ func (c *menuController) applyMenubarImage() {
 		setMenubarImage(c.menubarIcon, true, true, false)
 		return
 	}
-	SetMenubarBatteryIcon(c.menubarIcon, string(style), c.lastCharge, c.lastCharging, c.lastPaused, c.lastChargeLimitReached)
-}
-
-func chargeLimitReached(charge, upperLimit int) bool {
-	return upperLimit > 0 && upperLimit < 100 && charge >= upperLimit
+	SetMenubarBatteryIcon(c.menubarIcon, string(style), c.lastCharge, c.lastCharging, c.lastPaused, c.lastThermalPaused)
 }
 
 // updateTelemetryOnce fetches both power and calibration in a single call and updates the UI.
@@ -475,7 +468,7 @@ func (c *menuController) updateTemperatureItems(status *temperature.Status) {
 	setCheckboxItem(c.temperatureMonitoringItem, status.MonitoringEnabled)
 	SetTemperatureSliderValue(c.temperatureProtectionSliderPtr, status.ProtectionThresholdCelsius)
 	SetTemperatureSliderEnabled(c.temperatureProtectionSliderPtr, status.MonitoringEnabled)
-	c.lastPaused = status.ProtectionActive
+	c.lastThermalPaused = status.ProtectionActive
 	c.applyMenubarImage()
 
 	current := "Current: No temperature data"
