@@ -53,7 +53,7 @@ func TestFileTrayIconStyle(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "batt.json")
 	if err := os.WriteFile(path, []byte(`{
-  "trayIconStyle": "battery"
+  "trayIconStyle": "fixed"
 }
 `), 0644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -63,8 +63,8 @@ func TestFileTrayIconStyle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFile returned error: %v", err)
 	}
-	if got := cfg.TrayIconStyle(); got != TrayIconStyleBattery {
-		t.Fatalf("tray icon style = %s, want %s", got, TrayIconStyleBattery)
+	if got := cfg.TrayIconStyle(); got != TrayIconStyleFixed {
+		t.Fatalf("tray icon style = %s, want %s", got, TrayIconStyleFixed)
 	}
 
 	cfg.SetTrayIconStyle(TrayIconStylePercentage)

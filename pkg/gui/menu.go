@@ -56,6 +56,7 @@ type menuController struct {
 	controlMagSafeDisableItem   appkit.MenuItem
 	controlMagSafeAlwaysOffItem appkit.MenuItem
 	trayIconStyleSubMenuItem    appkit.MenuItem
+	trayIconFixedItem           appkit.MenuItem
 	trayIconBatteryItem         appkit.MenuItem
 	trayIconPercentageItem      appkit.MenuItem
 
@@ -258,6 +259,7 @@ func (c *menuController) refreshOnOpen() {
 }
 
 func (c *menuController) updateTrayIconStyleItems() {
+	setCheckboxItem(c.trayIconFixedItem, c.trayIconStyle == config.TrayIconStyleFixed)
 	setCheckboxItem(c.trayIconBatteryItem, c.trayIconStyle == config.TrayIconStyleBattery)
 	setCheckboxItem(c.trayIconPercentageItem, c.trayIconStyle == config.TrayIconStylePercentage)
 }
@@ -281,6 +283,15 @@ func (c *menuController) refreshTrayIcon() {
 		return
 	}
 
+	paused := c.lastPaused
+	if status, err := c.api.GetTemperatureStatus(); err == nil {
+		paused = status.ProtectionActive
+		c.lastPaused = paused
+		c.applyMenubarImage()
+	} else {
+		logrus.WithError(err).Debug("Failed to get temperature status for tray icon")
+	}
+
 	currentCharge, err := c.api.GetCurrentCharge()
 	if err != nil {
 		logrus.WithError(err).Debug("Failed to get current charge for tray icon")
@@ -291,13 +302,6 @@ func (c *menuController) refreshTrayIcon() {
 		logrus.WithError(err).Debug("Failed to get battery info for tray icon")
 		c.setTrayBatteryStatus(currentCharge, false, c.lastPaused)
 		return
-	}
-
-	paused := c.lastPaused
-	if status, err := c.api.GetTemperatureStatus(); err == nil {
-		paused = status.ProtectionActive
-	} else {
-		logrus.WithError(err).Debug("Failed to get temperature status for tray icon")
 	}
 
 	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, paused)
@@ -327,6 +331,10 @@ func (c *menuController) applyMenubarImage() {
 	style := c.trayIconStyle
 	if !style.IsValid() {
 		style = config.TrayIconStylePercentage
+	}
+	if style == config.TrayIconStyleFixed {
+		setMenubarImage(c.menubarIcon, true, true, false)
+		return
 	}
 	SetMenubarBatteryIcon(c.menubarIcon, string(style), c.lastCharge, c.lastCharging, c.lastPaused)
 }

@@ -21,6 +21,7 @@ const (
 	ctrlMagSafeModeEnabledStr   = "enabled"
 	ctrlMagSafeModeDisabledStr  = "disabled"
 	ctrlMagSafeModeAlwaysOffStr = "always-off"
+	trayIconStyleFixedStr       = "fixed"
 	trayIconStyleBatteryStr     = "battery"
 	trayIconStylePercentageStr  = "percentage"
 )
@@ -33,6 +34,7 @@ const (
 	ControlMagSafeModeDisabled  ControlMagSafeMode = ctrlMagSafeModeDisabledStr
 	ControlMagSafeModeAlwaysOff ControlMagSafeMode = ctrlMagSafeModeAlwaysOffStr
 
+	TrayIconStyleFixed      TrayIconStyle = trayIconStyleFixedStr
 	TrayIconStyleBattery    TrayIconStyle = trayIconStyleBatteryStr
 	TrayIconStylePercentage TrayIconStyle = trayIconStylePercentageStr
 )
@@ -125,6 +127,8 @@ func (c *ControlMagSafeMode) UnmarshalJSON(data []byte) error {
 
 func ParseTrayIconStyle(s string) (TrayIconStyle, bool) {
 	switch s {
+	case trayIconStyleFixedStr:
+		return TrayIconStyleFixed, true
 	case trayIconStyleBatteryStr:
 		return TrayIconStyleBattery, true
 	case trayIconStylePercentageStr:

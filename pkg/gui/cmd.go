@@ -187,6 +187,36 @@ func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menu
 	currentLimitItem.SetEnabled(false)
 	menu.AddItem(currentLimitItem)
 
+	trayIconStyleMenu := appkit.NewMenuWithTitle("Tray Icon Style")
+	trayIconStyleSubMenuItem := appkit.NewSubMenuItem(trayIconStyleMenu)
+	trayIconStyleSubMenuItem.SetTitle("Tray Icon Style")
+	trayIconStyleSubMenuItem.SetToolTip(`Choose how much battery information the menubar icon shows.`)
+	menu.AddItem(trayIconStyleSubMenuItem)
+
+	trayIconFixedItem := appkit.NewMenuItemWithAction("Fixed Icon", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStyleFixed)
+		}
+	})
+	trayIconFixedItem.SetToolTip(`Show the original fixed batt menubar icon.`)
+	trayIconStyleMenu.AddItem(trayIconFixedItem)
+
+	trayIconBatteryItem := appkit.NewMenuItemWithAction("Battery Fill", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStyleBattery)
+		}
+	})
+	trayIconBatteryItem.SetToolTip(`Show a battery outline with a fill area that follows the current charge percentage.`)
+	trayIconStyleMenu.AddItem(trayIconBatteryItem)
+
+	trayIconPercentageItem := appkit.NewMenuItemWithAction("Percentage Fill", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStylePercentage)
+		}
+	})
+	trayIconPercentageItem.SetToolTip(`Show the charge percentage inside a rounded icon with a fill area that follows the current charge percentage.`)
+	trayIconStyleMenu.AddItem(trayIconPercentageItem)
+
 	// ==================== QUICK LIMITS ====================
 	menu.AddItem(appkit.MenuItem_SeparatorItem())
 
@@ -281,28 +311,6 @@ Note that you must have a MagSafe LED on your MacBook to use this feature.`)
 - Off: Woke from sleep, charging is off and batt is awaiting control.`)
 	controlMagSafeDisableItem.SetToolTip(`Disable MagSafe LED control. The LED will stay in its default state (mostly orange).`)
 	controlMagSafeAlwaysOffItem.SetToolTip(`Force the MagSafe LED to stay off regardless of charging state.`)
-
-	trayIconStyleMenu := appkit.NewMenuWithTitle("Tray Icon Style")
-	trayIconStyleSubMenuItem := appkit.NewSubMenuItem(trayIconStyleMenu)
-	trayIconStyleSubMenuItem.SetTitle("Tray Icon Style")
-	trayIconStyleSubMenuItem.SetToolTip(`Choose how much battery information the menubar icon shows.`)
-	advancedMenu.AddItem(trayIconStyleSubMenuItem)
-
-	trayIconBatteryItem := appkit.NewMenuItemWithAction("Battery Fill", "", func(sender objc.Object) {
-		if ctrl != nil {
-			ctrl.setTrayIconStyle(config.TrayIconStyleBattery)
-		}
-	})
-	trayIconBatteryItem.SetToolTip(`Show a battery outline with a fill area that follows the current charge percentage.`)
-	trayIconStyleMenu.AddItem(trayIconBatteryItem)
-
-	trayIconPercentageItem := appkit.NewMenuItemWithAction("Percentage Fill", "", func(sender objc.Object) {
-		if ctrl != nil {
-			ctrl.setTrayIconStyle(config.TrayIconStylePercentage)
-		}
-	})
-	trayIconPercentageItem.SetToolTip(`Show the charge percentage inside a rounded icon with a fill area that follows the current charge percentage.`)
-	trayIconStyleMenu.AddItem(trayIconPercentageItem)
 
 	preventIdleSleepItem := checkBoxItem("Prevent Idle Sleep when Charging", "", func(checked bool) {
 		// Perform action based on new state
@@ -571,11 +579,12 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		controlMagSafeDisableItem:   controlMagSafeDisableItem,
 		controlMagSafeAlwaysOffItem: controlMagSafeAlwaysOffItem,
 		trayIconStyleSubMenuItem:    trayIconStyleSubMenuItem,
+		trayIconFixedItem:           trayIconFixedItem,
 		trayIconBatteryItem:         trayIconBatteryItem,
 		trayIconPercentageItem:      trayIconPercentageItem,
-		preventIdleSleepItem:        preventIdleSleepItem,
-		disableChargingPreSleepItem: disableChargingPreSleepItem,
-		preventSystemSleepItem:      preventSystemSleepItem,
+		preventIdleSleepItem:             preventIdleSleepItem,
+		disableChargingPreSleepItem:      disableChargingPreSleepItem,
+		preventSystemSleepItem:           preventSystemSleepItem,
 		forceDischargeItem:               forceDischargeItem,
 		temperatureSubMenuItem:           temperatureSub,
 		temperatureMonitoringItem:        temperatureMonitoringItem,
@@ -603,7 +612,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 	h := cgo.NewHandle(ctrl)
 	SetTemperatureSliderHandle(temperatureSliderPtr, h)
 	observerPtr := AttachPowerFlowObserver(menu, h)
-	trayIconTimerPtr := AttachTrayIconTimer(h, 60.0)
+	trayIconTimerPtr := AttachTrayIconTimer(h, 5.0)
 
 	cleanupFunc := func() {
 		logrus.Info("Cleaning up resources")
