@@ -19,6 +19,7 @@ type Config interface {
 	TemperatureMonitoringEnabled() bool
 	TemperatureProtectionThresholdCelsius() int
 	TrayIconStyle() TrayIconStyle
+	TrayIconRefreshIntervalSeconds() int
 	TemperatureReferences() temperature.References
 	Cron() string
 

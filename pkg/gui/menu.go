@@ -25,14 +25,18 @@ type menuController struct {
 	api         *client.Client
 	menubarIcon appkit.StatusItem
 
-	daemonInstalled       bool
-	capable               bool
-	needUpgrade           bool
-	trayIconStyle         config.TrayIconStyle
-	lastCharge            int
-	lastCharging          bool
-	lastPaused            bool
-	hasBatteryStatus      bool
+	daemonInstalled                bool
+	capable                        bool
+	needUpgrade                    bool
+	trayIconStyle                  config.TrayIconStyle
+	trayIconRefreshIntervalSeconds int
+	trayIconTimerPtr               unsafe.Pointer
+	upperLimit                     int
+	lastCharge                     int
+	lastCharging                   bool
+	lastPaused                     bool
+	lastChargeLimitReached         bool
+	hasBatteryStatus               bool
 
 	// Power Flow
 	powerFlowSubMenuItem appkit.MenuItem
@@ -201,14 +205,13 @@ func (c *menuController) refreshOnOpen() {
 
 	conf := config.NewFileFromConfig(rawConfig, "")
 	logrus.WithFields(conf.LogrusFields()).Info("Got config")
-	c.trayIconStyle = conf.TrayIconStyle()
-	c.updateTrayIconStyleItems()
+	c.applyTrayConfig(conf)
 	// Cache calibration params for formatting
 	c.calThreshold = conf.CalibrationDischargeThreshold()
 	c.calHoldMinutes = conf.CalibrationHoldDurationMinutes()
-	c.currentLimitItem.SetTitle(fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
+	c.currentLimitItem.SetTitle(fmt.Sprintf("Current Limit: %d%%", c.upperLimit))
 	for limit, item := range c.quickLimitsItems {
-		setCheckboxItem(item, limit == conf.UpperLimit())
+		setCheckboxItem(item, limit == c.upperLimit)
 	}
 
 	state := "Not Charging"
@@ -223,7 +226,7 @@ func (c *menuController) refreshOnOpen() {
 		state = "Full"
 	}
 	c.stateItem.SetTitle("State: " + state)
-	if !isCharging && isPluggedIn && conf.UpperLimit() < 100 && currentCharge < conf.LowerLimit() {
+	if !isCharging && isPluggedIn && c.upperLimit < 100 && currentCharge < conf.LowerLimit() {
 		c.stateItem.SetTitle("State: Will Charge Soon")
 	}
 	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, c.lastPaused)
@@ -264,6 +267,30 @@ func (c *menuController) updateTrayIconStyleItems() {
 	setCheckboxItem(c.trayIconPercentageItem, c.trayIconStyle == config.TrayIconStylePercentage)
 }
 
+func (c *menuController) applyTrayConfig(conf *config.File) {
+	c.trayIconStyle = conf.TrayIconStyle()
+	c.upperLimit = conf.UpperLimit()
+	if c.hasBatteryStatus {
+		c.lastChargeLimitReached = chargeLimitReached(c.lastCharge, c.upperLimit)
+	}
+	c.updateTrayIconRefreshInterval(conf.TrayIconRefreshIntervalSeconds())
+	c.updateTrayIconStyleItems()
+}
+
+func (c *menuController) updateTrayIconRefreshInterval(seconds int) {
+	if seconds <= 0 {
+		seconds = config.DefaultTrayIconRefreshIntervalSeconds
+	}
+	if c.trayIconRefreshIntervalSeconds == seconds {
+		return
+	}
+
+	c.trayIconRefreshIntervalSeconds = seconds
+	if c.trayIconTimerPtr != nil {
+		SetTrayIconTimerInterval(c.trayIconTimerPtr, float64(seconds))
+	}
+}
+
 func (c *menuController) setTrayIconStyle(style config.TrayIconStyle) {
 	if _, err := c.api.SetTrayIconStyle(style); err != nil {
 		logrus.WithError(err).Error("Failed to set tray icon style")
@@ -281,6 +308,12 @@ func (c *menuController) refreshTrayIcon() {
 	if !c.daemonInstalled || !c.capable || c.needUpgrade {
 		c.applyMenubarImage()
 		return
+	}
+
+	if rawConfig, err := c.api.GetConfig(); err == nil {
+		c.applyTrayConfig(config.NewFileFromConfig(rawConfig, ""))
+	} else {
+		logrus.WithError(err).Debug("Failed to get config for tray icon")
 	}
 
 	paused := c.lastPaused
@@ -318,6 +351,7 @@ func (c *menuController) setTrayBatteryStatus(charge int, charging, paused bool)
 	c.lastCharge = charge
 	c.lastCharging = charging
 	c.lastPaused = paused
+	c.lastChargeLimitReached = chargeLimitReached(charge, c.upperLimit)
 	c.hasBatteryStatus = true
 	c.applyMenubarImage()
 }
@@ -336,7 +370,11 @@ func (c *menuController) applyMenubarImage() {
 		setMenubarImage(c.menubarIcon, true, true, false)
 		return
 	}
-	SetMenubarBatteryIcon(c.menubarIcon, string(style), c.lastCharge, c.lastCharging, c.lastPaused)
+	SetMenubarBatteryIcon(c.menubarIcon, string(style), c.lastCharge, c.lastCharging, c.lastPaused, c.lastChargeLimitReached)
+}
+
+func chargeLimitReached(charge, upperLimit int) bool {
+	return upperLimit > 0 && upperLimit < 100 && charge >= upperLimit
 }
 
 // updateTelemetryOnce fetches both power and calibration in a single call and updates the UI.

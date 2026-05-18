@@ -40,6 +40,7 @@ extern void battTemperatureThresholdChanged(uintptr_t handle, int value);
 @property(nonatomic, assign) uintptr_t handle;
 @property(nonatomic, strong) NSTimer *timer;
 - (instancetype)initWithHandle:(uintptr_t)handle;
+- (void)setInterval:(NSTimeInterval)intervalSeconds;
 - (void)timerTick:(NSTimer *)timer;
 @end
 
@@ -352,7 +353,39 @@ static NSImage *batt_newPercentageIcon(int percent, bool charging, bool paused) 
     return image;
 }
 
-void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int percent, bool charging, bool paused) {
+static NSImage *batt_newChargeLimitIcon(void) {
+    NSSize size = NSMakeSize(34.0, 20.0);
+    NSImage *image = [[NSImage alloc] initWithSize:size];
+    [image setTemplate:NO];
+    [image setAccessibilityDescription:@"batt charge limit reached icon"];
+
+    [image lockFocus];
+    NSRect body = NSMakeRect(1.0, 1.0, 32.0, 18.0);
+    NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:6.5 yRadius:6.5];
+    [[NSColor whiteColor] setFill];
+    [bodyPath fill];
+    [[NSColor colorWithCalibratedWhite:0.78 alpha:1.0] setStroke];
+    [bodyPath setLineWidth:1.0];
+    [bodyPath stroke];
+
+    NSColor *outletColor = batt_darkTextColor();
+    [outletColor setFill];
+    CGFloat slotRadius = 1.15;
+    NSRect leftSlot = NSMakeRect(11.2, 7.7, 2.3, 6.6);
+    NSRect rightSlot = NSMakeRect(20.5, 7.7, 2.3, 6.6);
+    NSBezierPath *leftPath = [NSBezierPath bezierPathWithRoundedRect:leftSlot xRadius:slotRadius yRadius:slotRadius];
+    NSBezierPath *rightPath = [NSBezierPath bezierPathWithRoundedRect:rightSlot xRadius:slotRadius yRadius:slotRadius];
+    [leftPath fill];
+    [rightPath fill];
+
+    NSBezierPath *ground = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(15.3, 4.6, 3.4, 3.4)];
+    [ground fill];
+
+    [image unlockFocus];
+    return image;
+}
+
+void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int percent, bool charging, bool paused, bool chargeLimitReached) {
     NSStatusItem *item = (NSStatusItem *)statusItemPtr;
     if (!item) return;
     NSStatusBarButton *button = [item button];
@@ -360,7 +393,9 @@ void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int 
 
     NSString *styleString = style ? [NSString stringWithUTF8String:style] : @"";
     NSImage *image = nil;
-    if ([styleString isEqualToString:@"battery"]) {
+    if (chargeLimitReached && !paused) {
+        image = batt_newChargeLimitIcon();
+    } else if ([styleString isEqualToString:@"battery"]) {
         image = batt_newBatteryOutlineIcon(percent, charging, paused);
     } else {
         image = batt_newPercentageIcon(percent, charging, paused);
@@ -383,6 +418,21 @@ void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int 
     }
     return self;
 }
+- (void)setInterval:(NSTimeInterval)intervalSeconds {
+    if (intervalSeconds <= 0.0 || isnan(intervalSeconds) || isinf(intervalSeconds)) {
+        intervalSeconds = 60.0;
+    }
+    if (self.timer) {
+        [self.timer invalidate];
+        self.timer = nil;
+    }
+    self.timer = [NSTimer timerWithTimeInterval:intervalSeconds
+                                         target:self
+                                       selector:@selector(timerTick:)
+                                       userInfo:nil
+                                        repeats:YES];
+    [[NSRunLoop mainRunLoop] addTimer:self.timer forMode:NSRunLoopCommonModes];
+}
 - (void)timerTick:(NSTimer *)timer {
     battTrayIconTimerFired(_handle);
 }
@@ -390,13 +440,14 @@ void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int 
 
 void *batt_attachTrayIconTimer(uintptr_t handle, double intervalSeconds) {
     BattTrayIconTimerTarget *target = [[BattTrayIconTimerTarget alloc] initWithHandle:handle];
-    target.timer = [NSTimer timerWithTimeInterval:intervalSeconds
-                                           target:target
-                                         selector:@selector(timerTick:)
-                                         userInfo:nil
-                                          repeats:YES];
-    [[NSRunLoop mainRunLoop] addTimer:target.timer forMode:NSRunLoopCommonModes];
+    [target setInterval:intervalSeconds];
     return (void *)CFBridgingRetain(target);
+}
+
+void batt_setTrayIconTimerInterval(void *timerPtr, double intervalSeconds) {
+    if (timerPtr == NULL) return;
+    BattTrayIconTimerTarget *target = (BattTrayIconTimerTarget *)timerPtr;
+    [target setInterval:intervalSeconds];
 }
 
 void batt_releaseTrayIconTimer(void *timerPtr) {

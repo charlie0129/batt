@@ -224,6 +224,7 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Printf("  Temperature monitoring: %s\n", bool2Text(cfg.TemperatureMonitoringEnabled()))
 			cmd.Printf("  Temperature protection threshold: %s\n", bold("%d°C", cfg.TemperatureProtectionThresholdCelsius()))
 			cmd.Printf("  Tray icon style: %s\n", bold("%s", cfg.TrayIconStyle()))
+			cmd.Printf("  Tray icon refresh interval: %s\n", bold("%ds", cfg.TrayIconRefreshIntervalSeconds()))
 
 			mode := cfg.ControlMagSafeLED()
 			enabled := mode != config.ControlMagSafeModeDisabled

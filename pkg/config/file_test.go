@@ -53,7 +53,8 @@ func TestFileTrayIconStyle(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "batt.json")
 	if err := os.WriteFile(path, []byte(`{
-  "trayIconStyle": "fixed"
+  "trayIconStyle": "fixed",
+  "trayIconRefreshIntervalSeconds": 15
 }
 `), 0644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -65,6 +66,9 @@ func TestFileTrayIconStyle(t *testing.T) {
 	}
 	if got := cfg.TrayIconStyle(); got != TrayIconStyleFixed {
 		t.Fatalf("tray icon style = %s, want %s", got, TrayIconStyleFixed)
+	}
+	if got := cfg.TrayIconRefreshIntervalSeconds(); got != 15 {
+		t.Fatalf("tray icon refresh interval = %d, want 15", got)
 	}
 
 	cfg.SetTrayIconStyle(TrayIconStylePercentage)
@@ -78,6 +82,23 @@ func TestFileTrayIconStyle(t *testing.T) {
 	}
 	if got := string(content); !strings.Contains(got, `"trayIconStyle": "percentage"`) {
 		t.Fatalf("saved config missing tray icon style:\n%s", got)
+	}
+	if got := string(content); !strings.Contains(got, `"trayIconRefreshIntervalSeconds": 15`) {
+		t.Fatalf("saved config missing tray icon refresh interval:\n%s", got)
+	}
+}
+
+func TestFileTrayIconRefreshIntervalDefault(t *testing.T) {
+	cfg := NewFileFromConfig(&RawFileConfig{}, "")
+
+	if got := cfg.TrayIconRefreshIntervalSeconds(); got != DefaultTrayIconRefreshIntervalSeconds {
+		t.Fatalf("tray icon refresh interval default = %d, want %d", got, DefaultTrayIconRefreshIntervalSeconds)
+	}
+
+	zero := 0
+	cfg = NewFileFromConfig(&RawFileConfig{TrayIconRefreshIntervalSeconds: &zero}, "")
+	if got := cfg.TrayIconRefreshIntervalSeconds(); got != DefaultTrayIconRefreshIntervalSeconds {
+		t.Fatalf("tray icon refresh interval invalid fallback = %d, want %d", got, DefaultTrayIconRefreshIntervalSeconds)
 	}
 }
 

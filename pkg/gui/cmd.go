@@ -563,25 +563,27 @@ After uninstalling the batt daemon, no charging control will be present on your 
 
 	// ==================== CALLBACKS & OBSERVER ====================
 	ctrl = &menuController{
-		api:                         apiClient,
-		menubarIcon:                 menubarIcon,
-		trayIconStyle:               config.TrayIconStylePercentage,
-		powerFlowSubMenuItem:        powerFlowSubMenuItem,
-		installItem:                 installItem,
-		upgradeItem:                 upgradeItem,
-		stateItem:                   stateItem,
-		currentLimitItem:            currentLimitItem,
-		quickLimitsItem:             quickLimitsItem,
-		quickLimitsItems:            setQuickLimitsItems,
-		advancedSubMenuItem:         advancedSubMenuItem,
-		controlMagSafeLEDItem:       controlMagSafeLEDItem,
-		controlMagSafeEnableItem:    controlMagSafeEnableItem,
-		controlMagSafeDisableItem:   controlMagSafeDisableItem,
-		controlMagSafeAlwaysOffItem: controlMagSafeAlwaysOffItem,
-		trayIconStyleSubMenuItem:    trayIconStyleSubMenuItem,
-		trayIconFixedItem:           trayIconFixedItem,
-		trayIconBatteryItem:         trayIconBatteryItem,
-		trayIconPercentageItem:      trayIconPercentageItem,
+		api:                            apiClient,
+		menubarIcon:                    menubarIcon,
+		trayIconStyle:                  config.TrayIconStylePercentage,
+		trayIconRefreshIntervalSeconds: config.DefaultTrayIconRefreshIntervalSeconds,
+		upperLimit:                     100,
+		powerFlowSubMenuItem:           powerFlowSubMenuItem,
+		installItem:                    installItem,
+		upgradeItem:                    upgradeItem,
+		stateItem:                      stateItem,
+		currentLimitItem:               currentLimitItem,
+		quickLimitsItem:                quickLimitsItem,
+		quickLimitsItems:               setQuickLimitsItems,
+		advancedSubMenuItem:            advancedSubMenuItem,
+		controlMagSafeLEDItem:          controlMagSafeLEDItem,
+		controlMagSafeEnableItem:       controlMagSafeEnableItem,
+		controlMagSafeDisableItem:      controlMagSafeDisableItem,
+		controlMagSafeAlwaysOffItem:    controlMagSafeAlwaysOffItem,
+		trayIconStyleSubMenuItem:       trayIconStyleSubMenuItem,
+		trayIconFixedItem:              trayIconFixedItem,
+		trayIconBatteryItem:            trayIconBatteryItem,
+		trayIconPercentageItem:         trayIconPercentageItem,
 		preventIdleSleepItem:             preventIdleSleepItem,
 		disableChargingPreSleepItem:      disableChargingPreSleepItem,
 		preventSystemSleepItem:           preventSystemSleepItem,
@@ -612,7 +614,8 @@ After uninstalling the batt daemon, no charging control will be present on your 
 	h := cgo.NewHandle(ctrl)
 	SetTemperatureSliderHandle(temperatureSliderPtr, h)
 	observerPtr := AttachPowerFlowObserver(menu, h)
-	trayIconTimerPtr := AttachTrayIconTimer(h, 5.0)
+	trayIconTimerPtr := AttachTrayIconTimer(h, float64(ctrl.trayIconRefreshIntervalSeconds))
+	ctrl.trayIconTimerPtr = trayIconTimerPtr
 
 	cleanupFunc := func() {
 		logrus.Info("Cleaning up resources")
@@ -650,8 +653,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		}
 		conf := config.NewFileFromConfig(rawConfig, "")
 		logrus.WithFields(conf.LogrusFields()).Info("Got config")
-		ctrl.trayIconStyle = conf.TrayIconStyle()
-		ctrl.updateTrayIconStyleItems()
+		ctrl.applyTrayConfig(conf)
 		logrus.Info("Getting charging control capability")
 		capable, err := apiClient.GetChargingControlCapable()
 		if err != nil {

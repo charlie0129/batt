@@ -33,11 +33,14 @@ func (m *mockConf) CalibrationDischargeThreshold() int             { return 15 }
 func (m *mockConf) CalibrationHoldDurationMinutes() int            { return 1 }
 func (m *mockConf) TemperatureMonitoringEnabled() bool             { return false }
 func (m *mockConf) TemperatureProtectionThresholdCelsius() int      { return 40 }
+func (m *mockConf) TrayIconStyle() config.TrayIconStyle             { return config.TrayIconStylePercentage }
+func (m *mockConf) TrayIconRefreshIntervalSeconds() int             { return config.DefaultTrayIconRefreshIntervalSeconds }
 func (m *mockConf) TemperatureReferences() temperature.References   { return temperature.References{} }
 func (m *mockConf) SetCalibrationDischargeThreshold(int)           {}
 func (m *mockConf) SetCalibrationHoldDurationMinutes(int)          {}
 func (m *mockConf) SetTemperatureMonitoringEnabled(bool)           {}
 func (m *mockConf) SetTemperatureProtectionThresholdCelsius(int)    {}
+func (m *mockConf) SetTrayIconStyle(config.TrayIconStyle)           {}
 func (m *mockConf) SetTemperatureReference(temperature.Scenario, float64) {}
 func (m *mockConf) SetUpperLimit(i int)                            { m.upper = i }
 func (m *mockConf) SetLowerLimit(i int)                            { m.lower = i }

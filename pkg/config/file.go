@@ -30,6 +30,8 @@ type ControlMagSafeMode string
 type TrayIconStyle string
 
 const (
+	DefaultTrayIconRefreshIntervalSeconds = 60
+
 	ControlMagSafeModeEnabled   ControlMagSafeMode = ctrlMagSafeModeEnabledStr
 	ControlMagSafeModeDisabled  ControlMagSafeMode = ctrlMagSafeModeDisabledStr
 	ControlMagSafeModeAlwaysOff ControlMagSafeMode = ctrlMagSafeModeAlwaysOffStr
@@ -53,6 +55,7 @@ var (
 		TemperatureMonitoringEnabled:           ptr.To(false),
 		TemperatureProtectionThresholdCelsius:  ptr.To(40),
 		TrayIconStyle:                          ptr.To(TrayIconStylePercentage),
+		TrayIconRefreshIntervalSeconds:         ptr.To(DefaultTrayIconRefreshIntervalSeconds),
 
 		// There are Macs without MagSafe LED. We only do checks when the user
 		// explicitly enables this feature. In the future, we might add a check
@@ -171,6 +174,7 @@ type RawFileConfig struct {
 	TemperatureMonitoringEnabled          *bool          `json:"temperatureMonitoringEnabled,omitempty"`
 	TemperatureProtectionThresholdCelsius *int           `json:"temperatureProtectionThresholdCelsius,omitempty"`
 	TrayIconStyle                         *TrayIconStyle `json:"trayIconStyle,omitempty"`
+	TrayIconRefreshIntervalSeconds        *int           `json:"trayIconRefreshIntervalSeconds,omitempty"`
 	Cron                                  *string        `json:"cron,omitempty"`
 }
 
@@ -192,6 +196,7 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 		TemperatureMonitoringEnabled:           ptr.To(c.TemperatureMonitoringEnabled()),
 		TemperatureProtectionThresholdCelsius:  ptr.To(c.TemperatureProtectionThresholdCelsius()),
 		TrayIconStyle:                          ptr.To(c.TrayIconStyle()),
+		TrayIconRefreshIntervalSeconds:         ptr.To(c.TrayIconRefreshIntervalSeconds()),
 		Cron:                                   ptr.To(c.Cron()),
 	}
 
@@ -421,6 +426,24 @@ func (f *File) TrayIconStyle() TrayIconStyle {
 		return *defaultFileConfig.TrayIconStyle
 	}
 	return *f.c.TrayIconStyle
+}
+
+func (f *File) TrayIconRefreshIntervalSeconds() int {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.TrayIconRefreshIntervalSeconds == nil {
+		return DefaultTrayIconRefreshIntervalSeconds
+	}
+	seconds := *f.c.TrayIconRefreshIntervalSeconds
+	if seconds <= 0 {
+		return DefaultTrayIconRefreshIntervalSeconds
+	}
+	return seconds
 }
 
 func (f *File) TemperatureReferences() temperature.References {
@@ -806,5 +829,6 @@ func (f *File) LogrusFields() logrus.Fields {
 		"temperatureMonitoring":   f.TemperatureMonitoringEnabled(),
 		"temperatureThreshold":    f.TemperatureProtectionThresholdCelsius(),
 		"trayIconStyle":           f.TrayIconStyle(),
+		"trayIconRefreshIntervalSeconds": f.TrayIconRefreshIntervalSeconds(),
 	}
 }

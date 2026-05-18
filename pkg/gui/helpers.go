@@ -27,8 +27,9 @@ import (
 // void batt_setTemperatureSliderValue(void *itemPtr, int value);
 // void batt_setTemperatureSliderEnabled(void *itemPtr, bool enabled);
 // void batt_releaseObject(void *objPtr);
-// void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int percent, bool charging, bool paused);
+// void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int percent, bool charging, bool paused, bool chargeLimitReached);
 // void *batt_attachTrayIconTimer(uintptr_t handle, double intervalSeconds);
+// void batt_setTrayIconTimerInterval(void *timerPtr, double intervalSeconds);
 // void batt_releaseTrayIconTimer(void *timerPtr);
 // bool registerAppWithSMAppService(void);
 // bool unregisterAppWithSMAppService(void);
@@ -142,14 +143,18 @@ func battTrayIconTimerFired(h C.uintptr_t) {
 	}
 }
 
-func SetMenubarBatteryIcon(item appkit.StatusItem, style string, percent int, charging, paused bool) {
+func SetMenubarBatteryIcon(item appkit.StatusItem, style string, percent int, charging, paused, chargeLimitReached bool) {
 	cstyle := C.CString(style)
 	defer C.free(unsafe.Pointer(cstyle))
-	C.batt_setMenubarBatteryIcon(C.uintptr_t(uintptr(item.Ptr())), cstyle, C.int(percent), C.bool(charging), C.bool(paused))
+	C.batt_setMenubarBatteryIcon(C.uintptr_t(uintptr(item.Ptr())), cstyle, C.int(percent), C.bool(charging), C.bool(paused), C.bool(chargeLimitReached))
 }
 
 func AttachTrayIconTimer(h cgo.Handle, intervalSeconds float64) unsafe.Pointer {
 	return C.batt_attachTrayIconTimer(C.uintptr_t(h), C.double(intervalSeconds))
+}
+
+func SetTrayIconTimerInterval(ptr unsafe.Pointer, intervalSeconds float64) {
+	C.batt_setTrayIconTimerInterval(ptr, C.double(intervalSeconds))
 }
 
 func ReleaseTrayIconTimer(ptr unsafe.Pointer) {
