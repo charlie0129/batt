@@ -47,19 +47,19 @@ type menuController struct {
 	controlMagSafeDisableItem   appkit.MenuItem
 	controlMagSafeAlwaysOffItem appkit.MenuItem
 
-	preventIdleSleepItem        appkit.MenuItem
-	disableChargingPreSleepItem appkit.MenuItem
-	preventSystemSleepItem      appkit.MenuItem
-	forceDischargeItem          appkit.MenuItem
-	temperatureSubMenuItem         appkit.MenuItem
-	temperatureMonitoringItem      appkit.MenuItem
-	temperatureCurrentItem         appkit.MenuItem
-	temperatureProtectionItem      appkit.MenuItem
-	temperatureProtectionSliderPtr unsafe.Pointer
-	temperatureIdleNotChargingItem appkit.MenuItem
-	temperatureIdleChargingItem    appkit.MenuItem
-	temperatureActiveChargingItem  appkit.MenuItem
-	uninstallItem               appkit.MenuItem
+	preventIdleSleepItem             appkit.MenuItem
+	disableChargingPreSleepItem      appkit.MenuItem
+	preventSystemSleepItem           appkit.MenuItem
+	forceDischargeItem               appkit.MenuItem
+	temperatureSubMenuItem           appkit.MenuItem
+	temperatureMonitoringItem        appkit.MenuItem
+	temperatureCurrentItem           appkit.MenuItem
+	temperatureProtectionItem        appkit.MenuItem
+	temperatureProtectionSliderPtr   unsafe.Pointer
+	temperatureIdleNotChargingItem   appkit.MenuItem
+	temperatureIdleChargingItem      appkit.MenuItem
+	temperatureActiveChargingItem    appkit.MenuItem
+	uninstallItem                    appkit.MenuItem
 
 	// Auto Calibration
 	autoCalSubMenuItem appkit.MenuItem

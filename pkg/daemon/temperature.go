@@ -61,26 +61,34 @@ func temperatureScenario(userActive, charging bool) temperature.Scenario {
 	}
 }
 
-func updateTemperatureReference(now time.Time, scenario temperature.Scenario, tempC float64) {
+func updateTemperatureReference(now time.Time, scenario temperature.Scenario, tempC float64) (time.Time, bool) {
 	if scenario == "" {
-		return
+		return time.Time{}, false
 	}
+
+	temperatureMu.Lock()
 	if lastWrite, ok := lastTemperatureReferenceWriteAt[scenario]; ok && now.Sub(lastWrite) < temperatureReferenceWriteInterval {
-		return
+		temperatureMu.Unlock()
+		return lastWrite, true
 	}
+	temperatureMu.Unlock()
 
 	conf.SetTemperatureReference(scenario, tempC)
 	if err := conf.Save(); err != nil {
 		logrus.WithError(err).Warn("failed to save temperature reference")
-		return
+		return time.Time{}, false
 	}
 
+	temperatureMu.Lock()
 	lastTemperatureReferenceWriteAt[scenario] = now
+	temperatureMu.Unlock()
+	return now, true
 }
 
 func handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn bool) temperatureLoopResult {
 	temperatureMu.Lock()
-	defer temperatureMu.Unlock()
+	protectionActive := temperatureProtectionActive
+	temperatureMu.Unlock()
 
 	now := time.Now()
 	monitoringEnabled := conf.TemperatureMonitoringEnabled()
@@ -93,16 +101,18 @@ func handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn boo
 	status := temperature.Status{
 		MonitoringEnabled:          monitoringEnabled,
 		ProtectionThresholdCelsius: threshold,
-		ProtectionActive:           temperatureProtectionActive,
+		ProtectionActive:           protectionActive,
 		References:                 conf.TemperatureReferences(),
 		RecoveryThresholdCelsius:   recoveryThreshold,
 	}
 
 	if !monitoringEnabled {
+		temperatureMu.Lock()
 		wasProtected := temperatureProtectionActive
 		temperatureProtectionActive = false
 		status.ProtectionActive = false
 		lastTemperatureStatus = status
+		temperatureMu.Unlock()
 		if wasProtected {
 			return temperatureLoopResult{recovered: true}
 		}
@@ -112,8 +122,12 @@ func handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn boo
 	tempC, err := readBatteryTemperatureCelsius()
 	if err != nil {
 		status.TemperatureUnavailableReason = err.Error()
+		temperatureMu.Lock()
+		protectionActive = temperatureProtectionActive
+		status.ProtectionActive = protectionActive
 		lastTemperatureStatus = status
-		if temperatureProtectionActive {
+		temperatureMu.Unlock()
+		if protectionActive {
 			return temperatureLoopResult{protected: true}
 		}
 		return temperatureLoopResult{}
@@ -127,7 +141,7 @@ func handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn boo
 
 	charging := isChargingEnabled && isPluggedIn
 	scenario := temperatureScenario(userActive, charging)
-	updateTemperatureReference(now, scenario, tempC)
+	writeAt, wroteReference := updateTemperatureReference(now, scenario, tempC)
 
 	current := tempC
 	status.CurrentCelsius = &current
@@ -136,44 +150,51 @@ func handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn boo
 	status.Charging = charging
 	status.References = conf.TemperatureReferences()
 	status.LastUpdatedUnix = now.Unix()
-	if writeAt, ok := lastTemperatureReferenceWriteAt[scenario]; ok {
+	if wroteReference {
 		status.LastTemperatureReferenceWriteUnix = writeAt.Unix()
 	}
 
 	if tempC >= float64(threshold) {
-		if !temperatureProtectionActive {
+		if !protectionActive {
 			logrus.WithFields(logrus.Fields{
 				"temperature": tempC,
 				"threshold":   threshold,
 			}).Info("battery temperature above threshold, disabling charging")
 		}
+		temperatureMu.Lock()
 		temperatureProtectionActive = true
 		status.ProtectionActive = true
 		lastTemperatureStatus = status
+		temperatureMu.Unlock()
 		if isChargingEnabled {
 			if err := smcConn.DisableCharging(); err != nil {
 				logrus.WithError(err).Error("DisableCharging failed during temperature protection")
-				return temperatureLoopResult{}
+				return temperatureLoopResult{protected: true}
 			}
 		}
 		return temperatureLoopResult{protected: true}
 	}
 
-	if temperatureProtectionActive && tempC <= float64(recoveryThreshold) {
+	if protectionActive && tempC <= float64(recoveryThreshold) {
 		logrus.WithFields(logrus.Fields{
 			"temperature": tempC,
 			"threshold":   threshold,
 			"recovery":    recoveryThreshold,
 		}).Info("battery temperature recovered, releasing temperature protection")
+		temperatureMu.Lock()
 		temperatureProtectionActive = false
 		status.ProtectionActive = false
 		lastTemperatureStatus = status
+		temperatureMu.Unlock()
 		return temperatureLoopResult{recovered: true}
 	}
 
+	temperatureMu.Lock()
 	status.ProtectionActive = temperatureProtectionActive
 	lastTemperatureStatus = status
-	if temperatureProtectionActive {
+	protectionActive = temperatureProtectionActive
+	temperatureMu.Unlock()
+	if protectionActive {
 		return temperatureLoopResult{protected: true}
 	}
 	return temperatureLoopResult{}

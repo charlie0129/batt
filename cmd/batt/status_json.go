@@ -36,16 +36,16 @@ type statusBatteryJSON struct {
 }
 
 type statusConfigJSON struct {
-	Enabled                 bool                 `json:"enabled"`
-	UpperLimitPercent       int                  `json:"upperLimitPercent"`
-	LowerLimitPercent       int                  `json:"lowerLimitPercent"`
-	PreventIdleSleep        bool                 `json:"preventIdleSleep"`
-	DisableChargingPreSleep bool                 `json:"disableChargingPreSleep"`
-	PreventSystemSleep      bool                 `json:"preventSystemSleep"`
-	AllowNonRootAccess      bool                 `json:"allowNonRootAccess"`
-	ControlMagSafeLed       statusMagSafeLedJSON `json:"controlMagSafeLed"`
-	TemperatureMonitoring       bool             `json:"temperatureMonitoring"`
-	TemperatureThresholdCelsius int              `json:"temperatureThresholdCelsius"`
+	Enabled                     bool                 `json:"enabled"`
+	UpperLimitPercent           int                  `json:"upperLimitPercent"`
+	LowerLimitPercent           int                  `json:"lowerLimitPercent"`
+	PreventIdleSleep            bool                 `json:"preventIdleSleep"`
+	DisableChargingPreSleep     bool                 `json:"disableChargingPreSleep"`
+	PreventSystemSleep          bool                 `json:"preventSystemSleep"`
+	AllowNonRootAccess          bool                 `json:"allowNonRootAccess"`
+	ControlMagSafeLed           statusMagSafeLedJSON `json:"controlMagSafeLed"`
+	TemperatureMonitoring       bool                 `json:"temperatureMonitoring"`
+	TemperatureThresholdCelsius int                  `json:"temperatureThresholdCelsius"`
 }
 
 type statusMagSafeLedJSON struct {
@@ -113,16 +113,16 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 			VoltageVolts:         math.Round(data.batteryInfo.DesignVoltage*100) / 100,
 		},
 		Configuration: statusConfigJSON{
-			Enabled:                 enabled,
-			UpperLimitPercent:       upperLimit,
-			LowerLimitPercent:       lowerLimit,
-			PreventIdleSleep:        cfg.PreventIdleSleep(),
-			DisableChargingPreSleep: cfg.DisableChargingPreSleep(),
-			PreventSystemSleep:      cfg.PreventSystemSleep(),
-			AllowNonRootAccess:      cfg.AllowNonRootAccess(),
+			Enabled:                     enabled,
+			UpperLimitPercent:           upperLimit,
+			LowerLimitPercent:           lowerLimit,
+			PreventIdleSleep:            cfg.PreventIdleSleep(),
+			DisableChargingPreSleep:     cfg.DisableChargingPreSleep(),
+			PreventSystemSleep:          cfg.PreventSystemSleep(),
+			AllowNonRootAccess:          cfg.AllowNonRootAccess(),
 			TemperatureMonitoring:       cfg.TemperatureMonitoringEnabled(),
 			TemperatureThresholdCelsius: cfg.TemperatureProtectionThresholdCelsius(),
-			ControlMagSafeLed: statusMagSafeLedJSON{
+			ControlMagSafeLed:           statusMagSafeLedJSON{
 				Enabled: mode != config.ControlMagSafeModeDisabled,
 				Mode:    string(mode),
 			},
