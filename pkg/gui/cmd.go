@@ -201,6 +201,14 @@ func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menu
 	trayIconFixedItem.SetToolTip(`Show the original fixed batt menubar icon.`)
 	trayIconStyleMenu.AddItem(trayIconFixedItem)
 
+	trayIconFixedPercentItem := appkit.NewMenuItemWithAction("Fixed Icon + Percentage", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStyleFixedPercent)
+		}
+	})
+	trayIconFixedPercentItem.SetToolTip(`Show the original batt menubar icon with the current charge percentage centered inside it.`)
+	trayIconStyleMenu.AddItem(trayIconFixedPercentItem)
+
 	trayIconBatteryItem := appkit.NewMenuItemWithAction("Battery Fill", "", func(sender objc.Object) {
 		if ctrl != nil {
 			ctrl.setTrayIconStyle(config.TrayIconStyleBattery)
@@ -582,6 +590,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		controlMagSafeAlwaysOffItem:    controlMagSafeAlwaysOffItem,
 		trayIconStyleSubMenuItem:       trayIconStyleSubMenuItem,
 		trayIconFixedItem:              trayIconFixedItem,
+		trayIconFixedPercentItem:       trayIconFixedPercentItem,
 		trayIconBatteryItem:            trayIconBatteryItem,
 		trayIconPercentageItem:         trayIconPercentageItem,
 		preventIdleSleepItem:             preventIdleSleepItem,

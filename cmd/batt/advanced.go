@@ -160,6 +160,7 @@ func NewSetTrayIconStyleCommand() *cobra.Command {
 
 	cmd.AddCommand(
 		newStyleCommand(config.TrayIconStyleFixed, "Use the original fixed menubar icon"),
+		newStyleCommand(config.TrayIconStyleFixedPercent, "Use the original menubar icon with the current charge percentage"),
 		newStyleCommand(config.TrayIconStyleBattery, "Use the battery-outline icon with a dynamic fill area"),
 		newStyleCommand(config.TrayIconStylePercentage, "Use the percentage icon with a dynamic fill area"),
 		status,

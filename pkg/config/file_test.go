@@ -50,6 +50,10 @@ func TestFileLoadWithTemperatureReferenceComments(t *testing.T) {
 }
 
 func TestFileTrayIconStyle(t *testing.T) {
+	if got, ok := ParseTrayIconStyle("fixed-percentage"); !ok || got != TrayIconStyleFixedPercent {
+		t.Fatalf("ParseTrayIconStyle(fixed-percentage) = %s, %t; want %s, true", got, ok, TrayIconStyleFixedPercent)
+	}
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "batt.json")
 	if err := os.WriteFile(path, []byte(`{
@@ -85,6 +89,18 @@ func TestFileTrayIconStyle(t *testing.T) {
 	}
 	if got := string(content); !strings.Contains(got, `"trayIconRefreshIntervalSeconds": 15`) {
 		t.Fatalf("saved config missing tray icon refresh interval:\n%s", got)
+	}
+
+	cfg.SetTrayIconStyle(TrayIconStyleFixedPercent)
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	content, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if got := string(content); !strings.Contains(got, `"trayIconStyle": "fixed-percentage"`) {
+		t.Fatalf("saved config missing fixed percentage tray icon style:\n%s", got)
 	}
 }
 

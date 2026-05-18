@@ -264,6 +264,28 @@ static void batt_drawCenteredText(NSString *text, NSRect rect, NSColor *color, C
 #endif
 }
 
+static bool batt_isDarkAppearance(void) {
+    if (@available(macOS 10.14, *)) {
+        NSAppearance *appearance = [NSApp effectiveAppearance] ?: [NSAppearance currentAppearance];
+        NSString *match = [appearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+        return [match isEqualToString:NSAppearanceNameDarkAqua];
+    }
+    return false;
+}
+
+static void batt_drawTintedImage(NSImage *source, NSRect rect, NSColor *color) {
+    [NSGraphicsContext saveGraphicsState];
+    [source drawInRect:rect
+              fromRect:NSZeroRect
+             operation:NSCompositingOperationSourceOver
+              fraction:1.0
+        respectFlipped:YES
+                 hints:nil];
+    [color setFill];
+    NSRectFillUsingOperation(rect, NSCompositingOperationSourceIn);
+    [NSGraphicsContext restoreGraphicsState];
+}
+
 static NSImage *batt_newBatteryOutlineIcon(int percent, bool charging, bool paused) {
     percent = batt_clampPercent(percent);
     NSSize size = NSMakeSize(40.0, 20.0);
@@ -294,6 +316,52 @@ static NSImage *batt_newBatteryOutlineIcon(int percent, bool charging, bool paus
         batt_drawPauseInRect(NSMakeRect(14.0, 4.0, 11.0, 12.0), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
     } else if (charging) {
         batt_drawBoltInRect(NSMakeRect(13.5, 1.0, 13.5, 18.0), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
+    }
+
+    [image unlockFocus];
+    return image;
+}
+
+static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool paused) {
+    percent = batt_clampPercent(percent);
+    NSImage *symbol = nil;
+    if (@available(macOS 11.0, *)) {
+        symbol = [NSImage imageWithSystemSymbolName:@"minus.plus.batteryblock"
+                           accessibilityDescription:@"batt icon"];
+    }
+    if (!symbol) {
+        return batt_newBatteryOutlineIcon(percent, charging, paused);
+    }
+    if (@available(macOS 11.0, *)) {
+        NSImageSymbolConfiguration *symbolConfig = [NSImageSymbolConfiguration configurationWithPointSize:17.0
+                                                                                                  weight:NSFontWeightRegular];
+        NSImage *configuredSymbol = [symbol imageWithSymbolConfiguration:symbolConfig];
+        if (configuredSymbol) {
+            symbol = configuredSymbol;
+        }
+    }
+
+    NSSize size = NSMakeSize(46.0, 20.0);
+    NSImage *image = [[NSImage alloc] initWithSize:size];
+    [image setTemplate:NO];
+    [image setAccessibilityDescription:@"batt fixed percentage icon"];
+
+    [image lockFocus];
+    bool darkAppearance = batt_isDarkAppearance();
+    NSColor *symbolColor = darkAppearance ? [NSColor whiteColor] : batt_darkTextColor();
+    NSColor *textColor = darkAppearance ? batt_darkTextColor() : [NSColor whiteColor];
+    batt_drawTintedImage(symbol, NSMakeRect(1.0, 1.0, 44.0, 18.0), symbolColor);
+
+    NSString *text = [NSString stringWithFormat:@"%d", percent];
+    CGFloat fontSize = percent >= 100 ? 10.5 : 11.5;
+    NSRect textRect = (charging || paused) ? NSMakeRect(4.0, 3.0, 31.0, 14.0)
+                                           : NSMakeRect(5.0, 3.0, 36.0, 14.0);
+    batt_drawCenteredText(text, textRect, textColor, fontSize, NSFontWeightBold);
+
+    if (paused) {
+        batt_drawPauseInRect(NSMakeRect(35.0, 6.0, 6.5, 8.0), textColor, nil);
+    } else if (charging) {
+        batt_drawBoltInRect(NSMakeRect(35.0, 5.0, 7.0, 9.5), textColor, nil);
     }
 
     [image unlockFocus];
@@ -395,6 +463,8 @@ void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int 
     NSImage *image = nil;
     if (chargeLimitReached && !paused) {
         image = batt_newChargeLimitIcon();
+    } else if ([styleString isEqualToString:@"fixed-percentage"]) {
+        image = batt_newFixedPercentageIcon(percent, charging, paused);
     } else if ([styleString isEqualToString:@"battery"]) {
         image = batt_newBatteryOutlineIcon(percent, charging, paused);
     } else {

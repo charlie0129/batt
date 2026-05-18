@@ -61,6 +61,7 @@ type menuController struct {
 	controlMagSafeAlwaysOffItem appkit.MenuItem
 	trayIconStyleSubMenuItem    appkit.MenuItem
 	trayIconFixedItem           appkit.MenuItem
+	trayIconFixedPercentItem    appkit.MenuItem
 	trayIconBatteryItem         appkit.MenuItem
 	trayIconPercentageItem      appkit.MenuItem
 
@@ -263,6 +264,7 @@ func (c *menuController) refreshOnOpen() {
 
 func (c *menuController) updateTrayIconStyleItems() {
 	setCheckboxItem(c.trayIconFixedItem, c.trayIconStyle == config.TrayIconStyleFixed)
+	setCheckboxItem(c.trayIconFixedPercentItem, c.trayIconStyle == config.TrayIconStyleFixedPercent)
 	setCheckboxItem(c.trayIconBatteryItem, c.trayIconStyle == config.TrayIconStyleBattery)
 	setCheckboxItem(c.trayIconPercentageItem, c.trayIconStyle == config.TrayIconStylePercentage)
 }

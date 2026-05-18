@@ -213,7 +213,13 @@ func setTrayIconStyle(c *gin.Context) {
 
 	style, ok := config.ParseTrayIconStyle(raw)
 	if !ok {
-		err := fmt.Errorf("tray icon style must be one of: %s, %s, %s", config.TrayIconStyleFixed, config.TrayIconStyleBattery, config.TrayIconStylePercentage)
+		err := fmt.Errorf(
+			"tray icon style must be one of: %s, %s, %s, %s",
+			config.TrayIconStyleFixed,
+			config.TrayIconStyleFixedPercent,
+			config.TrayIconStyleBattery,
+			config.TrayIconStylePercentage,
+		)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return

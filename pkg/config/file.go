@@ -21,9 +21,10 @@ const (
 	ctrlMagSafeModeEnabledStr   = "enabled"
 	ctrlMagSafeModeDisabledStr  = "disabled"
 	ctrlMagSafeModeAlwaysOffStr = "always-off"
-	trayIconStyleFixedStr       = "fixed"
-	trayIconStyleBatteryStr     = "battery"
-	trayIconStylePercentageStr  = "percentage"
+	trayIconStyleFixedStr        = "fixed"
+	trayIconStyleFixedPercentStr = "fixed-percentage"
+	trayIconStyleBatteryStr      = "battery"
+	trayIconStylePercentageStr   = "percentage"
 )
 
 type ControlMagSafeMode string
@@ -36,9 +37,10 @@ const (
 	ControlMagSafeModeDisabled  ControlMagSafeMode = ctrlMagSafeModeDisabledStr
 	ControlMagSafeModeAlwaysOff ControlMagSafeMode = ctrlMagSafeModeAlwaysOffStr
 
-	TrayIconStyleFixed      TrayIconStyle = trayIconStyleFixedStr
-	TrayIconStyleBattery    TrayIconStyle = trayIconStyleBatteryStr
-	TrayIconStylePercentage TrayIconStyle = trayIconStylePercentageStr
+	TrayIconStyleFixed        TrayIconStyle = trayIconStyleFixedStr
+	TrayIconStyleFixedPercent TrayIconStyle = trayIconStyleFixedPercentStr
+	TrayIconStyleBattery      TrayIconStyle = trayIconStyleBatteryStr
+	TrayIconStylePercentage   TrayIconStyle = trayIconStylePercentageStr
 )
 
 var (
@@ -132,6 +134,8 @@ func ParseTrayIconStyle(s string) (TrayIconStyle, bool) {
 	switch s {
 	case trayIconStyleFixedStr:
 		return TrayIconStyleFixed, true
+	case trayIconStyleFixedPercentStr:
+		return TrayIconStyleFixedPercent, true
 	case trayIconStyleBatteryStr:
 		return TrayIconStyleBattery, true
 	case trayIconStylePercentageStr:
