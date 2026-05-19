@@ -250,12 +250,13 @@ static void batt_drawPauseInRect(NSRect rect, NSColor *fillColor, NSColor *strok
 }
 
 static void batt_drawThermalPauseInRect(NSRect rect, NSColor *fillColor, NSColor *strokeColor) {
-    CGFloat thermometerWidth = floor(rect.size.width * 0.48);
-    NSRect thermometerRect = NSMakeRect(rect.origin.x, rect.origin.y, thermometerWidth, rect.size.height);
-    NSRect pauseRect = NSMakeRect(rect.origin.x + thermometerWidth + 1.0,
-                                  rect.origin.y + 0.5,
-                                  rect.size.width - thermometerWidth - 1.0,
-                                  rect.size.height - 1.0);
+    (void)fillColor;
+
+    CGFloat thermometerWidth = MIN(rect.size.width, MAX(7.0, floor(rect.size.width * 0.72)));
+    NSRect thermometerRect = NSMakeRect(rect.origin.x + floor((rect.size.width - thermometerWidth) / 2.0),
+                                        rect.origin.y,
+                                        thermometerWidth,
+                                        rect.size.height);
 
     CGFloat stemWidth = MAX(2.4, floor(thermometerRect.size.width * 0.34));
     CGFloat stemX = thermometerRect.origin.x + floor((thermometerRect.size.width - stemWidth) / 2.0);
@@ -295,8 +296,6 @@ static void batt_drawThermalPauseInRect(NSRect rect, NSColor *fillColor, NSColor
     [ticks setLineCapStyle:NSRoundLineCapStyle];
     [[NSColor whiteColor] setStroke];
     [ticks stroke];
-
-    batt_drawPauseInRect(pauseRect, fillColor, strokeColor);
 }
 
 static void batt_drawFittingCenteredText(NSString *text, NSRect rect, NSColor *color, CGFloat maxSize, CGFloat minSize, NSFontWeight weight) {
@@ -321,7 +320,7 @@ static void batt_drawFittingCenteredText(NSString *text, NSRect rect, NSColor *c
 
     NSSize textSize = [text sizeWithAttributes:attrs];
     NSRect textRect = NSMakeRect(rect.origin.x,
-                                 rect.origin.y + floor((rect.size.height - textSize.height) / 2.0) - 0.5,
+                                 rect.origin.y + floor((rect.size.height - textSize.height) / 2.0),
                                  rect.size.width,
                                  textSize.height);
 
@@ -436,11 +435,13 @@ static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool pau
     }
 
     NSString *text = [NSString stringWithFormat:@"%d", percent];
-    NSRect legacyGlyphRect = NSMakeRect(4.8, 3.0, 20.4, 10.0);
-    NSRect textRect = NSMakeRect(5.4, 3.9, 19.2, 8.2);
+    NSRect legacyGlyphRect = NSMakeRect(5.7, 4.0, 18.0, 8.0);
+    NSRect textRect = NSMakeRect(5.3, 3.9, 18.8, 8.2);
 
     [NSGraphicsContext saveGraphicsState];
-    NSRectFillUsingOperation(legacyGlyphRect, NSCompositingOperationClear);
+    NSBezierPath *clearPath = [NSBezierPath bezierPathWithRoundedRect:legacyGlyphRect xRadius:1.8 yRadius:1.8];
+    [[NSGraphicsContext currentContext] setCompositingOperation:NSCompositingOperationClear];
+    [clearPath fill];
     [NSGraphicsContext restoreGraphicsState];
     batt_drawFittingCenteredText(text, textRect, [NSColor whiteColor], 8.6, 5.8, NSFontWeightBold);
 
@@ -450,15 +451,15 @@ static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool pau
 
 static NSImage *batt_newPercentageIcon(int percent, bool charging, bool paused, bool thermalPaused) {
     percent = batt_clampPercent(percent);
-    NSSize size = NSMakeSize(44.0, 18.0);
+    NSSize size = NSMakeSize(40.0, 20.0);
     NSImage *image = [[NSImage alloc] initWithSize:size];
     [image setTemplate:NO];
     [image setAccessibilityDescription:@"batt battery percentage icon"];
 
     [image lockFocus];
-    NSRect body = NSMakeRect(0.5, 2.0, 39.0, 14.0);
-    NSRect terminal = NSMakeRect(40.2, 5.4, 2.8, 7.2);
-    NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:4.2 yRadius:4.2];
+    NSRect body = NSMakeRect(0.5, 1.7, 35.0, 16.6);
+    NSRect terminal = NSMakeRect(36.2, 5.8, 2.8, 8.4);
+    NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:4.8 yRadius:4.8];
     NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:1.3 yRadius:1.3];
 
     NSColor *fillColor = batt_percentageFillColor(percent, charging, paused, thermalPaused);
@@ -483,20 +484,19 @@ static NSImage *batt_newPercentageIcon(int percent, bool charging, bool paused, 
 
     NSColor *textColor = (percent >= 95 || percent < 20) ? [NSColor whiteColor] : batt_darkTextColor();
     NSString *text = [NSString stringWithFormat:@"%d", percent];
-    NSRect textRect = (charging || paused || thermalPaused) ? NSMakeRect(body.origin.x + 1.5, body.origin.y, body.size.width - (thermalPaused ? 17.0 : 13.0), body.size.height)
-                                                            : NSMakeRect(body.origin.x, body.origin.y, body.size.width, body.size.height);
-    batt_drawFittingCenteredText(text, textRect, textColor, 12.8, 9.0, NSFontWeightBold);
+    NSRect textRect = NSMakeRect(body.origin.x, body.origin.y, body.size.width, body.size.height);
+    batt_drawFittingCenteredText(text, textRect, textColor, 13.8, 10.0, NSFontWeightBlack);
 
     if (thermalPaused) {
-        batt_drawThermalPauseInRect(NSMakeRect(body.origin.x + body.size.width - 15.9, body.origin.y + 2.2, 13.6, 11.4),
+        batt_drawThermalPauseInRect(NSMakeRect(body.origin.x + body.size.width - 10.8, body.origin.y + 3.0, 9.0, 11.0),
                                     textColor,
                                     nil);
     } else if (paused) {
-        batt_drawPauseInRect(NSMakeRect(body.origin.x + body.size.width - 9.8, body.origin.y + 3.8, 6.8, 8.0),
+        batt_drawPauseInRect(NSMakeRect(body.origin.x + body.size.width - 9.0, body.origin.y + 4.4, 6.6, 8.2),
                              textColor,
                              nil);
     } else if (charging) {
-        batt_drawBoltInRect(NSMakeRect(body.origin.x + body.size.width - 10.2, body.origin.y + 3.1, 6.8, 9.8),
+        batt_drawBoltInRect(NSMakeRect(body.origin.x + body.size.width - 9.6, body.origin.y + 3.6, 6.8, 10.0),
                             textColor,
                             nil);
     }
