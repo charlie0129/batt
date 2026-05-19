@@ -336,16 +336,43 @@ static void batt_drawFittingCenteredText(NSString *text, NSRect rect, NSColor *c
 #endif
 }
 
+static NSRect batt_centeredImageRect(NSImage *source, NSRect bounds) {
+    NSSize sourceSize = source.size;
+    if (sourceSize.width <= 0.0 || sourceSize.height <= 0.0) {
+        return bounds;
+    }
+
+    CGFloat scale = MIN(bounds.size.width / sourceSize.width, bounds.size.height / sourceSize.height);
+    CGFloat width = floor(sourceSize.width * scale);
+    CGFloat height = floor(sourceSize.height * scale);
+    return NSMakeRect(bounds.origin.x + floor((bounds.size.width - width) / 2.0),
+                      bounds.origin.y + floor((bounds.size.height - height) / 2.0),
+                      width,
+                      height);
+}
+
+static void batt_drawTintedImage(NSImage *source, NSRect bounds, NSColor *color) {
+    NSRect drawRect = batt_centeredImageRect(source, bounds);
+    [source drawInRect:drawRect
+              fromRect:NSZeroRect
+             operation:NSCompositingOperationSourceOver
+              fraction:1.0
+        respectFlipped:NO
+                 hints:nil];
+    [color setFill];
+    NSRectFillUsingOperation(drawRect, NSCompositingOperationSourceIn);
+}
+
 static NSImage *batt_newBatteryOutlineIcon(int percent, bool charging, bool paused, bool thermalPaused) {
     percent = batt_clampPercent(percent);
-    NSSize size = NSMakeSize(33.0, 16.0);
+    NSSize size = NSMakeSize(37.0, 16.0);
     NSImage *image = [[NSImage alloc] initWithSize:size];
     [image setTemplate:NO];
     [image setAccessibilityDescription:@"batt battery icon"];
 
     [image lockFocus];
-    NSRect body = NSMakeRect(1.0, 3.0, 27.0, 10.0);
-    NSRect terminal = NSMakeRect(29.0, 5.3, 2.8, 5.4);
+    NSRect body = NSMakeRect(1.0, 3.0, 31.0, 10.0);
+    NSRect terminal = NSMakeRect(33.0, 5.3, 2.8, 5.4);
     NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:2.8 yRadius:2.8];
     NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:1.2 yRadius:1.2];
 
@@ -363,11 +390,11 @@ static NSImage *batt_newBatteryOutlineIcon(int percent, bool charging, bool paus
     [fillPath fill];
 
     if (thermalPaused) {
-        batt_drawThermalPauseInRect(NSMakeRect(5.8, 3.0, 20.5, 10.5), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
+        batt_drawThermalPauseInRect(NSMakeRect(7.8, 3.0, 20.5, 10.5), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
     } else if (paused) {
-        batt_drawPauseInRect(NSMakeRect(11.3, 4.4, 8.6, 7.4), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
+        batt_drawPauseInRect(NSMakeRect(13.3, 4.4, 8.6, 7.4), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
     } else if (charging) {
-        batt_drawBoltInRect(NSMakeRect(11.2, 2.0, 9.8, 12.0), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
+        batt_drawBoltInRect(NSMakeRect(13.2, 2.0, 9.8, 12.0), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
     }
 
     [image unlockFocus];
@@ -382,30 +409,47 @@ static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool pau
     [image setAccessibilityDescription:@"batt fixed percentage icon"];
 
     [image lockFocus];
-    NSRect body = NSMakeRect(1.0, 2.7, 28.0, 10.6);
-    NSRect terminal = NSMakeRect(30.1, 5.3, 2.8, 5.4);
-    NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:2.7 yRadius:2.7];
-    NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:1.2 yRadius:1.2];
-    [[NSColor whiteColor] setStroke];
-    [bodyPath setLineWidth:1.45];
-    [bodyPath stroke];
-    [[NSColor whiteColor] setFill];
-    [terminalPath fill];
+    NSRect symbolRect = NSMakeRect(0.0, 0.0, 32.0, 16.0);
+    bool drewLegacySymbol = false;
+    if (@available(macOS 11.0, *)) {
+        NSImage *symbol = [NSImage imageWithSystemSymbolName:@"minus.plus.batteryblock" accessibilityDescription:@"batt icon"];
+        if (symbol) {
+            batt_drawTintedImage(symbol, symbolRect, [NSColor whiteColor]);
+            drewLegacySymbol = true;
+        }
+    }
+
+    if (!drewLegacySymbol) {
+        NSRect body = NSMakeRect(1.0, 2.7, 26.5, 10.6);
+        NSRect terminal = NSMakeRect(28.6, 5.3, 2.8, 5.4);
+        NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:2.7 yRadius:2.7];
+        NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:1.2 yRadius:1.2];
+        [[NSColor whiteColor] setStroke];
+        [bodyPath setLineWidth:1.45];
+        [bodyPath stroke];
+        [[NSColor whiteColor] setFill];
+        [terminalPath fill];
+    }
 
     NSString *text = [NSString stringWithFormat:@"%d", percent];
-    NSRect textRect = NSMakeRect(body.origin.x + 3.1, body.origin.y + 0.3, body.size.width - 6.2, body.size.height - 0.6);
+    NSRect legacyGlyphRect = NSMakeRect(5.1, 3.2, 19.5, 9.6);
+    NSRect textRect = NSMakeRect(6.1, 4.0, 17.6, 8.0);
     if (charging || paused || thermalPaused) {
-        textRect.origin.x -= 1.0;
-        textRect.size.width = MAX(10.0, textRect.size.width - 5.0);
+        textRect.origin.x -= 0.8;
+        textRect.size.width = MAX(12.0, textRect.size.width - 3.0);
     }
-    batt_drawFittingCenteredText(text, textRect, [NSColor whiteColor], 8.8, 5.8, NSFontWeightBold);
+
+    [NSGraphicsContext saveGraphicsState];
+    NSRectFillUsingOperation(legacyGlyphRect, NSCompositingOperationClear);
+    [NSGraphicsContext restoreGraphicsState];
+    batt_drawFittingCenteredText(text, textRect, [NSColor whiteColor], 8.6, 5.8, NSFontWeightBold);
 
     if (thermalPaused) {
-        batt_drawThermalPauseInRect(NSMakeRect(NSMaxX(body) - 11.2, NSMidY(body) - 4.8, 11.0, 9.6), [NSColor whiteColor], nil);
+        batt_drawThermalPauseInRect(NSMakeRect(21.7, 3.5, 10.0, 9.0), [NSColor whiteColor], nil);
     } else if (paused) {
-        batt_drawPauseInRect(NSMakeRect(NSMaxX(body) - 7.0, NSMidY(body) - 3.8, 5.8, 7.6), [NSColor whiteColor], nil);
+        batt_drawPauseInRect(NSMakeRect(25.0, 4.4, 5.6, 7.2), [NSColor whiteColor], nil);
     } else if (charging) {
-        batt_drawBoltInRect(NSMakeRect(NSMaxX(body) - 7.4, NSMidY(body) - 4.5, 6.2, 9.0), [NSColor whiteColor], nil);
+        batt_drawBoltInRect(NSMakeRect(24.8, 3.6, 6.0, 8.8), [NSColor whiteColor], nil);
     }
 
     [image unlockFocus];
@@ -414,14 +458,14 @@ static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool pau
 
 static NSImage *batt_newPercentageIcon(int percent, bool charging, bool paused, bool thermalPaused) {
     percent = batt_clampPercent(percent);
-    NSSize size = NSMakeSize(44.0, 16.0);
+    NSSize size = NSMakeSize(50.0, 16.0);
     NSImage *image = [[NSImage alloc] initWithSize:size];
     [image setTemplate:NO];
     [image setAccessibilityDescription:@"batt battery percentage icon"];
 
     [image lockFocus];
-    NSRect body = NSMakeRect(0.5, 1.8, 39.0, 12.4);
-    NSRect terminal = NSMakeRect(40.2, 5.3, 2.8, 5.4);
+    NSRect body = NSMakeRect(0.5, 1.8, 45.0, 12.4);
+    NSRect terminal = NSMakeRect(46.2, 5.3, 2.8, 5.4);
     NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:3.8 yRadius:3.8];
     NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:1.2 yRadius:1.2];
 
