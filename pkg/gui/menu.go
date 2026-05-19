@@ -32,6 +32,7 @@ type menuController struct {
 	trayIconRefreshIntervalSeconds int
 	trayIconTimerPtr               unsafe.Pointer
 	upperLimit                     int
+	lowerLimit                     int
 	lastCharge                     int
 	lastCharging                   bool
 	lastPaused                     bool
@@ -227,10 +228,10 @@ func (c *menuController) refreshOnOpen() {
 		state = "Full"
 	}
 	c.stateItem.SetTitle("State: " + state)
-	if !isCharging && isPluggedIn && c.upperLimit < 100 && currentCharge < conf.LowerLimit() {
+	if !isCharging && isPluggedIn && c.upperLimit < 100 && currentCharge < c.lowerLimit {
 		c.stateItem.SetTitle("State: Will Charge Soon")
 	}
-	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, c.lastPaused, c.lastThermalPaused)
+	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, c.chargeLimitPauseActive(currentCharge, isCharging, isPluggedIn), c.lastThermalPaused)
 
 	magSafeMode := conf.ControlMagSafeLED()
 	switch magSafeMode {
@@ -272,6 +273,7 @@ func (c *menuController) updateTrayIconStyleItems() {
 func (c *menuController) applyTrayConfig(conf *config.File) {
 	c.trayIconStyle = conf.TrayIconStyle()
 	c.upperLimit = conf.UpperLimit()
+	c.lowerLimit = conf.LowerLimit()
 	c.updateTrayIconRefreshInterval(conf.TrayIconRefreshIntervalSeconds())
 	c.updateTrayIconStyleItems()
 }
@@ -329,14 +331,25 @@ func (c *menuController) refreshTrayIcon() {
 		logrus.WithError(err).Debug("Failed to get current charge for tray icon")
 		return
 	}
+	isCharging, err := c.api.GetCharging()
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to get charging state for tray icon")
+		isCharging = c.lastCharging
+	}
+	isPluggedIn, err := c.api.GetPluggedIn()
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to get plugged in state for tray icon")
+		isPluggedIn = false
+	}
+	paused := c.chargeLimitPauseActive(currentCharge, isCharging, isPluggedIn)
 	batteryInfo, err := c.api.GetBatteryInfo()
 	if err != nil {
 		logrus.WithError(err).Debug("Failed to get battery info for tray icon")
-		c.setTrayBatteryStatus(currentCharge, false, c.lastPaused, c.lastThermalPaused)
+		c.setTrayBatteryStatus(currentCharge, false, paused, c.lastThermalPaused)
 		return
 	}
 
-	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, c.lastPaused, thermalPaused)
+	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, paused, thermalPaused)
 }
 
 func (c *menuController) setTrayBatteryStatus(charge int, charging, paused, thermalPaused bool) {
@@ -370,6 +383,10 @@ func (c *menuController) applyMenubarImage() {
 		return
 	}
 	SetMenubarBatteryIcon(c.menubarIcon, string(style), c.lastCharge, c.lastCharging, c.lastPaused, c.lastThermalPaused)
+}
+
+func (c *menuController) chargeLimitPauseActive(charge int, charging, pluggedIn bool) bool {
+	return pluggedIn && !charging && c.upperLimit < 100 && charge >= c.lowerLimit
 }
 
 // updateTelemetryOnce fetches both power and calibration in a single call and updates the UI.

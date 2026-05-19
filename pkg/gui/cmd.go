@@ -576,6 +576,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		trayIconStyle:                  config.TrayIconStylePercentage,
 		trayIconRefreshIntervalSeconds: config.DefaultTrayIconRefreshIntervalSeconds,
 		upperLimit:                     100,
+		lowerLimit:                     100,
 		powerFlowSubMenuItem:           powerFlowSubMenuItem,
 		installItem:                    installItem,
 		upgradeItem:                    upgradeItem,

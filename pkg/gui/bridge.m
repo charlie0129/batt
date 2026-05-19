@@ -181,15 +181,22 @@ static NSColor *batt_outlineColor(void) {
     return [NSColor colorWithCalibratedWhite:0.92 alpha:1.0];
 }
 
-static NSColor *batt_batteryFillColor(int percent, bool charging) {
-    if (charging || percent >= 50) return batt_greenColor();
-    if (percent >= 20) return batt_yellowColor();
+static bool batt_lowPowerModeEnabled(void) {
+    if (@available(macOS 12.0, *)) {
+        return [[NSProcessInfo processInfo] isLowPowerModeEnabled];
+    }
+    return false;
+}
+
+static NSColor *batt_batteryFillColor(int percent, bool charging, bool paused, bool thermalPaused) {
+    if (batt_lowPowerModeEnabled()) return batt_yellowColor();
+    if (charging || paused || thermalPaused || percent >= 20) return batt_greenColor();
     return batt_redColor();
 }
 
-static NSColor *batt_percentageFillColor(int percent, bool charging) {
-    if (charging || percent >= 80) return batt_greenColor();
-    if (percent >= 20) return batt_yellowColor();
+static NSColor *batt_percentageFillColor(int percent, bool charging, bool paused, bool thermalPaused) {
+    if (batt_lowPowerModeEnabled()) return batt_yellowColor();
+    if (charging || paused || thermalPaused || percent >= 20) return batt_greenColor();
     return batt_redColor();
 }
 
@@ -243,36 +250,51 @@ static void batt_drawPauseInRect(NSRect rect, NSColor *fillColor, NSColor *strok
 }
 
 static void batt_drawThermalPauseInRect(NSRect rect, NSColor *fillColor, NSColor *strokeColor) {
-    CGFloat thermometerWidth = floor(rect.size.width * 0.42);
+    CGFloat thermometerWidth = floor(rect.size.width * 0.48);
     NSRect thermometerRect = NSMakeRect(rect.origin.x, rect.origin.y, thermometerWidth, rect.size.height);
     NSRect pauseRect = NSMakeRect(rect.origin.x + thermometerWidth + 1.0,
                                   rect.origin.y + 0.5,
                                   rect.size.width - thermometerWidth - 1.0,
                                   rect.size.height - 1.0);
 
-    CGFloat stemWidth = MAX(2.0, floor(thermometerRect.size.width * 0.32));
+    CGFloat stemWidth = MAX(2.4, floor(thermometerRect.size.width * 0.34));
     CGFloat stemX = thermometerRect.origin.x + floor((thermometerRect.size.width - stemWidth) / 2.0);
     NSRect stem = NSMakeRect(stemX,
-                             thermometerRect.origin.y + thermometerRect.size.height * 0.34,
+                             thermometerRect.origin.y + thermometerRect.size.height * 0.28,
                              stemWidth,
-                             thermometerRect.size.height * 0.54);
-    NSRect bulb = NSMakeRect(thermometerRect.origin.x + floor((thermometerRect.size.width - stemWidth * 1.9) / 2.0),
-                             thermometerRect.origin.y + 0.4,
-                             stemWidth * 1.9,
-                             stemWidth * 1.9);
+                             thermometerRect.size.height * 0.64);
+    CGFloat bulbSize = stemWidth * 2.25;
+    NSRect bulb = NSMakeRect(thermometerRect.origin.x + floor((thermometerRect.size.width - bulbSize) / 2.0),
+                             thermometerRect.origin.y,
+                             bulbSize,
+                             bulbSize);
     NSBezierPath *stemPath = [NSBezierPath bezierPathWithRoundedRect:stem xRadius:stemWidth / 2.0 yRadius:stemWidth / 2.0];
     NSBezierPath *bulbPath = [NSBezierPath bezierPathWithOvalInRect:bulb];
+    NSColor *thermometerColor = [NSColor colorWithCalibratedRed:1.0 green:0.18 blue:0.10 alpha:1.0];
+    NSColor *outlineColor = strokeColor ? strokeColor : [NSColor whiteColor];
 
-    if (strokeColor) {
-        [strokeColor setStroke];
-        [stemPath setLineWidth:1.3];
-        [bulbPath setLineWidth:1.3];
-        [stemPath stroke];
-        [bulbPath stroke];
-    }
-    [fillColor setFill];
+    [outlineColor setStroke];
+    [stemPath setLineWidth:1.6];
+    [bulbPath setLineWidth:1.6];
+    [stemPath stroke];
+    [bulbPath stroke];
+
+    [thermometerColor setFill];
     [stemPath fill];
     [bulbPath fill];
+
+    NSBezierPath *ticks = [NSBezierPath bezierPath];
+    CGFloat tickX1 = MIN(NSMaxX(stem) + 1.0, NSMaxX(thermometerRect) - 3.0);
+    CGFloat tickX2 = NSMaxX(thermometerRect) - 0.6;
+    for (int i = 0; i < 3; i++) {
+        CGFloat y = stem.origin.y + stem.size.height * (0.25 + i * 0.24);
+        [ticks moveToPoint:NSMakePoint(tickX1, y)];
+        [ticks lineToPoint:NSMakePoint(tickX2, y)];
+    }
+    [ticks setLineWidth:1.0];
+    [ticks setLineCapStyle:NSRoundLineCapStyle];
+    [[NSColor whiteColor] setStroke];
+    [ticks stroke];
 
     batt_drawPauseInRect(pauseRect, fillColor, strokeColor);
 }
@@ -337,11 +359,11 @@ static NSImage *batt_newBatteryOutlineIcon(int percent, bool charging, bool paus
     if (percent > 0 && fillWidth < 1.8) fillWidth = 1.8;
     NSRect fillRect = NSMakeRect(body.origin.x + 2.4, body.origin.y + 2.4, fillWidth, body.size.height - 4.8);
     NSBezierPath *fillPath = [NSBezierPath bezierPathWithRoundedRect:fillRect xRadius:0.9 yRadius:0.9];
-    [batt_batteryFillColor(percent, charging) setFill];
+    [batt_batteryFillColor(percent, charging, paused, thermalPaused) setFill];
     [fillPath fill];
 
     if (thermalPaused) {
-        batt_drawThermalPauseInRect(NSMakeRect(7.8, 4.2, 16.5, 8.2), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
+        batt_drawThermalPauseInRect(NSMakeRect(5.8, 3.0, 20.5, 10.5), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
     } else if (paused) {
         batt_drawPauseInRect(NSMakeRect(11.3, 4.4, 8.6, 7.4), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
     } else if (charging) {
@@ -379,7 +401,7 @@ static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool pau
     batt_drawFittingCenteredText(text, textRect, [NSColor whiteColor], 8.8, 5.8, NSFontWeightBold);
 
     if (thermalPaused) {
-        batt_drawThermalPauseInRect(NSMakeRect(NSMaxX(body) - 8.2, NSMidY(body) - 4.0, 8.0, 8.0), [NSColor whiteColor], nil);
+        batt_drawThermalPauseInRect(NSMakeRect(NSMaxX(body) - 11.2, NSMidY(body) - 4.8, 11.0, 9.6), [NSColor whiteColor], nil);
     } else if (paused) {
         batt_drawPauseInRect(NSMakeRect(NSMaxX(body) - 7.0, NSMidY(body) - 3.8, 5.8, 7.6), [NSColor whiteColor], nil);
     } else if (charging) {
@@ -403,7 +425,7 @@ static NSImage *batt_newPercentageIcon(int percent, bool charging, bool paused, 
     NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:3.8 yRadius:3.8];
     NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:1.2 yRadius:1.2];
 
-    NSColor *fillColor = batt_percentageFillColor(percent, charging);
+    NSColor *fillColor = batt_percentageFillColor(percent, charging, paused, thermalPaused);
     NSColor *trackColor = percent < 20 ? batt_trackGrayColor() : [NSColor whiteColor];
     if (percent >= 95) {
         trackColor = fillColor;
@@ -430,7 +452,7 @@ static NSImage *batt_newPercentageIcon(int percent, bool charging, bool paused, 
     batt_drawFittingCenteredText(text, textRect, textColor, 12.8, 9.0, NSFontWeightBold);
 
     if (thermalPaused) {
-        batt_drawThermalPauseInRect(NSMakeRect(body.origin.x + body.size.width - 13.5, body.origin.y + 3.2, 10.4, 8.8),
+        batt_drawThermalPauseInRect(NSMakeRect(body.origin.x + body.size.width - 16.2, body.origin.y + 2.3, 13.8, 10.8),
                                     textColor,
                                     nil);
     } else if (paused) {
