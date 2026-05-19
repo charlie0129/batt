@@ -117,3 +117,53 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 	cmd.AddCommand(enable, disable, alwaysOff)
 	return cmd
 }
+
+func NewSetTrayIconStyleCommand() *cobra.Command {
+	use := "tray-icon-style"
+	cmd := &cobra.Command{
+		Use:     use,
+		GroupID: gAdvanced,
+		Short:   "Set the menubar tray icon style",
+	}
+
+	newStyleCommand := func(style config.TrayIconStyle, short string) *cobra.Command {
+		return &cobra.Command{
+			Use:   string(style),
+			Short: short,
+			RunE: func(_ *cobra.Command, _ []string) error {
+				ret, err := apiClient.SetTrayIconStyle(style)
+				if err != nil {
+					return fmt.Errorf("failed to set %s to %s: %v", use, style, err)
+				}
+				if ret != "" {
+					logrus.Infof("daemon responded: %s", ret)
+				}
+				logrus.Infof("successfully set %s to %s", use, style)
+				return nil
+			},
+		}
+	}
+
+	status := &cobra.Command{
+		Use:   "status",
+		Short: "Show current menubar tray icon style",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			rawConfig, err := apiClient.GetConfig()
+			if err != nil {
+				return fmt.Errorf("failed to get config: %v", err)
+			}
+			conf := config.NewFileFromConfig(rawConfig, "")
+			cmd.Printf("Tray icon style: %s\n", conf.TrayIconStyle())
+			return nil
+		},
+	}
+
+	cmd.AddCommand(
+		newStyleCommand(config.TrayIconStyleFixed, "Use the original fixed menubar icon"),
+		newStyleCommand(config.TrayIconStyleFixedPercent, "Use the original menubar icon with the current charge percentage"),
+		newStyleCommand(config.TrayIconStyleBattery, "Use the battery-outline icon with a dynamic fill area"),
+		newStyleCommand(config.TrayIconStylePercentage, "Use the percentage icon with a dynamic fill area"),
+		status,
+	)
+	return cmd
+}

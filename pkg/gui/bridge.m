@@ -1,7 +1,10 @@
 #import <Cocoa/Cocoa.h>
 #import <ServiceManagement/ServiceManagement.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <objc/runtime.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <math.h>
 // #import <UserNotifications/UserNotifications.h>
 
 // The time interval in seconds for the menu update timer.
@@ -11,6 +14,8 @@ static const NSTimeInterval kMenuUpdateTimerInterval = 1.0;
 extern void battMenuWillOpen(uintptr_t handle);
 extern void battMenuDidClose(uintptr_t handle);
 extern void battMenuTimerFired(uintptr_t handle);
+extern void battTrayIconTimerFired(uintptr_t handle);
+extern void battTemperatureThresholdChanged(uintptr_t handle, int value);
 
 @interface BattMenuObserver : NSObject
 @property(nonatomic, assign) uintptr_t handle;
@@ -20,6 +25,725 @@ extern void battMenuTimerFired(uintptr_t handle);
 - (void)menuDidClose:(NSNotification *)note;
 - (void)timerTick:(NSTimer *)timer;
 @end
+
+@interface BattTemperatureSliderTarget : NSObject
+@property(nonatomic, assign) uintptr_t handle;
+@property(nonatomic, strong) NSSlider *slider;
+@property(nonatomic, strong) NSTextField *valueLabel;
+- (instancetype)initWithHandle:(uintptr_t)handle;
+- (void)sliderChanged:(NSSlider *)sender;
+- (void)setValue:(int)value;
+- (void)setEnabled:(BOOL)enabled;
+@end
+
+@interface BattTrayIconTimerTarget : NSObject
+@property(nonatomic, assign) uintptr_t handle;
+@property(nonatomic, strong) NSTimer *timer;
+- (instancetype)initWithHandle:(uintptr_t)handle;
+- (void)setInterval:(NSTimeInterval)intervalSeconds;
+- (void)timerTick:(NSTimer *)timer;
+@end
+
+@implementation BattTemperatureSliderTarget
+- (instancetype)initWithHandle:(uintptr_t)handle {
+    if ((self = [super init])) {
+        _handle = handle;
+    }
+    return self;
+}
+- (void)sliderChanged:(NSSlider *)sender {
+    int value = (int)lround(sender.doubleValue);
+    [self setValue:value];
+    if (self.handle != 0) {
+        battTemperatureThresholdChanged(self.handle, value);
+    }
+}
+- (void)setValue:(int)value {
+    self.slider.integerValue = value;
+    self.valueLabel.stringValue = [NSString stringWithFormat:@"%d°C", value];
+}
+- (void)setEnabled:(BOOL)enabled {
+    self.slider.enabled = enabled;
+    self.valueLabel.enabled = enabled;
+}
+@end
+
+static const void *kBattTemperatureSliderTargetKey = &kBattTemperatureSliderTargetKey;
+
+static NSTextField *batt_label(NSString *text, NSRect frame, NSFont *font, NSColor *color) {
+    NSTextField *label = [[NSTextField alloc] initWithFrame:frame];
+    label.stringValue = text;
+    label.font = font;
+    label.textColor = color;
+    label.bezeled = NO;
+    label.drawsBackground = NO;
+    label.editable = NO;
+    label.selectable = NO;
+    return label;
+}
+
+void *batt_newTemperatureSliderMenuItem(uintptr_t handle, int minValue, int maxValue, int value) {
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+    NSView *view = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 280, 66)];
+
+    BattTemperatureSliderTarget *target = [[BattTemperatureSliderTarget alloc] initWithHandle:handle];
+
+    NSTextField *title = batt_label(@"Temperature Protection", NSMakeRect(14, 40, 180, 18),
+                                    [NSFont systemFontOfSize:13 weight:NSFontWeightRegular],
+                                    [NSColor labelColor]);
+    [view addSubview:title];
+
+    NSTextField *valueLabel = batt_label(@"", NSMakeRect(218, 40, 48, 18),
+                                         [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightMedium],
+                                         [NSColor secondaryLabelColor]);
+    valueLabel.alignment = NSTextAlignmentRight;
+    [view addSubview:valueLabel];
+
+    NSSlider *slider = [[NSSlider alloc] initWithFrame:NSMakeRect(12, 10, 254, 24)];
+    slider.minValue = minValue;
+    slider.maxValue = maxValue;
+    slider.numberOfTickMarks = 6;
+    slider.allowsTickMarkValuesOnly = NO;
+    slider.continuous = NO;
+    slider.target = target;
+    slider.action = @selector(sliderChanged:);
+    [view addSubview:slider];
+
+    target.slider = slider;
+    target.valueLabel = valueLabel;
+    [target setValue:value];
+
+    objc_setAssociatedObject(item, kBattTemperatureSliderTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    item.view = view;
+
+    return (void *)CFBridgingRetain(item);
+}
+
+static BattTemperatureSliderTarget *batt_temperatureSliderTarget(void *itemPtr) {
+    if (itemPtr == NULL) return nil;
+    NSMenuItem *item = (NSMenuItem *)itemPtr;
+    return objc_getAssociatedObject(item, kBattTemperatureSliderTargetKey);
+}
+
+void batt_setTemperatureSliderHandle(void *itemPtr, uintptr_t handle) {
+    BattTemperatureSliderTarget *target = batt_temperatureSliderTarget(itemPtr);
+    if (target) {
+        target.handle = handle;
+    }
+}
+
+void batt_setTemperatureSliderValue(void *itemPtr, int value) {
+    BattTemperatureSliderTarget *target = batt_temperatureSliderTarget(itemPtr);
+    if (target) {
+        [target setValue:value];
+    }
+}
+
+void batt_setTemperatureSliderEnabled(void *itemPtr, bool enabled) {
+    BattTemperatureSliderTarget *target = batt_temperatureSliderTarget(itemPtr);
+    if (target) {
+        [target setEnabled:enabled];
+    }
+}
+
+void batt_releaseObject(void *objPtr) {
+    if (objPtr == NULL) return;
+    CFRelease(objPtr);
+}
+
+static int batt_clampPercent(int percent) {
+    if (percent < 0) return 0;
+    if (percent > 100) return 100;
+    return percent;
+}
+
+static NSColor *batt_greenColor(void) {
+    return [NSColor colorWithCalibratedRed:0.18 green:0.78 blue:0.32 alpha:1.0];
+}
+
+static NSColor *batt_yellowColor(void) {
+    return [NSColor colorWithCalibratedRed:1.0 green:0.78 blue:0.06 alpha:1.0];
+}
+
+static NSColor *batt_redColor(void) {
+    return [NSColor colorWithCalibratedRed:1.0 green:0.15 blue:0.12 alpha:1.0];
+}
+
+static NSColor *batt_darkTextColor(void) {
+    return [NSColor colorWithCalibratedWhite:0.16 alpha:1.0];
+}
+
+static NSColor *batt_trackGrayColor(void) {
+    return [NSColor colorWithCalibratedWhite:0.62 alpha:1.0];
+}
+
+static NSColor *batt_outlineColor(void) {
+    return [NSColor colorWithCalibratedWhite:0.92 alpha:1.0];
+}
+
+static bool batt_lowPowerModeEnabled(void) {
+    if (@available(macOS 12.0, *)) {
+        return [[NSProcessInfo processInfo] isLowPowerModeEnabled];
+    }
+    return false;
+}
+
+static NSColor *batt_batteryFillColor(int percent, bool charging, bool paused, bool thermalPaused) {
+    if (batt_lowPowerModeEnabled()) return batt_yellowColor();
+    if (charging || paused || thermalPaused || percent >= 20) return batt_greenColor();
+    return batt_redColor();
+}
+
+static NSColor *batt_percentageFillColor(int percent, bool charging, bool paused, bool thermalPaused) {
+    if (batt_lowPowerModeEnabled()) return batt_yellowColor();
+    if (charging || paused || thermalPaused || percent >= 20) return batt_greenColor();
+    return batt_redColor();
+}
+
+// Forward declarations for icon drawing helpers
+static NSRect batt_centeredImageRect(NSImage *source, NSRect bounds);
+static void batt_drawTintedImage(NSImage *source, NSRect bounds, NSColor *color);
+
+
+static void batt_drawBoltInRect(NSRect rect, NSColor *fillColor, NSColor *strokeColor) {
+    NSBezierPath *bolt = [NSBezierPath bezierPath];
+    CGFloat x = rect.origin.x;
+    CGFloat y = rect.origin.y;
+    CGFloat w = rect.size.width;
+    CGFloat h = rect.size.height;
+
+    [bolt moveToPoint:NSMakePoint(x + 0.58 * w, y + h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.12 * w, y + 0.43 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.44 * w, y + 0.43 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.28 * w, y)];
+    [bolt lineToPoint:NSMakePoint(x + 0.88 * w, y + 0.58 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.56 * w, y + 0.58 * h)];
+    [bolt closePath];
+    [bolt setLineJoinStyle:NSRoundLineJoinStyle];
+
+    if (strokeColor) {
+        [strokeColor setStroke];
+        [bolt setLineWidth:1.8];
+        [bolt stroke];
+    }
+    [fillColor setFill];
+    [bolt fill];
+}
+
+static void batt_drawOutlinedBoltInRect(NSRect rect, NSColor *fillColor, NSColor *strokeColor, CGFloat strokeWidth) {
+    NSBezierPath *bolt = [NSBezierPath bezierPath];
+    CGFloat x = rect.origin.x;
+    CGFloat y = rect.origin.y;
+    CGFloat w = rect.size.width;
+    CGFloat h = rect.size.height;
+
+    // True stroked outline version for the battery-outline charging icon.
+    // This keeps the current visual size while avoiding the blurry double-symbol pseudo-outline.
+    [bolt moveToPoint:NSMakePoint(x + 0.58 * w, y + h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.12 * w, y + 0.43 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.44 * w, y + 0.43 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.28 * w, y)];
+    [bolt lineToPoint:NSMakePoint(x + 0.88 * w, y + 0.58 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.56 * w, y + 0.58 * h)];
+    [bolt closePath];
+    [bolt setLineJoinStyle:NSRoundLineJoinStyle];
+    [bolt setLineCapStyle:NSRoundLineCapStyle];
+
+    if (strokeColor && strokeWidth > 0.0) {
+        [strokeColor setStroke];
+        [bolt setLineWidth:strokeWidth];
+        [bolt stroke];
+    }
+
+    [fillColor setFill];
+    [bolt fill];
+}
+
+static void batt_drawPercentageBoltInRect(NSRect rect, NSColor *fillColor, NSColor *shadowColor) {
+    (void)shadowColor;
+
+    if (@available(macOS 11.0, *)) {
+        NSImage *symbol = [NSImage imageWithSystemSymbolName:@"bolt.fill" accessibilityDescription:@"charging"];
+        if (symbol) {
+            NSImageSymbolConfiguration *weightConfig = [NSImageSymbolConfiguration configurationWithPointSize:11.0
+                                                                                                       weight:NSFontWeightBold
+                                                                                                        scale:NSImageSymbolScaleMedium];
+            NSImageSymbolConfiguration *colorConfig = [NSImageSymbolConfiguration configurationWithHierarchicalColor:fillColor];
+            NSImageSymbolConfiguration *config = [weightConfig configurationByApplyingConfiguration:colorConfig];
+            NSImage *configuredSymbol = [symbol imageWithSymbolConfiguration:config];
+            [configuredSymbol drawInRect:rect
+                                fromRect:NSZeroRect
+                               operation:NSCompositingOperationSourceOver
+                                fraction:1.0
+                          respectFlipped:NO
+                                   hints:nil];
+            return;
+        }
+    }
+
+    NSBezierPath *bolt = [NSBezierPath bezierPath];
+    CGFloat x = rect.origin.x;
+    CGFloat y = rect.origin.y;
+    CGFloat w = rect.size.width;
+    CGFloat h = rect.size.height;
+
+    // Fallback only for older macOS versions without SF Symbols.
+    [bolt moveToPoint:NSMakePoint(x + 0.54 * w, y + 1.00 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.31 * w, y + 0.50 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.51 * w, y + 0.50 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.40 * w, y + 0.00 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.77 * w, y + 0.60 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.56 * w, y + 0.60 * h)];
+    [bolt closePath];
+    [bolt setLineJoinStyle:NSRoundLineJoinStyle];
+
+    [fillColor setFill];
+    [bolt fill];
+}
+
+static void batt_drawPauseInRect(NSRect rect, NSColor *fillColor, NSColor *strokeColor) {
+    CGFloat barWidth = rect.size.width * 0.36;
+    CGFloat gap = rect.size.width * 0.12;
+    CGFloat totalWidth = barWidth * 2.0 + gap;
+    CGFloat x = rect.origin.x + floor((rect.size.width - totalWidth) / 2.0);
+    CGFloat radius = barWidth / 2.0;
+    NSRect left = NSMakeRect(x, rect.origin.y, barWidth, rect.size.height);
+    NSRect right = NSMakeRect(x + barWidth + gap, rect.origin.y, barWidth, rect.size.height);
+    NSBezierPath *leftPath = [NSBezierPath bezierPathWithRoundedRect:left xRadius:radius yRadius:radius];
+    NSBezierPath *rightPath = [NSBezierPath bezierPathWithRoundedRect:right xRadius:radius yRadius:radius];
+
+    if (strokeColor) {
+        [strokeColor setStroke];
+        [leftPath setLineWidth:1.4];
+        [rightPath setLineWidth:1.4];
+        [leftPath stroke];
+        [rightPath stroke];
+    }
+
+    [fillColor setFill];
+    [leftPath fill];
+    [rightPath fill];
+}
+
+static void batt_drawThermalPauseInRect(NSRect rect, NSColor *fillColor, NSColor *strokeColor) {
+    (void)fillColor;
+
+    CGFloat thermometerWidth = MIN(rect.size.width, MAX(7.0, floor(rect.size.width * 0.72)));
+    NSRect thermometerRect = NSMakeRect(rect.origin.x + floor((rect.size.width - thermometerWidth) / 2.0),
+                                        rect.origin.y,
+                                        thermometerWidth,
+                                        rect.size.height);
+
+    CGFloat stemWidth = MAX(2.4, floor(thermometerRect.size.width * 0.34));
+    CGFloat stemX = thermometerRect.origin.x + floor((thermometerRect.size.width - stemWidth) / 2.0);
+    NSRect stem = NSMakeRect(stemX,
+                             thermometerRect.origin.y + thermometerRect.size.height * 0.28,
+                             stemWidth,
+                             thermometerRect.size.height * 0.64);
+    CGFloat bulbSize = stemWidth * 2.25;
+    NSRect bulb = NSMakeRect(thermometerRect.origin.x + floor((thermometerRect.size.width - bulbSize) / 2.0),
+                             thermometerRect.origin.y,
+                             bulbSize,
+                             bulbSize);
+    NSBezierPath *stemPath = [NSBezierPath bezierPathWithRoundedRect:stem xRadius:stemWidth / 2.0 yRadius:stemWidth / 2.0];
+    NSBezierPath *bulbPath = [NSBezierPath bezierPathWithOvalInRect:bulb];
+    NSColor *thermometerColor = [NSColor colorWithCalibratedRed:1.0 green:0.18 blue:0.10 alpha:1.0];
+    NSColor *outlineColor = strokeColor ? strokeColor : [NSColor whiteColor];
+
+    [outlineColor setStroke];
+    [stemPath setLineWidth:1.6];
+    [bulbPath setLineWidth:1.6];
+    [stemPath stroke];
+    [bulbPath stroke];
+
+    [thermometerColor setFill];
+    [stemPath fill];
+    [bulbPath fill];
+
+    NSBezierPath *ticks = [NSBezierPath bezierPath];
+    CGFloat tickX1 = MIN(NSMaxX(stem) + 1.0, NSMaxX(thermometerRect) - 3.0);
+    CGFloat tickX2 = NSMaxX(thermometerRect) - 0.6;
+    for (int i = 0; i < 3; i++) {
+        CGFloat y = stem.origin.y + stem.size.height * (0.25 + i * 0.24);
+        [ticks moveToPoint:NSMakePoint(tickX1, y)];
+        [ticks lineToPoint:NSMakePoint(tickX2, y)];
+    }
+    [ticks setLineWidth:1.0];
+    [ticks setLineCapStyle:NSRoundLineCapStyle];
+    [[NSColor whiteColor] setStroke];
+    [ticks stroke];
+}
+
+static void batt_drawFittingCenteredText(NSString *text, NSRect rect, NSColor *color, CGFloat maxSize, CGFloat minSize, NSFontWeight weight) {
+    NSMutableParagraphStyle *paragraph = [[NSMutableParagraphStyle alloc] init];
+    paragraph.alignment = NSTextAlignmentCenter;
+
+    CGFloat size = maxSize;
+    NSDictionary *attrs = nil;
+    while (size >= minSize) {
+        NSFont *font = [NSFont monospacedDigitSystemFontOfSize:size weight:weight];
+        attrs = @{
+            NSFontAttributeName: font,
+            NSForegroundColorAttributeName: color,
+            NSParagraphStyleAttributeName: paragraph,
+            NSKernAttributeName: @(-0.85)
+        };
+        NSSize textSize = [text sizeWithAttributes:attrs];
+        if (textSize.width <= rect.size.width && textSize.height <= rect.size.height + 2.0) {
+            break;
+        }
+        size -= 0.5;
+    }
+
+    NSSize textSize = [text sizeWithAttributes:attrs];
+    NSRect textRect = NSMakeRect(rect.origin.x,
+                                 rect.origin.y + floor((rect.size.height - textSize.height) / 2.0),
+                                 rect.size.width,
+                                 textSize.height);
+
+    [NSGraphicsContext saveGraphicsState];
+    NSBezierPath *clip = [NSBezierPath bezierPathWithRect:rect];
+    [clip addClip];
+    [text drawInRect:textRect withAttributes:attrs];
+    [NSGraphicsContext restoreGraphicsState];
+
+#if !__has_feature(objc_arc)
+    [paragraph release];
+#endif
+}
+
+static NSRect batt_centeredImageRect(NSImage *source, NSRect bounds) {
+    NSSize sourceSize = source.size;
+    if (sourceSize.width <= 0.0 || sourceSize.height <= 0.0) {
+        return bounds;
+    }
+
+    CGFloat scale = MIN(bounds.size.width / sourceSize.width, bounds.size.height / sourceSize.height);
+    CGFloat width = floor(sourceSize.width * scale);
+    CGFloat height = floor(sourceSize.height * scale);
+    return NSMakeRect(bounds.origin.x + floor((bounds.size.width - width) / 2.0),
+                      bounds.origin.y + floor((bounds.size.height - height) / 2.0),
+                      width,
+                      height);
+}
+
+static void batt_drawTintedImage(NSImage *source, NSRect bounds, NSColor *color) {
+    NSRect drawRect = batt_centeredImageRect(source, bounds);
+    [source drawInRect:drawRect
+              fromRect:NSZeroRect
+             operation:NSCompositingOperationSourceOver
+              fraction:1.0
+        respectFlipped:NO
+                 hints:nil];
+    [color setFill];
+    NSRectFillUsingOperation(drawRect, NSCompositingOperationSourceIn);
+}
+
+static NSImage *batt_newBatteryOutlineIcon(int percent, bool charging, bool paused, bool thermalPaused) {
+    percent = batt_clampPercent(percent);
+
+    // Outline-only style matching the native macOS menu bar battery group.
+    // Keep the body mostly transparent; use a very subtle fill only for state hinting.
+    NSSize size = NSMakeSize(30.0, 15.8);
+    NSImage *image = [[NSImage alloc] initWithSize:size];
+    [image setTemplate:NO];
+    [image setAccessibilityDescription:@"batt battery icon"];
+
+    [image lockFocus];
+
+    NSRect body = NSMakeRect(1.0, 2.1, 24.1, 11.2);
+    NSRect terminal = NSMakeRect(25.85, 5.45, 1.95, 4.55);
+    NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:2.95 yRadius:2.95];
+    NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:0.95 yRadius:0.95];
+
+    NSColor *shellFillColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.055];
+    NSColor *outlineColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.85];
+    NSColor *terminalColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.58];
+
+    [shellFillColor setFill];
+    [bodyPath fill];
+
+    [outlineColor setStroke];
+    [bodyPath setLineWidth:0.85];
+    [bodyPath stroke];
+
+    [terminalColor setFill];
+    [terminalPath fill];
+
+    // Native-style outline mode: no large green block. A faint interior meter is kept
+    // only for low/charging state readability and stays visually behind the glyph.
+    CGFloat insetX = 1.65;
+    CGFloat insetY = 1.85;
+    CGFloat maxFillWidth = body.size.width - insetX * 2.0;
+    CGFloat fillWidth = floor(maxFillWidth * percent / 100.0);
+    if (percent > 0 && fillWidth < 1.4) fillWidth = 1.4;
+    NSColor *stateColor = batt_batteryFillColor(percent, charging, paused, thermalPaused);
+    CGFloat fillAlpha = 1.0;
+    NSRect fillRect = NSMakeRect(body.origin.x + insetX,
+                                 body.origin.y + insetY,
+                                 fillWidth,
+                                 body.size.height - insetY * 2.0);
+    NSBezierPath *fillPath = [NSBezierPath bezierPathWithRoundedRect:fillRect xRadius:0.9 yRadius:0.9];
+    [[stateColor colorWithAlphaComponent:fillAlpha] setFill];
+    [fillPath fill];
+
+    NSColor *glyphColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.88];
+    if (thermalPaused) {
+        batt_drawThermalPauseInRect(NSMakeRect(7.1, 2.95, 11.4, 8.6),
+                                    glyphColor,
+                                    nil);
+    } else if (paused) {
+        CGFloat pauseH = 8.2;
+        batt_drawPauseInRect(NSMakeRect(body.origin.x + 8.35,
+                                        body.origin.y + (body.size.height - pauseH) / 2.0,
+                                        7.4,
+                                        pauseH),
+                             glyphColor,
+                             [NSColor colorWithCalibratedWhite:0.0 alpha:0.28]);
+    } else if (charging) {
+        CGFloat glyphH = 14.4;
+        NSRect boltRect = NSMakeRect(body.origin.x + 6.35,
+                                     body.origin.y + (body.size.height - glyphH) / 2.0,
+                                     10.4,
+                                     glyphH);
+        NSColor *boltStrokeColor = [NSColor colorWithCalibratedWhite:0.0 alpha:0.66];
+        batt_drawOutlinedBoltInRect(boltRect, glyphColor, boltStrokeColor, 2.6);
+    }
+
+    [image unlockFocus];
+    return image;
+}
+
+static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool paused, bool thermalPaused) {
+    (void)charging;
+    (void)paused;
+    (void)thermalPaused;
+
+    percent = batt_clampPercent(percent);
+    NSSize size = NSMakeSize(23.0, 17.0);
+    NSImage *image = [[NSImage alloc] initWithSize:size];
+    [image setTemplate:NO];
+    [image setAccessibilityDescription:@"batt fixed percentage icon"];
+
+    [image lockFocus];
+    [[NSColor clearColor] setFill];
+    NSRectFillUsingOperation(NSMakeRect(0.0, 0.0, size.width, size.height), NSCompositingOperationClear);
+
+    // Keep the original SF Symbol border exactly as-is. Only clear the inner
+    // glyph block before drawing the percentage text.
+    NSRect symbolRect = NSMakeRect(0.0, 0.0, 23.0, 17.0);
+    bool drewLegacySymbol = false;
+    if (@available(macOS 11.0, *)) {
+        NSImage *symbol = [NSImage imageWithSystemSymbolName:@"minus.plus.batteryblock" accessibilityDescription:@"batt icon"];
+        if (symbol) {
+            batt_drawTintedImage(symbol, symbolRect, [NSColor whiteColor]);
+            drewLegacySymbol = true;
+        }
+    }
+
+    if (!drewLegacySymbol) {
+        NSRect body = NSMakeRect(0.55, 2.7, 18.7, 10.6);
+        NSRect terminal = NSMakeRect(19.85, 5.3, 2.0, 5.4);
+        NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:2.7 yRadius:2.7];
+        NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:1.2 yRadius:1.2];
+        [[NSColor whiteColor] setStroke];
+        [bodyPath setLineWidth:1.45];
+        [bodyPath stroke];
+        [[NSColor whiteColor] setFill];
+        [terminalPath fill];
+    }
+
+    NSString *text = [NSString stringWithFormat:@"%d", percent];
+
+    // This rectangle must stay inside the old icon body. Do not expand it into
+    // the outer border, or the original border shape will be damaged.
+    NSRect legacyGlyphRect = NSMakeRect(4.85, 4.45, 12.95, 6.9);
+    NSRect textRect = NSMakeRect(4.55, 3.9, 13.95, 8.35);
+
+    [NSGraphicsContext saveGraphicsState];
+    [[NSGraphicsContext currentContext] setCompositingOperation:NSCompositingOperationClear];
+    NSBezierPath *clearPath = [NSBezierPath bezierPathWithRoundedRect:legacyGlyphRect xRadius:0.75 yRadius:0.75];
+    [clearPath fill];
+    [NSGraphicsContext restoreGraphicsState];
+
+    batt_drawFittingCenteredText(text, textRect, [NSColor whiteColor], 9.45, 6.2, NSFontWeightHeavy);
+
+    [image unlockFocus];
+    return image;
+}
+
+static NSImage *batt_newPercentageIcon(int percent, bool charging, bool paused, bool thermalPaused) {
+    percent = batt_clampPercent(percent);
+
+    // Compact iOS-like percentage battery: muted translucent body, subtle fill,
+    // centered number, small terminal, and SF-style bolt on the right.
+    NSSize size = NSMakeSize(32.0, 17.0);
+    NSImage *image = [[NSImage alloc] initWithSize:size];
+    [image setTemplate:NO];
+    [image setAccessibilityDescription:@"batt battery percentage icon"];
+
+    [image lockFocus];
+    NSRect body = NSMakeRect(0.35, 0.85, 27.8, 14.3);
+    NSRect terminal = NSMakeRect(28.75, 5.55, 1.55, 5.9);
+    NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:4.25 yRadius:4.25];
+    NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:0.78 yRadius:0.78];
+
+    NSColor *baseFill = charging
+        ? batt_greenColor()
+        : [NSColor colorWithCalibratedWhite:1.0 alpha:1.0];
+    NSColor *fillColor = [[baseFill colorWithAlphaComponent:(charging ? 0.74 : 0.72)] retain];
+    NSColor *emptyColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.30];
+    NSColor *terminalColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.35];
+    NSColor *glyphColor = charging
+        ? [NSColor colorWithCalibratedWhite:1.0 alpha:0.88]
+        : [NSColor colorWithCalibratedWhite:0.06 alpha:0.88];
+
+    [NSGraphicsContext saveGraphicsState];
+    [bodyPath addClip];
+
+    [emptyColor setFill];
+    NSRectFill(body);
+
+    CGFloat fillWidth = floor(body.size.width * percent / 100.0);
+    if (percent > 0 && fillWidth < 1.9) fillWidth = 1.9;
+    [fillColor setFill];
+    NSRectFill(NSMakeRect(body.origin.x, body.origin.y, fillWidth, body.size.height));
+
+    [NSGraphicsContext restoreGraphicsState];
+
+    [terminalColor setFill];
+    [terminalPath fill];
+
+    NSString *text = [NSString stringWithFormat:@"%d", percent];
+    bool hasRightGlyph = charging || paused || thermalPaused;
+    NSRect textRect = hasRightGlyph
+        ? NSMakeRect(body.origin.x + 0.75,
+                     body.origin.y + 0.45,
+                     body.size.width - 8.4,
+                     body.size.height + 0.1)
+        : NSMakeRect(body.origin.x + 0.35,
+                     body.origin.y + 0.45,
+                     body.size.width - 0.7,
+                     body.size.height + 0.1);
+    batt_drawFittingCenteredText(text,
+                                 textRect,
+                                 glyphColor,
+                                 13.6,
+                                 9.8,
+                                 NSFontWeightBold);
+
+    if (thermalPaused) {
+        CGFloat glyphH = 10.6;
+        batt_drawThermalPauseInRect(NSMakeRect(body.origin.x + body.size.width - 7.9,
+                                               body.origin.y + (body.size.height - glyphH) / 2.0,
+                                               6.8,
+                                               glyphH),
+                                    glyphColor,
+                                    nil);
+    } else if (paused) {
+        CGFloat glyphH = 9.2;
+        batt_drawPauseInRect(NSMakeRect(body.origin.x + body.size.width - 7.65,
+                                        body.origin.y + (body.size.height - glyphH) / 2.0,
+                                        7.3,
+                                        glyphH),
+                             glyphColor,
+                             nil);
+    } else if (charging) {
+        CGFloat glyphH = 13.0;
+        batt_drawPercentageBoltInRect(NSMakeRect(body.origin.x + body.size.width - 8.5,
+                                                 body.origin.y + (body.size.height - glyphH) / 2.0,
+                                                 9.0,
+                                                 glyphH),
+                                      glyphColor,
+                                      nil);
+    }
+
+#if !__has_feature(objc_arc)
+    [fillColor release];
+#endif
+
+    [image unlockFocus];
+    return image;
+}
+
+void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int percent, bool charging, bool paused, bool thermalPaused) {
+    NSStatusItem *item = (NSStatusItem *)statusItemPtr;
+    if (!item) return;
+    NSStatusBarButton *button = [item button];
+    if (!button) return;
+
+    NSString *styleString = style ? [NSString stringWithUTF8String:style] : @"";
+    NSImage *image = nil;
+    if ([styleString isEqualToString:@"fixed-percentage"]) {
+        image = batt_newFixedPercentageIcon(percent, charging, paused, thermalPaused);
+    } else if ([styleString isEqualToString:@"battery"]) {
+        image = batt_newBatteryOutlineIcon(percent, charging, paused, thermalPaused);
+    } else {
+        image = batt_newPercentageIcon(percent, charging, paused, thermalPaused);
+    }
+
+    if ([styleString isEqualToString:@"fixed-percentage"]) {
+        [item setLength:23.0];
+    } else {
+        [item setLength:NSVariableStatusItemLength];
+    }
+    [button setImage:image];
+    [button setImagePosition:NSImageOnly];
+    [button setImageScaling:NSImageScaleProportionallyDown];
+
+#if !__has_feature(objc_arc)
+    [image release];
+#endif
+}
+
+@implementation BattTrayIconTimerTarget
+- (instancetype)initWithHandle:(uintptr_t)handle {
+    if ((self = [super init])) {
+        _handle = handle;
+    }
+    return self;
+}
+- (void)setInterval:(NSTimeInterval)intervalSeconds {
+    if (intervalSeconds <= 0.0 || isnan(intervalSeconds) || isinf(intervalSeconds)) {
+        intervalSeconds = 60.0;
+    }
+    if (self.timer) {
+        [self.timer invalidate];
+        self.timer = nil;
+    }
+    self.timer = [NSTimer timerWithTimeInterval:intervalSeconds
+                                         target:self
+                                       selector:@selector(timerTick:)
+                                       userInfo:nil
+                                        repeats:YES];
+    [[NSRunLoop mainRunLoop] addTimer:self.timer forMode:NSRunLoopCommonModes];
+}
+- (void)timerTick:(NSTimer *)timer {
+    battTrayIconTimerFired(_handle);
+}
+@end
+
+void *batt_attachTrayIconTimer(uintptr_t handle, double intervalSeconds) {
+    BattTrayIconTimerTarget *target = [[BattTrayIconTimerTarget alloc] initWithHandle:handle];
+    [target setInterval:intervalSeconds];
+    return (void *)CFBridgingRetain(target);
+}
+
+void batt_setTrayIconTimerInterval(void *timerPtr, double intervalSeconds) {
+    if (timerPtr == NULL) return;
+    BattTrayIconTimerTarget *target = (BattTrayIconTimerTarget *)timerPtr;
+    [target setInterval:intervalSeconds];
+}
+
+void batt_releaseTrayIconTimer(void *timerPtr) {
+    if (timerPtr == NULL) return;
+    BattTrayIconTimerTarget *target = (BattTrayIconTimerTarget *)timerPtr;
+    if (target.timer) {
+        [target.timer invalidate];
+        target.timer = nil;
+    }
+    CFRelease(timerPtr);
+}
 
 @implementation BattMenuObserver
 - (instancetype)initWithHandle:(uintptr_t)handle {

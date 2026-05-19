@@ -17,6 +17,7 @@ import (
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/events"
 	"github.com/charlie0129/batt/pkg/powerinfo"
+	"github.com/charlie0129/batt/pkg/temperature"
 )
 
 func (c *Client) SetLimit(l int) (string, error) {
@@ -49,6 +50,22 @@ func (c *Client) SetDisableChargingPreSleep(enabled bool) (string, error) {
 
 func (c *Client) SetPreventSystemSleep(enabled bool) (string, error) {
 	return c.Put("/prevent-system-sleep", strconv.FormatBool(enabled))
+}
+
+func (c *Client) SetTemperatureMonitoring(enabled bool) (string, error) {
+	return c.Put("/temperature-monitoring", strconv.FormatBool(enabled))
+}
+
+func (c *Client) SetTemperatureProtectionThresholdCelsius(threshold int) (string, error) {
+	return c.Put("/temperature-protection-threshold", strconv.Itoa(threshold))
+}
+
+func (c *Client) SetTrayIconStyle(style config.TrayIconStyle) (string, error) {
+	payload, err := json.Marshal(style)
+	if err != nil {
+		return "", err
+	}
+	return c.Put("/tray-icon-style", string(payload))
 }
 
 func (c *Client) SetControlMagSafeLED(mode config.ControlMagSafeMode) (string, error) {
@@ -156,6 +173,7 @@ func (c *Client) GetPowerTelemetry() (*powerinfo.PowerTelemetry, error) {
 type TelemetryResponse struct {
 	Power       *powerinfo.PowerTelemetry `json:"power,omitempty"`
 	Calibration *calibration.Status       `json:"calibration,omitempty"`
+	Temperature *temperature.Status       `json:"temperature,omitempty"`
 }
 
 // GetTelemetry fetches unified telemetry; set power or calibration to false to exclude.
@@ -180,6 +198,19 @@ func (c *Client) GetTelemetry(includePower, includeCalibration bool) (*Telemetry
 		return nil, pkgerrors.Wrapf(err, "failed to unmarshal unified telemetry")
 	}
 	return &tr, nil
+}
+
+func (c *Client) GetTemperatureStatus() (*temperature.Status, error) {
+	ret, err := c.Get("/temperature-status")
+	if err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to get temperature status")
+	}
+
+	var status temperature.Status
+	if err := json.Unmarshal([]byte(ret), &status); err != nil {
+		return nil, pkgerrors.Wrapf(err, "failed to unmarshal temperature status")
+	}
+	return &status, nil
 }
 
 // SubscribeEvents connects to /event and streams SSE events.

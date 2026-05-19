@@ -106,6 +106,8 @@ func startEventBridge(api *client.Client, ctrl *menuController) {
 
 //nolint:gocyclo
 func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menuController) {
+	var ctrl *menuController
+
 	menubarIcon := appkit.StatusBar_SystemStatusBar().StatusItemWithLength(appkit.VariableStatusItemLength)
 	objc.Retain(&menubarIcon)
 	setMenubarImage(menubarIcon, false, false, false)
@@ -161,7 +163,12 @@ func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menu
 			return
 		}
 
-		setMenubarImage(menubarIcon, true, true, false)
+		if ctrl != nil {
+			ctrl.toggleMenusRequiringInstall(true, true, false)
+			ctrl.refreshTrayIcon()
+		} else {
+			setMenubarImage(menubarIcon, true, true, false)
+		}
 	}
 
 	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", uninstallOrUpgrade)
@@ -179,6 +186,44 @@ func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menu
 	currentLimitItem := appkit.NewMenuItemWithAction("Loading...", "", func(sender objc.Object) {})
 	currentLimitItem.SetEnabled(false)
 	menu.AddItem(currentLimitItem)
+
+	trayIconStyleMenu := appkit.NewMenuWithTitle("Tray Icon Style")
+	trayIconStyleSubMenuItem := appkit.NewSubMenuItem(trayIconStyleMenu)
+	trayIconStyleSubMenuItem.SetTitle("Tray Icon Style")
+	trayIconStyleSubMenuItem.SetToolTip(`Choose how much battery information the menubar icon shows.`)
+	menu.AddItem(trayIconStyleSubMenuItem)
+
+	trayIconFixedItem := appkit.NewMenuItemWithAction("Fixed Icon", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStyleFixed)
+		}
+	})
+	trayIconFixedItem.SetToolTip(`Show the original fixed batt menubar icon.`)
+	trayIconStyleMenu.AddItem(trayIconFixedItem)
+
+	trayIconFixedPercentItem := appkit.NewMenuItemWithAction("Fixed Icon + Percentage", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStyleFixedPercent)
+		}
+	})
+	trayIconFixedPercentItem.SetToolTip(`Show the original batt menubar icon with the current charge percentage centered inside it.`)
+	trayIconStyleMenu.AddItem(trayIconFixedPercentItem)
+
+	trayIconBatteryItem := appkit.NewMenuItemWithAction("Battery Fill", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStyleBattery)
+		}
+	})
+	trayIconBatteryItem.SetToolTip(`Show a battery outline with a fill area that follows the current charge percentage.`)
+	trayIconStyleMenu.AddItem(trayIconBatteryItem)
+
+	trayIconPercentageItem := appkit.NewMenuItemWithAction("Percentage Fill", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStylePercentage)
+		}
+	})
+	trayIconPercentageItem.SetToolTip(`Show the charge percentage inside a rounded icon with a fill area that follows the current charge percentage.`)
+	trayIconStyleMenu.AddItem(trayIconPercentageItem)
 
 	// ==================== QUICK LIMITS ====================
 	menu.AddItem(appkit.MenuItem_SeparatorItem())
@@ -359,6 +404,44 @@ This is useful when you want to use your battery to lower the battery charge, bu
 NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.`)
 	advancedMenu.AddItem(forceDischargeItem)
 
+	temperatureMenu := appkit.NewMenuWithTitle("Temperature...")
+	temperatureMenu.SetAutoenablesItems(false)
+	temperatureSub := appkit.NewSubMenuItem(temperatureMenu)
+	temperatureSub.SetTitle("Temperature...")
+	temperatureSub.SetToolTip(`Monitor battery temperature references and pause charging when the battery is hotter than the configured threshold.`)
+	advancedMenu.AddItem(temperatureSub)
+
+	temperatureMonitoringItem := checkBoxItem("Record Temperature References", "", func(checked bool) {
+		_, err := apiClient.SetTemperatureMonitoring(checked)
+		if err != nil {
+			logrus.WithError(err).Error("Failed to set temperature monitoring")
+			showAlert("Failed to set temperature monitoring", err.Error())
+			return
+		}
+	})
+	temperatureMonitoringItem.SetToolTip(`Record battery temperature references for idle/not charging, idle/charging, and active/charging states. Recorded references are written as comments in the config file.`)
+	temperatureMenu.AddItem(temperatureMonitoringItem)
+
+	temperatureCurrentItem := appkit.NewMenuItemWithAction("Current: No temperature data", "", func(sender objc.Object) {})
+	temperatureCurrentItem.SetEnabled(false)
+	temperatureMenu.AddItem(temperatureCurrentItem)
+
+	temperatureSliderItem, temperatureSliderPtr := NewTemperatureSliderMenuItem(30, 55, 40)
+	temperatureMenu.AddItem(temperatureSliderItem)
+
+	temperatureMenu.AddItem(appkit.MenuItem_SeparatorItem())
+	temperatureIdleNotChargingItem := appkit.NewMenuItemWithAction("Idle + Not Charging: No data yet", "", func(sender objc.Object) {})
+	temperatureIdleNotChargingItem.SetEnabled(false)
+	temperatureMenu.AddItem(temperatureIdleNotChargingItem)
+
+	temperatureIdleChargingItem := appkit.NewMenuItemWithAction("Idle + Charging: No data yet", "", func(sender objc.Object) {})
+	temperatureIdleChargingItem.SetEnabled(false)
+	temperatureMenu.AddItem(temperatureIdleChargingItem)
+
+	temperatureActiveChargingItem := appkit.NewMenuItemWithAction("Active + Charging: No data yet", "", func(sender objc.Object) {})
+	temperatureActiveChargingItem.SetEnabled(false)
+	temperatureMenu.AddItem(temperatureActiveChargingItem)
+
 	// Auto Calibration menu (after Force Discharge)
 	autoCalibrationItem := appkit.NewMenuWithTitle("Auto Calibration (Experimental)...")
 	autoCalibrationItem.SetAutoenablesItems(false)
@@ -458,7 +541,12 @@ NOTES:
 			return
 		}
 
-		setMenubarImage(menubarIcon, false, true, false)
+		if ctrl != nil {
+			ctrl.hasBatteryStatus = false
+			ctrl.toggleMenusRequiringInstall(false, true, false)
+		} else {
+			setMenubarImage(menubarIcon, false, true, false)
+		}
 	})
 	uninstallItem.SetToolTip(`Uninstall the batt daemon. This will remove the batt daemon from your system. You must enter your password to uninstall it.
 
@@ -482,27 +570,44 @@ After uninstalling the batt daemon, no charging control will be present on your 
 	menubarIcon.SetMenu(menu)
 
 	// ==================== CALLBACKS & OBSERVER ====================
-	ctrl := &menuController{
-		api:                         apiClient,
-		menubarIcon:                 menubarIcon,
-		powerFlowSubMenuItem:        powerFlowSubMenuItem,
-		installItem:                 installItem,
-		upgradeItem:                 upgradeItem,
-		stateItem:                   stateItem,
-		currentLimitItem:            currentLimitItem,
-		quickLimitsItem:             quickLimitsItem,
-		quickLimitsItems:            setQuickLimitsItems,
-		advancedSubMenuItem:         advancedSubMenuItem,
-		controlMagSafeLEDItem:       controlMagSafeLEDItem,
-		controlMagSafeEnableItem:    controlMagSafeEnableItem,
-		controlMagSafeDisableItem:   controlMagSafeDisableItem,
-		controlMagSafeAlwaysOffItem: controlMagSafeAlwaysOffItem,
-		preventIdleSleepItem:        preventIdleSleepItem,
-		disableChargingPreSleepItem: disableChargingPreSleepItem,
-		preventSystemSleepItem:      preventSystemSleepItem,
-		forceDischargeItem:          forceDischargeItem,
-		uninstallItem:               uninstallItem,
-		disableItem:                 disableItem,
+	ctrl = &menuController{
+		api:                            apiClient,
+		menubarIcon:                    menubarIcon,
+		trayIconStyle:                  config.TrayIconStylePercentage,
+		trayIconRefreshIntervalSeconds: config.DefaultTrayIconRefreshIntervalSeconds,
+		upperLimit:                     100,
+		lowerLimit:                     100,
+		powerFlowSubMenuItem:           powerFlowSubMenuItem,
+		installItem:                    installItem,
+		upgradeItem:                    upgradeItem,
+		stateItem:                      stateItem,
+		currentLimitItem:               currentLimitItem,
+		quickLimitsItem:                quickLimitsItem,
+		quickLimitsItems:               setQuickLimitsItems,
+		advancedSubMenuItem:            advancedSubMenuItem,
+		controlMagSafeLEDItem:          controlMagSafeLEDItem,
+		controlMagSafeEnableItem:       controlMagSafeEnableItem,
+		controlMagSafeDisableItem:      controlMagSafeDisableItem,
+		controlMagSafeAlwaysOffItem:    controlMagSafeAlwaysOffItem,
+		trayIconStyleSubMenuItem:       trayIconStyleSubMenuItem,
+		trayIconFixedItem:              trayIconFixedItem,
+		trayIconFixedPercentItem:       trayIconFixedPercentItem,
+		trayIconBatteryItem:            trayIconBatteryItem,
+		trayIconPercentageItem:         trayIconPercentageItem,
+		preventIdleSleepItem:             preventIdleSleepItem,
+		disableChargingPreSleepItem:      disableChargingPreSleepItem,
+		preventSystemSleepItem:           preventSystemSleepItem,
+		forceDischargeItem:               forceDischargeItem,
+		temperatureSubMenuItem:           temperatureSub,
+		temperatureMonitoringItem:        temperatureMonitoringItem,
+		temperatureCurrentItem:           temperatureCurrentItem,
+		temperatureProtectionItem:        temperatureSliderItem,
+		temperatureProtectionSliderPtr:   temperatureSliderPtr,
+		temperatureIdleNotChargingItem:   temperatureIdleNotChargingItem,
+		temperatureIdleChargingItem:      temperatureIdleChargingItem,
+		temperatureActiveChargingItem:    temperatureActiveChargingItem,
+		uninstallItem:                    uninstallItem,
+		disableItem:                      disableItem,
 		// Auto Calibration
 		autoCalSubMenuItem: autoCalibrationSub,
 		calStatusItem:      calStatusItem,
@@ -517,11 +622,16 @@ After uninstalling the batt daemon, no charging control will be present on your 
 	}
 
 	h := cgo.NewHandle(ctrl)
+	SetTemperatureSliderHandle(temperatureSliderPtr, h)
 	observerPtr := AttachPowerFlowObserver(menu, h)
+	trayIconTimerPtr := AttachTrayIconTimer(h, float64(ctrl.trayIconRefreshIntervalSeconds))
+	ctrl.trayIconTimerPtr = trayIconTimerPtr
 
 	cleanupFunc := func() {
 		logrus.Info("Cleaning up resources")
+		ReleaseTrayIconTimer(trayIconTimerPtr)
 		ReleasePowerFlowObserver(observerPtr)
+		ReleaseObject(temperatureSliderPtr)
 		h.Delete()
 	}
 
@@ -553,6 +663,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		}
 		conf := config.NewFileFromConfig(rawConfig, "")
 		logrus.WithFields(conf.LogrusFields()).Info("Got config")
+		ctrl.applyTrayConfig(conf)
 		logrus.Info("Getting charging control capability")
 		capable, err := apiClient.GetChargingControlCapable()
 		if err != nil {
@@ -570,6 +681,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 			ctrl.toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
 		}
 		logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
+		ctrl.refreshTrayIcon()
 	}
 
 	return cleanupFunc, ctrl
