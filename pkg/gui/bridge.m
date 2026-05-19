@@ -520,13 +520,18 @@ static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool pau
     (void)thermalPaused;
 
     percent = batt_clampPercent(percent);
-    NSSize size = NSMakeSize(36.0, 17.0);
+    NSSize size = NSMakeSize(23.0, 17.0);
     NSImage *image = [[NSImage alloc] initWithSize:size];
     [image setTemplate:NO];
     [image setAccessibilityDescription:@"batt fixed percentage icon"];
 
     [image lockFocus];
-    NSRect symbolRect = NSMakeRect(0.0, 0.0, 34.0, 17.0);
+    [[NSColor clearColor] setFill];
+    NSRectFillUsingOperation(NSMakeRect(0.0, 0.0, size.width, size.height), NSCompositingOperationClear);
+
+    // Keep the original SF Symbol border exactly as-is. Only clear the inner
+    // glyph block before drawing the percentage text.
+    NSRect symbolRect = NSMakeRect(0.0, 0.0, 23.0, 17.0);
     bool drewLegacySymbol = false;
     if (@available(macOS 11.0, *)) {
         NSImage *symbol = [NSImage imageWithSystemSymbolName:@"minus.plus.batteryblock" accessibilityDescription:@"batt icon"];
@@ -537,8 +542,8 @@ static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool pau
     }
 
     if (!drewLegacySymbol) {
-        NSRect body = NSMakeRect(1.0, 2.7, 26.5, 10.6);
-        NSRect terminal = NSMakeRect(28.6, 5.3, 2.8, 5.4);
+        NSRect body = NSMakeRect(0.55, 2.7, 18.7, 10.6);
+        NSRect terminal = NSMakeRect(19.85, 5.3, 2.0, 5.4);
         NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:2.7 yRadius:2.7];
         NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:1.2 yRadius:1.2];
         [[NSColor whiteColor] setStroke];
@@ -549,15 +554,19 @@ static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool pau
     }
 
     NSString *text = [NSString stringWithFormat:@"%d", percent];
-    NSRect legacyGlyphRect = NSMakeRect(5.55, 4.05, 19.9, 9.1);
-    NSRect textRect = NSMakeRect(5.65, 3.25, 19.9, 9.1);
+
+    // This rectangle must stay inside the old icon body. Do not expand it into
+    // the outer border, or the original border shape will be damaged.
+    NSRect legacyGlyphRect = NSMakeRect(4.85, 4.45, 12.95, 6.9);
+    NSRect textRect = NSMakeRect(4.55, 3.9, 13.95, 8.35);
 
     [NSGraphicsContext saveGraphicsState];
-    NSBezierPath *clearPath = [NSBezierPath bezierPathWithRoundedRect:legacyGlyphRect xRadius:1.8 yRadius:1.8];
     [[NSGraphicsContext currentContext] setCompositingOperation:NSCompositingOperationClear];
+    NSBezierPath *clearPath = [NSBezierPath bezierPathWithRoundedRect:legacyGlyphRect xRadius:0.75 yRadius:0.75];
     [clearPath fill];
     [NSGraphicsContext restoreGraphicsState];
-    batt_drawFittingCenteredText(text, textRect, [NSColor whiteColor], 9.7, 6.2, NSFontWeightHeavy);
+
+    batt_drawFittingCenteredText(text, textRect, [NSColor whiteColor], 9.45, 6.2, NSFontWeightHeavy);
 
     [image unlockFocus];
     return image;
@@ -673,7 +682,11 @@ void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int 
         image = batt_newPercentageIcon(percent, charging, paused, thermalPaused);
     }
 
-    [item setLength:NSVariableStatusItemLength];
+    if ([styleString isEqualToString:@"fixed-percentage"]) {
+        [item setLength:23.0];
+    } else {
+        [item setLength:NSVariableStatusItemLength];
+    }
     [button setImage:image];
     [button setImagePosition:NSImageOnly];
     [button setImageScaling:NSImageScaleProportionallyDown];
