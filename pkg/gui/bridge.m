@@ -225,9 +225,33 @@ static void batt_drawBoltInRect(NSRect rect, NSColor *fillColor, NSColor *stroke
     [bolt fill];
 }
 
+static void batt_drawPercentageBoltInRect(NSRect rect, NSColor *fillColor, NSColor *shadowColor) {
+    (void)shadowColor;
+
+    NSBezierPath *bolt = [NSBezierPath bezierPath];
+    CGFloat x = rect.origin.x;
+    CGFloat y = rect.origin.y;
+    CGFloat w = rect.size.width;
+    CGFloat h = rect.size.height;
+
+    // Hand-drawn solid bolt for the percentage battery. Do not use SF Symbol
+    // masking here: oversized symbol masking can leave an unwanted gray block.
+    [bolt moveToPoint:NSMakePoint(x + 0.54 * w, y + 1.00 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.31 * w, y + 0.50 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.51 * w, y + 0.50 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.40 * w, y + 0.00 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.77 * w, y + 0.60 * h)];
+    [bolt lineToPoint:NSMakePoint(x + 0.56 * w, y + 0.60 * h)];
+    [bolt closePath];
+    [bolt setLineJoinStyle:NSRoundLineJoinStyle];
+
+    [fillColor setFill];
+    [bolt fill];
+}
+
 static void batt_drawPauseInRect(NSRect rect, NSColor *fillColor, NSColor *strokeColor) {
-    CGFloat barWidth = rect.size.width * 0.28;
-    CGFloat gap = rect.size.width * 0.18;
+    CGFloat barWidth = rect.size.width * 0.36;
+    CGFloat gap = rect.size.width * 0.12;
     CGFloat totalWidth = barWidth * 2.0 + gap;
     CGFloat x = rect.origin.x + floor((rect.size.width - totalWidth) / 2.0);
     CGFloat radius = barWidth / 2.0;
@@ -364,36 +388,61 @@ static void batt_drawTintedImage(NSImage *source, NSRect bounds, NSColor *color)
 
 static NSImage *batt_newBatteryOutlineIcon(int percent, bool charging, bool paused, bool thermalPaused) {
     percent = batt_clampPercent(percent);
-    NSSize size = NSMakeSize(33.0, 18.0);
+
+    // Native-like macOS menu bar battery: compact outline, translucent shell,
+    // inset fill, and a low-contrast symbol overlay.
+    NSSize size = NSMakeSize(27.0, 14.0);
     NSImage *image = [[NSImage alloc] initWithSize:size];
     [image setTemplate:NO];
     [image setAccessibilityDescription:@"batt battery icon"];
 
     [image lockFocus];
-    NSRect body = NSMakeRect(1.0, 2.7, 27.0, 12.6);
-    NSRect terminal = NSMakeRect(29.0, 5.4, 2.8, 7.2);
-    NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:3.1 yRadius:3.1];
-    NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:1.3 yRadius:1.3];
 
-    [batt_outlineColor() setStroke];
-    [bodyPath setLineWidth:1.2];
+    NSRect body = NSMakeRect(1.0, 2.0, 21.8, 9.8);
+    NSRect terminal = NSMakeRect(23.6, 5.0, 1.75, 3.8);
+    CGFloat radius = 2.35;
+    NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:radius yRadius:radius];
+    NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:0.82 yRadius:0.82];
+
+    NSColor *shellFillColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.105];
+    NSColor *outlineColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.58];
+    NSColor *terminalColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.46];
+
+    [shellFillColor setFill];
+    [bodyPath fill];
+
+    [outlineColor setStroke];
+    [bodyPath setLineWidth:1.05];
     [bodyPath stroke];
-    [batt_outlineColor() setFill];
+
+    [terminalColor setFill];
     [terminalPath fill];
 
-    CGFloat fillWidth = floor((body.size.width - 4.8) * percent / 100.0);
-    if (percent > 0 && fillWidth < 1.8) fillWidth = 1.8;
-    NSRect fillRect = NSMakeRect(body.origin.x + 2.4, body.origin.y + 2.4, fillWidth, body.size.height - 4.8);
-    NSBezierPath *fillPath = [NSBezierPath bezierPathWithRoundedRect:fillRect xRadius:0.9 yRadius:0.9];
-    [batt_batteryFillColor(percent, charging, paused, thermalPaused) setFill];
+    CGFloat insetX = 2.25;
+    CGFloat insetY = 2.25;
+    CGFloat maxFillWidth = body.size.width - insetX * 2.0;
+    CGFloat fillWidth = floor(maxFillWidth * percent / 100.0);
+    if (percent > 0 && fillWidth < 1.45) fillWidth = 1.45;
+    NSRect fillRect = NSMakeRect(body.origin.x + insetX,
+                                 body.origin.y + insetY,
+                                 fillWidth,
+                                 body.size.height - insetY * 2.0);
+    NSBezierPath *fillPath = [NSBezierPath bezierPathWithRoundedRect:fillRect xRadius:0.95 yRadius:0.95];
+    [[batt_batteryFillColor(percent, charging, paused, thermalPaused) colorWithAlphaComponent:0.92] setFill];
     [fillPath fill];
 
     if (thermalPaused) {
-        batt_drawThermalPauseInRect(NSMakeRect(5.2, 3.5, 20.0, 11.0), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
+        batt_drawThermalPauseInRect(NSMakeRect(6.0, 2.55, 11.4, 8.3),
+                                    [NSColor colorWithCalibratedWhite:1.0 alpha:0.92],
+                                    [NSColor colorWithCalibratedWhite:0.10 alpha:0.42]);
     } else if (paused) {
-        batt_drawPauseInRect(NSMakeRect(10.7, 4.8, 8.6, 8.2), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
+        batt_drawPauseInRect(NSMakeRect(9.2, 3.45, 5.2, 6.4),
+                             [NSColor colorWithCalibratedWhite:1.0 alpha:0.92],
+                             [NSColor colorWithCalibratedWhite:0.10 alpha:0.42]);
     } else if (charging) {
-        batt_drawBoltInRect(NSMakeRect(10.5, 2.5, 9.8, 12.8), [NSColor whiteColor], [NSColor colorWithCalibratedWhite:0.20 alpha:0.65]);
+        batt_drawBoltInRect(NSMakeRect(8.7, 2.25, 6.2, 9.1),
+                            [NSColor colorWithCalibratedWhite:1.0 alpha:0.92],
+                            [NSColor colorWithCalibratedWhite:0.10 alpha:0.42]);
     }
 
     [image unlockFocus];
@@ -435,15 +484,15 @@ static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool pau
     }
 
     NSString *text = [NSString stringWithFormat:@"%d", percent];
-    NSRect legacyGlyphRect = NSMakeRect(5.7, 4.0, 18.0, 8.0);
-    NSRect textRect = NSMakeRect(5.3, 3.9, 18.8, 8.2);
+    NSRect legacyGlyphRect = NSMakeRect(5.2, 3.75, 18.8, 8.6);
+    NSRect textRect = NSMakeRect(5.15, 3.0, 18.8, 8.6);
 
     [NSGraphicsContext saveGraphicsState];
     NSBezierPath *clearPath = [NSBezierPath bezierPathWithRoundedRect:legacyGlyphRect xRadius:1.8 yRadius:1.8];
     [[NSGraphicsContext currentContext] setCompositingOperation:NSCompositingOperationClear];
     [clearPath fill];
     [NSGraphicsContext restoreGraphicsState];
-    batt_drawFittingCenteredText(text, textRect, [NSColor whiteColor], 8.6, 5.8, NSFontWeightBold);
+    batt_drawFittingCenteredText(text, textRect, [NSColor whiteColor], 8.8, 5.8, NSFontWeightBold);
 
     [image unlockFocus];
     return image;
@@ -451,55 +500,93 @@ static NSImage *batt_newFixedPercentageIcon(int percent, bool charging, bool pau
 
 static NSImage *batt_newPercentageIcon(int percent, bool charging, bool paused, bool thermalPaused) {
     percent = batt_clampPercent(percent);
-    NSSize size = NSMakeSize(40.0, 20.0);
+
+    // Compact iOS-like percentage battery: muted translucent body, subtle fill,
+    // centered number, small terminal, and SF-style bolt on the right.
+    NSSize size = NSMakeSize(34.0, 17.0);
     NSImage *image = [[NSImage alloc] initWithSize:size];
     [image setTemplate:NO];
     [image setAccessibilityDescription:@"batt battery percentage icon"];
 
     [image lockFocus];
-    NSRect body = NSMakeRect(0.5, 1.7, 35.0, 16.6);
-    NSRect terminal = NSMakeRect(36.2, 5.8, 2.8, 8.4);
-    NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:4.8 yRadius:4.8];
-    NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:1.3 yRadius:1.3];
+    NSRect body = NSMakeRect(0.4, 0.85, 29.2, 14.3);
+    NSRect terminal = NSMakeRect(30.25, 5.55, 1.55, 5.9);
+    NSBezierPath *bodyPath = [NSBezierPath bezierPathWithRoundedRect:body xRadius:4.25 yRadius:4.25];
+    NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:0.78 yRadius:0.78];
 
-    NSColor *fillColor = batt_percentageFillColor(percent, charging, paused, thermalPaused);
-    NSColor *trackColor = percent < 20 ? batt_trackGrayColor() : [NSColor whiteColor];
-    if (percent >= 95) {
-        trackColor = fillColor;
-    }
+    NSColor *baseFill = charging
+        ? batt_greenColor()
+        : [NSColor colorWithCalibratedWhite:1.0 alpha:1.0];
+    NSColor *fillColor = [[baseFill colorWithAlphaComponent:(charging ? 0.74 : 0.72)] retain];
+    NSColor *emptyColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.30];
+    NSColor *terminalColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.35];
+    NSColor *glyphColor = charging
+        ? [NSColor colorWithCalibratedWhite:1.0 alpha:0.88]
+        : [NSColor colorWithCalibratedWhite:0.06 alpha:0.88];
 
     [NSGraphicsContext saveGraphicsState];
     [bodyPath addClip];
-    [trackColor setFill];
+
+    [emptyColor setFill];
     NSRectFill(body);
 
     CGFloat fillWidth = floor(body.size.width * percent / 100.0);
-    if (percent > 0 && fillWidth < 2.4) fillWidth = 2.4;
+    if (percent > 0 && fillWidth < 1.9) fillWidth = 1.9;
     [fillColor setFill];
     NSRectFill(NSMakeRect(body.origin.x, body.origin.y, fillWidth, body.size.height));
+
     [NSGraphicsContext restoreGraphicsState];
 
-    [trackColor setFill];
+    [terminalColor setFill];
     [terminalPath fill];
 
-    NSColor *textColor = (percent >= 95 || percent < 20) ? [NSColor whiteColor] : batt_darkTextColor();
     NSString *text = [NSString stringWithFormat:@"%d", percent];
-    NSRect textRect = NSMakeRect(body.origin.x, body.origin.y, body.size.width, body.size.height);
-    batt_drawFittingCenteredText(text, textRect, textColor, 13.8, 10.0, NSFontWeightBlack);
+    bool hasRightGlyph = charging || paused || thermalPaused;
+    NSRect textRect = hasRightGlyph
+        ? NSMakeRect(body.origin.x + 1.15,
+                     body.origin.y + 0.55,
+                     body.size.width - 9.2,
+                     body.size.height)
+        : NSMakeRect(body.origin.x,
+                     body.origin.y + 0.55,
+                     body.size.width,
+                     body.size.height);
+    batt_drawFittingCenteredText(text,
+                                 textRect,
+                                 glyphColor,
+                                 12.8,
+                                 9.2,
+                                 NSFontWeightBold);
 
     if (thermalPaused) {
-        batt_drawThermalPauseInRect(NSMakeRect(body.origin.x + body.size.width - 10.8, body.origin.y + 3.0, 9.0, 11.0),
-                                    textColor,
+        CGFloat glyphH = 10.6;
+        batt_drawThermalPauseInRect(NSMakeRect(body.origin.x + body.size.width - 8.7,
+                                               body.origin.y + (body.size.height - glyphH) / 2.0,
+                                               7.1,
+                                               glyphH),
+                                    glyphColor,
                                     nil);
     } else if (paused) {
-        batt_drawPauseInRect(NSMakeRect(body.origin.x + body.size.width - 9.0, body.origin.y + 4.4, 6.6, 8.2),
-                             textColor,
+        CGFloat glyphH = 9.2;
+        batt_drawPauseInRect(NSMakeRect(body.origin.x + body.size.width - 8.3,
+                                        body.origin.y + (body.size.height - glyphH) / 2.0,
+                                        7.8,
+                                        glyphH),
+                             glyphColor,
                              nil);
     } else if (charging) {
-        batt_drawBoltInRect(NSMakeRect(body.origin.x + body.size.width - 9.6, body.origin.y + 3.6, 6.8, 10.0),
-                            textColor,
-                            nil);
+        CGFloat glyphH = 13.6;
+        batt_drawPercentageBoltInRect(NSMakeRect(body.origin.x + body.size.width - 16.35,
+                                                 body.origin.y + (body.size.height - glyphH) / 2.0,
+                                                 22.8,
+                                                 glyphH),
+                                      glyphColor,
+                                      nil);
     }
+
+#if !__has_feature(objc_arc)
+    [fillColor release];
+#endif
 
     [image unlockFocus];
     return image;
