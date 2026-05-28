@@ -2,8 +2,6 @@ package config
 
 import (
 	"github.com/sirupsen/logrus"
-
-	"github.com/charlie0129/batt/pkg/temperature"
 )
 
 type Config interface {
@@ -18,9 +16,7 @@ type Config interface {
 	CalibrationHoldDurationMinutes() int
 	TemperatureMonitoringEnabled() bool
 	TemperatureProtectionThresholdCelsius() int
-	TrayIconStyle() TrayIconStyle
-	TrayIconRefreshIntervalSeconds() int
-	TemperatureReferences() temperature.References
+	TemperatureProtectionRecoveryDeltaCelsius() int
 	Cron() string
 
 	SetUpperLimit(int)
@@ -35,8 +31,7 @@ type Config interface {
 	SetCalibrationHoldDurationMinutes(int)
 	SetTemperatureMonitoringEnabled(bool)
 	SetTemperatureProtectionThresholdCelsius(int)
-	SetTrayIconStyle(TrayIconStyle)
-	SetTemperatureReference(temperature.Scenario, float64)
+	SetTemperatureProtectionRecoveryDeltaCelsius(int)
 
 	LogrusFields() logrus.Fields
 

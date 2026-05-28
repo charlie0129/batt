@@ -3,17 +3,14 @@ package config
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
-	"github.com/charlie0129/batt/pkg/temperature"
 	"github.com/charlie0129/batt/pkg/utils/ptr"
 )
 
@@ -52,12 +49,11 @@ var (
 		AllowNonRootAccess:      ptr.To(false),
 		LowerLimitDelta:         ptr.To(2),
 
-		CalibrationDischargeThreshold:          ptr.To(15),
-		CalibrationHoldDurationMinutes:         ptr.To(120),
-		TemperatureMonitoringEnabled:           ptr.To(false),
-		TemperatureProtectionThresholdCelsius:  ptr.To(40),
-		TrayIconStyle:                          ptr.To(TrayIconStylePercentage),
-		TrayIconRefreshIntervalSeconds:         ptr.To(DefaultTrayIconRefreshIntervalSeconds),
+		CalibrationDischargeThreshold:             ptr.To(15),
+		CalibrationHoldDurationMinutes:            ptr.To(120),
+		TemperatureMonitoringEnabled:              ptr.To(false),
+		TemperatureProtectionThresholdCelsius:     ptr.To(40),
+		TemperatureProtectionRecoveryDeltaCelsius: ptr.To(3),
 
 		// There are Macs without MagSafe LED. We only do checks when the user
 		// explicitly enables this feature. In the future, we might add a check
@@ -69,10 +65,9 @@ var (
 var _ Config = &File{}
 
 type File struct {
-	c                     *RawFileConfig
-	temperatureReferences temperature.References
-	mu                    *sync.RWMutex
-	filepath              string
+	c        *RawFileConfig
+	mu       *sync.RWMutex
+	filepath string
 }
 
 func NewFile(configPath string) (*File, error) {
@@ -173,13 +168,12 @@ type RawFileConfig struct {
 	LowerLimitDelta         *int                `json:"lowerLimitDelta,omitempty"`
 	ControlMagSafeLED       *ControlMagSafeMode `json:"controlMagSafeLED,omitempty"`
 
-	CalibrationDischargeThreshold         *int           `json:"calibrationDischargeThreshold,omitempty"`
-	CalibrationHoldDurationMinutes        *int           `json:"calibrationHoldDurationMinutes,omitempty"`
-	TemperatureMonitoringEnabled          *bool          `json:"temperatureMonitoringEnabled,omitempty"`
-	TemperatureProtectionThresholdCelsius *int           `json:"temperatureProtectionThresholdCelsius,omitempty"`
-	TrayIconStyle                         *TrayIconStyle `json:"trayIconStyle,omitempty"`
-	TrayIconRefreshIntervalSeconds        *int           `json:"trayIconRefreshIntervalSeconds,omitempty"`
-	Cron                                  *string        `json:"cron,omitempty"`
+	CalibrationDischargeThreshold             *int    `json:"calibrationDischargeThreshold,omitempty"`
+	CalibrationHoldDurationMinutes            *int    `json:"calibrationHoldDurationMinutes,omitempty"`
+	TemperatureMonitoringEnabled              *bool   `json:"temperatureMonitoringEnabled,omitempty"`
+	TemperatureProtectionThresholdCelsius     *int    `json:"temperatureProtectionThresholdCelsius,omitempty"`
+	TemperatureProtectionRecoveryDeltaCelsius *int    `json:"temperatureProtectionRecoveryDeltaCelsius,omitempty"`
+	Cron                                      *string `json:"cron,omitempty"`
 }
 
 func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
@@ -188,20 +182,19 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 	}
 
 	rawConfig := &RawFileConfig{
-		Limit:                                  ptr.To(c.UpperLimit()),
-		PreventIdleSleep:                       ptr.To(c.PreventIdleSleep()),
-		DisableChargingPreSleep:                ptr.To(c.DisableChargingPreSleep()),
-		PreventSystemSleep:                     ptr.To(c.PreventSystemSleep()),
-		AllowNonRootAccess:                     ptr.To(c.AllowNonRootAccess()),
-		LowerLimitDelta:                        ptr.To(c.UpperLimit() - c.LowerLimit()),
-		ControlMagSafeLED:                      ptr.To(c.ControlMagSafeLED()),
-		CalibrationDischargeThreshold:          ptr.To(c.CalibrationDischargeThreshold()),
-		CalibrationHoldDurationMinutes:         ptr.To(c.CalibrationHoldDurationMinutes()),
-		TemperatureMonitoringEnabled:           ptr.To(c.TemperatureMonitoringEnabled()),
-		TemperatureProtectionThresholdCelsius:  ptr.To(c.TemperatureProtectionThresholdCelsius()),
-		TrayIconStyle:                          ptr.To(c.TrayIconStyle()),
-		TrayIconRefreshIntervalSeconds:         ptr.To(c.TrayIconRefreshIntervalSeconds()),
-		Cron:                                   ptr.To(c.Cron()),
+		Limit:                                     ptr.To(c.UpperLimit()),
+		PreventIdleSleep:                          ptr.To(c.PreventIdleSleep()),
+		DisableChargingPreSleep:                   ptr.To(c.DisableChargingPreSleep()),
+		PreventSystemSleep:                        ptr.To(c.PreventSystemSleep()),
+		AllowNonRootAccess:                        ptr.To(c.AllowNonRootAccess()),
+		LowerLimitDelta:                           ptr.To(c.UpperLimit() - c.LowerLimit()),
+		ControlMagSafeLED:                         ptr.To(c.ControlMagSafeLED()),
+		CalibrationDischargeThreshold:             ptr.To(c.CalibrationDischargeThreshold()),
+		CalibrationHoldDurationMinutes:            ptr.To(c.CalibrationHoldDurationMinutes()),
+		TemperatureMonitoringEnabled:              ptr.To(c.TemperatureMonitoringEnabled()),
+		TemperatureProtectionThresholdCelsius:     ptr.To(c.TemperatureProtectionThresholdCelsius()),
+		TemperatureProtectionRecoveryDeltaCelsius: ptr.To(c.TemperatureProtectionRecoveryDeltaCelsius()),
+		Cron:                                      ptr.To(c.Cron()),
 	}
 
 	return rawConfig, nil
@@ -418,7 +411,7 @@ func (f *File) TemperatureProtectionThresholdCelsius() int {
 	return val
 }
 
-func (f *File) TrayIconStyle() TrayIconStyle {
+func (f *File) TemperatureProtectionRecoveryDeltaCelsius() int {
 	if f.c == nil {
 		panic("config is nil")
 	}
@@ -426,39 +419,17 @@ func (f *File) TrayIconStyle() TrayIconStyle {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	if f.c.TrayIconStyle == nil || !f.c.TrayIconStyle.IsValid() {
-		return *defaultFileConfig.TrayIconStyle
+	if f.c.TemperatureProtectionRecoveryDeltaCelsius == nil {
+		return *defaultFileConfig.TemperatureProtectionRecoveryDeltaCelsius
 	}
-	return *f.c.TrayIconStyle
-}
-
-func (f *File) TrayIconRefreshIntervalSeconds() int {
-	if f.c == nil {
-		panic("config is nil")
+	val := *f.c.TemperatureProtectionRecoveryDeltaCelsius
+	if val < 1 {
+		return 1
 	}
-
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
-	if f.c.TrayIconRefreshIntervalSeconds == nil {
-		return DefaultTrayIconRefreshIntervalSeconds
+	if val > 15 {
+		return 15
 	}
-	seconds := *f.c.TrayIconRefreshIntervalSeconds
-	if seconds <= 0 {
-		return DefaultTrayIconRefreshIntervalSeconds
-	}
-	return seconds
-}
-
-func (f *File) TemperatureReferences() temperature.References {
-	if f.c == nil {
-		panic("config is nil")
-	}
-
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
-	return f.temperatureReferences
+	return val
 }
 
 func (f *File) SetUpperLimit(i int) {
@@ -616,22 +587,7 @@ func (f *File) SetTemperatureProtectionThresholdCelsius(i int) {
 	f.c.TemperatureProtectionThresholdCelsius = &i
 }
 
-func (f *File) SetTrayIconStyle(style TrayIconStyle) {
-	if f.c == nil {
-		panic("config is nil")
-	}
-
-	if !style.IsValid() {
-		style = TrayIconStylePercentage
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	f.c.TrayIconStyle = ptr.To(style)
-}
-
-func (f *File) SetTemperatureReference(s temperature.Scenario, value float64) {
+func (f *File) SetTemperatureProtectionRecoveryDeltaCelsius(i int) {
 	if f.c == nil {
 		panic("config is nil")
 	}
@@ -639,44 +595,7 @@ func (f *File) SetTemperatureReference(s temperature.Scenario, value float64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.temperatureReferences.Set(s, value)
-}
-
-func parseTemperatureReferences(configString string) temperature.References {
-	refs := temperature.References{}
-	scanner := bufio.NewScanner(strings.NewReader(configString))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if !strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		line = strings.TrimSpace(strings.TrimPrefix(line, "#"))
-		for _, scenario := range []temperature.Scenario{
-			temperature.ScenarioIdleNotCharging,
-			temperature.ScenarioIdleCharging,
-			temperature.ScenarioActiveCharging,
-		} {
-			label := temperature.Label(scenario) + ":"
-			if !strings.HasPrefix(line, label) {
-				continue
-			}
-
-			valueString := strings.TrimSpace(strings.TrimPrefix(line, label))
-			valueString = strings.TrimSuffix(valueString, "C")
-			valueString = strings.TrimSuffix(valueString, "°")
-			valueString = strings.TrimSpace(valueString)
-			if valueString == "" || strings.EqualFold(valueString, "N/A") {
-				continue
-			}
-			value, err := strconv.ParseFloat(valueString, 64)
-			if err != nil || value <= 0 {
-				continue
-			}
-			refs.Set(scenario, value)
-		}
-	}
-	return refs
+	f.c.TemperatureProtectionRecoveryDeltaCelsius = &i
 }
 
 func stripConfigCommentLines(configString string) string {
@@ -693,32 +612,6 @@ func stripConfigCommentLines(configString string) string {
 	return builder.String()
 }
 
-func writeTemperatureReferenceComments(w io.Writer, refs temperature.References) error {
-	if _, err := fmt.Fprintln(w, "# Temperature references (auto-generated)"); err != nil {
-		return err
-	}
-
-	for _, scenario := range []temperature.Scenario{
-		temperature.ScenarioIdleNotCharging,
-		temperature.ScenarioIdleCharging,
-		temperature.ScenarioActiveCharging,
-	} {
-		value := refs.Value(scenario)
-		if value == nil {
-			if _, err := fmt.Fprintf(w, "# %s: N/A\n", temperature.Label(scenario)); err != nil {
-				return err
-			}
-			continue
-		}
-		if _, err := fmt.Fprintf(w, "# %s: %.1f°C\n", temperature.Label(scenario), *value); err != nil {
-			return err
-		}
-	}
-
-	_, err := fmt.Fprintln(w)
-	return err
-}
-
 func (f *File) Load() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -729,7 +622,6 @@ func (f *File) Load() error {
 			// If the file does not exist, return the empty config.
 			// Do not make f.c a nil.
 			f.c = &RawFileConfig{}
-			f.temperatureReferences = temperature.References{}
 			return nil
 		}
 		return pkgerrors.Wrapf(err, "failed to open file %s", f.filepath)
@@ -753,11 +645,9 @@ func (f *File) Load() error {
 		// If the file is empty, return the empty config.
 		// Do not make f.c a nil.
 		f.c = &RawFileConfig{}
-		f.temperatureReferences = temperature.References{}
 		return nil
 	}
 
-	f.temperatureReferences = parseTemperatureReferences(configString)
 	configString = stripConfigCommentLines(configString)
 	if strings.TrimSpace(configString) == "" {
 		f.c = &RawFileConfig{}
@@ -782,14 +672,6 @@ func (f *File) Save() error {
 		return pkgerrors.New("config is nil")
 	}
 
-	shouldWriteTemperatureReferences := false
-	if f.c.TemperatureMonitoringEnabled != nil && *f.c.TemperatureMonitoringEnabled {
-		shouldWriteTemperatureReferences = true
-	}
-	if !f.temperatureReferences.Empty() {
-		shouldWriteTemperatureReferences = true
-	}
-
 	fp, err := os.OpenFile(f.filepath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return pkgerrors.Wrapf(err, "failed to open file %s", f.filepath)
@@ -800,12 +682,6 @@ func (f *File) Save() error {
 			logrus.Warnf("failed to close file %s", f.filepath)
 		}
 	}(fp)
-
-	if shouldWriteTemperatureReferences {
-		if err := writeTemperatureReferenceComments(fp, f.temperatureReferences); err != nil {
-			return pkgerrors.Wrapf(err, "failed to write temperature references to file %s", f.filepath)
-		}
-	}
 
 	enc := json.NewEncoder(fp)
 	enc.SetIndent("", "  ")
@@ -832,7 +708,6 @@ func (f *File) LogrusFields() logrus.Fields {
 		"controlMagsafeLed":       f.ControlMagSafeLED(),
 		"temperatureMonitoring":   f.TemperatureMonitoringEnabled(),
 		"temperatureThreshold":    f.TemperatureProtectionThresholdCelsius(),
-		"trayIconStyle":           f.TrayIconStyle(),
-		"trayIconRefreshIntervalSeconds": f.TrayIconRefreshIntervalSeconds(),
+		"temperatureRecoveryDelta": f.TemperatureProtectionRecoveryDeltaCelsius(),
 	}
 }

@@ -187,11 +187,10 @@ func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menu
 	currentLimitItem.SetEnabled(false)
 	menu.AddItem(currentLimitItem)
 
-	trayIconStyleMenu := appkit.NewMenuWithTitle("Tray Icon Style")
+	trayIconStyleMenu := appkit.NewMenuWithTitle("Menu Bar Icon Style")
 	trayIconStyleSubMenuItem := appkit.NewSubMenuItem(trayIconStyleMenu)
-	trayIconStyleSubMenuItem.SetTitle("Tray Icon Style")
-	trayIconStyleSubMenuItem.SetToolTip(`Choose how much battery information the menubar icon shows.`)
-	menu.AddItem(trayIconStyleSubMenuItem)
+	trayIconStyleSubMenuItem.SetTitle("Menu Bar Icon Style")
+	trayIconStyleSubMenuItem.SetToolTip(`Choose how much battery information the menu bar icon shows.`)
 
 	trayIconFixedItem := appkit.NewMenuItemWithAction("Fixed Icon", "", func(sender objc.Object) {
 		if ctrl != nil {
@@ -255,6 +254,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menu
 	advancedSubMenuItem := appkit.NewSubMenuItem(advancedMenu)
 	advancedSubMenuItem.SetTitle("Advanced")
 	menu.AddItem(advancedSubMenuItem)
+	advancedMenu.AddItem(trayIconStyleSubMenuItem)
 
 	controlMagSafeLEDMenu := appkit.NewMenuWithTitle("Control MagSafe LED")
 	controlMagSafeLEDItem := appkit.NewSubMenuItem(controlMagSafeLEDMenu)
@@ -404,44 +404,6 @@ This is useful when you want to use your battery to lower the battery charge, bu
 NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.`)
 	advancedMenu.AddItem(forceDischargeItem)
 
-	temperatureMenu := appkit.NewMenuWithTitle("Temperature...")
-	temperatureMenu.SetAutoenablesItems(false)
-	temperatureSub := appkit.NewSubMenuItem(temperatureMenu)
-	temperatureSub.SetTitle("Temperature...")
-	temperatureSub.SetToolTip(`Monitor battery temperature references and pause charging when the battery is hotter than the configured threshold.`)
-	advancedMenu.AddItem(temperatureSub)
-
-	temperatureMonitoringItem := checkBoxItem("Record Temperature References", "", func(checked bool) {
-		_, err := apiClient.SetTemperatureMonitoring(checked)
-		if err != nil {
-			logrus.WithError(err).Error("Failed to set temperature monitoring")
-			showAlert("Failed to set temperature monitoring", err.Error())
-			return
-		}
-	})
-	temperatureMonitoringItem.SetToolTip(`Record battery temperature references for idle/not charging, idle/charging, and active/charging states. Recorded references are written as comments in the config file.`)
-	temperatureMenu.AddItem(temperatureMonitoringItem)
-
-	temperatureCurrentItem := appkit.NewMenuItemWithAction("Current: No temperature data", "", func(sender objc.Object) {})
-	temperatureCurrentItem.SetEnabled(false)
-	temperatureMenu.AddItem(temperatureCurrentItem)
-
-	temperatureSliderItem, temperatureSliderPtr := NewTemperatureSliderMenuItem(30, 55, 40)
-	temperatureMenu.AddItem(temperatureSliderItem)
-
-	temperatureMenu.AddItem(appkit.MenuItem_SeparatorItem())
-	temperatureIdleNotChargingItem := appkit.NewMenuItemWithAction("Idle + Not Charging: No data yet", "", func(sender objc.Object) {})
-	temperatureIdleNotChargingItem.SetEnabled(false)
-	temperatureMenu.AddItem(temperatureIdleNotChargingItem)
-
-	temperatureIdleChargingItem := appkit.NewMenuItemWithAction("Idle + Charging: No data yet", "", func(sender objc.Object) {})
-	temperatureIdleChargingItem.SetEnabled(false)
-	temperatureMenu.AddItem(temperatureIdleChargingItem)
-
-	temperatureActiveChargingItem := appkit.NewMenuItemWithAction("Active + Charging: No data yet", "", func(sender objc.Object) {})
-	temperatureActiveChargingItem.SetEnabled(false)
-	temperatureMenu.AddItem(temperatureActiveChargingItem)
-
 	// Auto Calibration menu (after Force Discharge)
 	autoCalibrationItem := appkit.NewMenuWithTitle("Auto Calibration (Experimental)...")
 	autoCalibrationItem.SetAutoenablesItems(false)
@@ -574,7 +536,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		api:                            apiClient,
 		menubarIcon:                    menubarIcon,
 		trayIconStyle:                  config.TrayIconStylePercentage,
-		trayIconRefreshIntervalSeconds: config.DefaultTrayIconRefreshIntervalSeconds,
+		trayIconRefreshIntervalSeconds: defaultTrayIconRefreshIntervalSeconds,
 		upperLimit:                     100,
 		lowerLimit:                     100,
 		powerFlowSubMenuItem:           powerFlowSubMenuItem,
@@ -598,14 +560,6 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		disableChargingPreSleepItem:      disableChargingPreSleepItem,
 		preventSystemSleepItem:           preventSystemSleepItem,
 		forceDischargeItem:               forceDischargeItem,
-		temperatureSubMenuItem:           temperatureSub,
-		temperatureMonitoringItem:        temperatureMonitoringItem,
-		temperatureCurrentItem:           temperatureCurrentItem,
-		temperatureProtectionItem:        temperatureSliderItem,
-		temperatureProtectionSliderPtr:   temperatureSliderPtr,
-		temperatureIdleNotChargingItem:   temperatureIdleNotChargingItem,
-		temperatureIdleChargingItem:      temperatureIdleChargingItem,
-		temperatureActiveChargingItem:    temperatureActiveChargingItem,
 		uninstallItem:                    uninstallItem,
 		disableItem:                      disableItem,
 		// Auto Calibration
@@ -622,7 +576,6 @@ After uninstalling the batt daemon, no charging control will be present on your 
 	}
 
 	h := cgo.NewHandle(ctrl)
-	SetTemperatureSliderHandle(temperatureSliderPtr, h)
 	observerPtr := AttachPowerFlowObserver(menu, h)
 	trayIconTimerPtr := AttachTrayIconTimer(h, float64(ctrl.trayIconRefreshIntervalSeconds))
 	ctrl.trayIconTimerPtr = trayIconTimerPtr
@@ -631,7 +584,6 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		logrus.Info("Cleaning up resources")
 		ReleaseTrayIconTimer(trayIconTimerPtr)
 		ReleasePowerFlowObserver(observerPtr)
-		ReleaseObject(temperatureSliderPtr)
 		h.Delete()
 	}
 

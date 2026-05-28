@@ -60,12 +60,8 @@ func (c *Client) SetTemperatureProtectionThresholdCelsius(threshold int) (string
 	return c.Put("/temperature-protection-threshold", strconv.Itoa(threshold))
 }
 
-func (c *Client) SetTrayIconStyle(style config.TrayIconStyle) (string, error) {
-	payload, err := json.Marshal(style)
-	if err != nil {
-		return "", err
-	}
-	return c.Put("/tray-icon-style", string(payload))
+func (c *Client) SetTemperatureProtectionRecoveryDeltaCelsius(delta int) (string, error) {
+	return c.Put("/temperature-protection-recovery-delta", strconv.Itoa(delta))
 }
 
 func (c *Client) SetControlMagSafeLED(mode config.ControlMagSafeMode) (string, error) {

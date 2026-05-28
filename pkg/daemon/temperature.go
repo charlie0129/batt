@@ -12,11 +12,7 @@ import (
 	"github.com/charlie0129/batt/pkg/temperature"
 )
 
-const (
-	temperatureReferenceWriteInterval  = time.Minute
-	temperatureActiveWindow            = 5 * time.Minute
-	temperatureProtectionRecoveryDelta = 3
-)
+const temperatureActiveWindow = 5 * time.Minute
 
 type temperatureLoopResult struct {
 	protected bool
@@ -24,10 +20,9 @@ type temperatureLoopResult struct {
 }
 
 var (
-	temperatureMu                   = &sync.Mutex{}
-	temperatureProtectionActive     = false
-	lastTemperatureStatus           = temperature.Status{References: temperature.References{}}
-	lastTemperatureReferenceWriteAt = map[temperature.Scenario]time.Time{}
+	temperatureMu               = &sync.Mutex{}
+	temperatureProtectionActive = false
+	lastTemperatureStatus       = temperature.Status{}
 )
 
 func readBatteryTemperatureCelsius() (float64, error) {
@@ -48,43 +43,6 @@ func readBatteryTemperatureCelsius() (float64, error) {
 	return temp, nil
 }
 
-func temperatureScenario(userActive, charging bool) temperature.Scenario {
-	switch {
-	case !userActive && !charging:
-		return temperature.ScenarioIdleNotCharging
-	case !userActive && charging:
-		return temperature.ScenarioIdleCharging
-	case userActive && charging:
-		return temperature.ScenarioActiveCharging
-	default:
-		return ""
-	}
-}
-
-func updateTemperatureReference(now time.Time, scenario temperature.Scenario, tempC float64) (time.Time, bool) {
-	if scenario == "" {
-		return time.Time{}, false
-	}
-
-	temperatureMu.Lock()
-	if lastWrite, ok := lastTemperatureReferenceWriteAt[scenario]; ok && now.Sub(lastWrite) < temperatureReferenceWriteInterval {
-		temperatureMu.Unlock()
-		return lastWrite, true
-	}
-	temperatureMu.Unlock()
-
-	conf.SetTemperatureReference(scenario, tempC)
-	if err := conf.Save(); err != nil {
-		logrus.WithError(err).Warn("failed to save temperature reference")
-		return time.Time{}, false
-	}
-
-	temperatureMu.Lock()
-	lastTemperatureReferenceWriteAt[scenario] = now
-	temperatureMu.Unlock()
-	return now, true
-}
-
 func handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn bool) temperatureLoopResult {
 	temperatureMu.Lock()
 	protectionActive := temperatureProtectionActive
@@ -93,7 +51,7 @@ func handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn boo
 	now := time.Now()
 	monitoringEnabled := conf.TemperatureMonitoringEnabled()
 	threshold := conf.TemperatureProtectionThresholdCelsius()
-	recoveryThreshold := threshold - temperatureProtectionRecoveryDelta
+	recoveryThreshold := threshold - conf.TemperatureProtectionRecoveryDeltaCelsius()
 	if recoveryThreshold < 0 {
 		recoveryThreshold = 0
 	}
@@ -102,7 +60,6 @@ func handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn boo
 		MonitoringEnabled:          monitoringEnabled,
 		ProtectionThresholdCelsius: threshold,
 		ProtectionActive:           protectionActive,
-		References:                 conf.TemperatureReferences(),
 		RecoveryThresholdCelsius:   recoveryThreshold,
 	}
 
@@ -140,19 +97,12 @@ func handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn boo
 	}
 
 	charging := isChargingEnabled && isPluggedIn
-	scenario := temperatureScenario(userActive, charging)
-	writeAt, wroteReference := updateTemperatureReference(now, scenario, tempC)
 
 	current := tempC
 	status.CurrentCelsius = &current
-	status.CurrentScenario = scenario
 	status.UserActive = userActive
 	status.Charging = charging
-	status.References = conf.TemperatureReferences()
 	status.LastUpdatedUnix = now.Unix()
-	if wroteReference {
-		status.LastTemperatureReferenceWriteUnix = writeAt.Unix()
-	}
 
 	if tempC >= float64(threshold) {
 		if !protectionActive {
@@ -207,11 +157,10 @@ func getTemperatureStatusSnapshot() temperature.Status {
 	status := lastTemperatureStatus
 	status.MonitoringEnabled = conf.TemperatureMonitoringEnabled()
 	status.ProtectionThresholdCelsius = conf.TemperatureProtectionThresholdCelsius()
-	status.RecoveryThresholdCelsius = status.ProtectionThresholdCelsius - temperatureProtectionRecoveryDelta
+	status.RecoveryThresholdCelsius = status.ProtectionThresholdCelsius - conf.TemperatureProtectionRecoveryDeltaCelsius()
 	if status.RecoveryThresholdCelsius < 0 {
 		status.RecoveryThresholdCelsius = 0
 	}
 	status.ProtectionActive = temperatureProtectionActive
-	status.References = conf.TemperatureReferences()
 	return status
 }

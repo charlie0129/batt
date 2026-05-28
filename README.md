@@ -196,14 +196,13 @@ To change the hold duration (defaults to 120 minutes), run `batt calibration hol
 
 ### Temperature monitoring and protection
 
-Temperature monitoring records battery temperature references for idle/not charging, idle/charging, and active/charging states. These references are written as auto-generated comments in the config file and are only used as user-facing guidance.
-
-Temperature protection disables charging when the battery reaches the configured threshold. Charging is allowed again after the battery cools below the recovery threshold.
+Temperature monitoring disables charging when the battery reaches the configured threshold. Charging is allowed again after the battery cools below the recovery threshold.
 
 ```bash
 batt temperature monitoring enable
 batt temperature monitoring disable
 batt temperature threshold 42
+batt temperature recovery-delta 3
 batt temperature status
 batt temperature status --json
 ```

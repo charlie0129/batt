@@ -157,6 +157,7 @@ func setTemperatureMonitoring(c *gin.Context) {
 
 	conf.SetTemperatureMonitoringEnabled(enabled)
 	conf.SetTemperatureProtectionThresholdCelsius(conf.TemperatureProtectionThresholdCelsius())
+	conf.SetTemperatureProtectionRecoveryDeltaCelsius(conf.TemperatureProtectionRecoveryDeltaCelsius())
 	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -199,33 +200,22 @@ func setTemperatureProtectionThreshold(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("Temperature protection threshold set to %d°C", threshold))
 }
 
-func getTemperatureStatus(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, getTemperatureStatusSnapshot())
-}
-
-func setTrayIconStyle(c *gin.Context) {
-	var raw string
-	if err := c.BindJSON(&raw); err != nil {
+func setTemperatureProtectionRecoveryDelta(c *gin.Context) {
+	var delta int
+	if err := c.BindJSON(&delta); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	style, ok := config.ParseTrayIconStyle(raw)
-	if !ok {
-		err := fmt.Errorf(
-			"tray icon style must be one of: %s, %s, %s, %s",
-			config.TrayIconStyleFixed,
-			config.TrayIconStyleFixedPercent,
-			config.TrayIconStyleBattery,
-			config.TrayIconStylePercentage,
-		)
+	if delta < 1 || delta > 15 {
+		err := fmt.Errorf("temperature protection recovery delta must be between 1°C and 15°C, got %d°C", delta)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	conf.SetTrayIconStyle(style)
+	conf.SetTemperatureProtectionRecoveryDeltaCelsius(delta)
 	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -233,9 +223,14 @@ func setTrayIconStyle(c *gin.Context) {
 		return
 	}
 
-	logrus.Infof("set tray icon style to %s", style)
+	logrus.Infof("set temperature protection recovery delta to %d°C", delta)
+	maintainLoopForced()
 
-	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("Tray icon style set to %s", style))
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("Temperature protection recovery delta set to %d°C", delta))
+}
+
+func getTemperatureStatus(c *gin.Context) {
+	c.IndentedJSON(http.StatusOK, getTemperatureStatusSnapshot())
 }
 
 func setAdapter(c *gin.Context) {

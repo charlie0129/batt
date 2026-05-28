@@ -19,24 +19,19 @@ func NewTemperatureCommand() *cobra.Command {
 		Short:   "Manage temperature monitoring and protection",
 		Long: `Manage temperature monitoring and protection.
 
-When temperature monitoring is enabled, batt records battery temperature references for:
-1) idle and not charging
-2) idle and charging
-3) active and charging
-
-The references are written as auto-generated comments in the config file. Temperature protection disables charging when the battery reaches the configured threshold and releases protection after it cools down.`,
+When temperature monitoring is enabled, temperature protection disables charging when the battery reaches the configured threshold and releases protection after it cools down.`,
 	}
 
 	monitoringCmd := &cobra.Command{
 		Use:   "monitoring",
-		Short: "Enable or disable temperature reference recording",
-		Long:  "Enable or disable temperature reference recording. Recorded references are written as auto-generated comments in the config file.",
+		Short: "Enable or disable temperature protection",
+		Long:  "Enable or disable temperature monitoring and protection.",
 	}
 
 	monitoringCmd.AddCommand(
 		&cobra.Command{
 			Use:   "enable",
-			Short: "Enable temperature reference recording",
+			Short: "Enable temperature protection",
 			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := apiClient.SetTemperatureMonitoring(true)
 				if err != nil {
@@ -51,7 +46,7 @@ The references are written as auto-generated comments in the config file. Temper
 		},
 		&cobra.Command{
 			Use:   "disable",
-			Short: "Disable temperature reference recording and protection",
+			Short: "Disable temperature protection",
 			RunE: func(_ *cobra.Command, _ []string) error {
 				ret, err := apiClient.SetTemperatureMonitoring(false)
 				if err != nil {
@@ -91,6 +86,31 @@ The references are written as auto-generated comments in the config file. Temper
 		},
 	}
 
+	recoveryDeltaCmd := &cobra.Command{
+		Use:   "recovery-delta [celsius]",
+		Short: "Set temperature protection recovery delta",
+		Long:  "Set how many degrees Celsius the battery must cool below the protection threshold before charging resumes. Valid range: 1-15.",
+		RunE: func(_ *cobra.Command, args []string) error {
+			delta, err := parseIntArg(args, "temperature recovery delta")
+			if err != nil {
+				return err
+			}
+			if delta < 1 || delta > 15 {
+				return fmt.Errorf("temperature protection recovery delta must be between 1°C and 15°C, got %d°C", delta)
+			}
+
+			ret, err := apiClient.SetTemperatureProtectionRecoveryDeltaCelsius(delta)
+			if err != nil {
+				return fmt.Errorf("failed to set temperature protection recovery delta: %v", err)
+			}
+			if ret != "" {
+				logrus.Infof("daemon responded: %s", ret)
+			}
+			logrus.Infof("successfully set temperature protection recovery delta to %d°C", delta)
+			return nil
+		},
+	}
+
 	var jsonOutput bool
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -112,7 +132,7 @@ The references are written as auto-generated comments in the config file. Temper
 	}
 	statusCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output status in JSON format")
 
-	cmd.AddCommand(monitoringCmd, thresholdCmd, statusCmd)
+	cmd.AddCommand(monitoringCmd, thresholdCmd, recoveryDeltaCmd, statusCmd)
 	return cmd
 }
 
@@ -151,11 +171,6 @@ func printTemperatureStatus(cmd *cobra.Command, status *temperature.Status) {
 		cmd.Printf("  Sample charging state: %s\n", bold("no data yet"))
 	}
 
-	cmd.Println()
-	cmd.Println(bold("Temperature references:"))
-	cmd.Printf("  %s\n", temperatureReferenceText("Idle + Not Charging", status.References.IdleNotCharging))
-	cmd.Printf("  %s\n", temperatureReferenceText("Idle + Charging", status.References.IdleCharging))
-	cmd.Printf("  %s\n", temperatureReferenceText("Active + Charging", status.References.ActiveCharging))
 }
 
 func protectionStateText(active bool) string {
@@ -177,11 +192,4 @@ func chargingStateText(charging bool) string {
 		return "charging"
 	}
 	return "not charging"
-}
-
-func temperatureReferenceText(label string, value *float64) string {
-	if value == nil {
-		return fmt.Sprintf("%s: %s", label, bold("no data yet"))
-	}
-	return fmt.Sprintf("%s: %s", label, bold("%.1f°C", *value))
 }
