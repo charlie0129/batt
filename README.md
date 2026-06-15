@@ -49,15 +49,16 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 ## Compatibility Matrix
 
-| Firmware Version        | GUI | CLI (Prebuilt) | CLI (Build from Source) |
-| ----------------------- | --- | -------------- | ----------------------- |
-| `6723.x.x`              | ❌   | ❌              | ⚠️                       |
-| `7429.x.x` / `7459.x.x` | ❌   | ⚠️              | ✅                       |
-| `8419.x.x` / `8422.x.x` | ⚠️   | ⚠️              | ✅                       |
-| `10151.x.x`             | ⚠️   | ⚠️              | ✅                       |
-| `11881.x.x`             | ✅   | ✅              | ✅                       |
-| `13822.x.x`             | ✅   | ✅              | ✅                       |
-| Other                   | ❓   | ❓              | ❓                       |
+| Firmware Version        | GUI  | CLI (Prebuilt) | CLI (Build from Source) | Note                             |
+| ----------------------- | ---- | -------------- | ----------------------- | -------------------------------- |
+| `6723.x.x`              | ❌    | ❌              | ⚠️                       |                                  |
+| `7429.x.x` / `7459.x.x` | ❌    | ⚠️              | ✅                       |                                  |
+| `8419.x.x` / `8422.x.x` | ⚠️    | ⚠️              | ✅                       |                                  |
+| `10151.x.x`             | ⚠️    | ⚠️              | ✅                       |                                  |
+| `11881.x.x`             | ✅    | ✅              | ✅                       |                                  |
+| `13822.x.x`             | ✅    | ✅              | ✅                       |                                  |
+| `20356.x.x`             | ❌    | ❌              | ❌                       | Wait for future versions of batt |
+| Other                   | ❓    | ❓              | ❓                       |                                  |
 
 - ❌: Unsupported
 - ✅: Supported
