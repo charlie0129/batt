@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"encoding/json"
 	"io"
 	"os"
@@ -17,14 +18,26 @@ const (
 	ctrlMagSafeModeEnabledStr   = "enabled"
 	ctrlMagSafeModeDisabledStr  = "disabled"
 	ctrlMagSafeModeAlwaysOffStr = "always-off"
+	trayIconStyleFixedStr        = "fixed"
+	trayIconStyleFixedPercentStr = "fixed-percentage"
+	trayIconStyleBatteryStr      = "battery"
+	trayIconStylePercentageStr   = "percentage"
 )
 
 type ControlMagSafeMode string
+type TrayIconStyle string
 
 const (
+	DefaultTrayIconRefreshIntervalSeconds = 60
+
 	ControlMagSafeModeEnabled   ControlMagSafeMode = ctrlMagSafeModeEnabledStr
 	ControlMagSafeModeDisabled  ControlMagSafeMode = ctrlMagSafeModeDisabledStr
 	ControlMagSafeModeAlwaysOff ControlMagSafeMode = ctrlMagSafeModeAlwaysOffStr
+
+	TrayIconStyleFixed        TrayIconStyle = trayIconStyleFixedStr
+	TrayIconStyleFixedPercent TrayIconStyle = trayIconStyleFixedPercentStr
+	TrayIconStyleBattery      TrayIconStyle = trayIconStyleBatteryStr
+	TrayIconStylePercentage   TrayIconStyle = trayIconStylePercentageStr
 )
 
 var (
@@ -36,8 +49,11 @@ var (
 		AllowNonRootAccess:      ptr.To(false),
 		LowerLimitDelta:         ptr.To(2),
 
-		CalibrationDischargeThreshold:  ptr.To(15),
-		CalibrationHoldDurationMinutes: ptr.To(120),
+		CalibrationDischargeThreshold:             ptr.To(15),
+		CalibrationHoldDurationMinutes:            ptr.To(120),
+		TemperatureMonitoringEnabled:              ptr.To(false),
+		TemperatureProtectionThresholdCelsius:     ptr.To(40),
+		TemperatureProtectionRecoveryDeltaCelsius: ptr.To(3),
 
 		// There are Macs without MagSafe LED. We only do checks when the user
 		// explicitly enables this feature. In the future, we might add a check
@@ -109,6 +125,40 @@ func (c *ControlMagSafeMode) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func ParseTrayIconStyle(s string) (TrayIconStyle, bool) {
+	switch s {
+	case trayIconStyleFixedStr:
+		return TrayIconStyleFixed, true
+	case trayIconStyleFixedPercentStr:
+		return TrayIconStyleFixedPercent, true
+	case trayIconStyleBatteryStr:
+		return TrayIconStyleBattery, true
+	case trayIconStylePercentageStr:
+		return TrayIconStylePercentage, true
+	default:
+		return TrayIconStylePercentage, false
+	}
+}
+
+func (s TrayIconStyle) IsValid() bool {
+	_, ok := ParseTrayIconStyle(string(s))
+	return ok
+}
+
+func (s *TrayIconStyle) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	style, ok := ParseTrayIconStyle(raw)
+	if !ok {
+		logrus.Warnf("invalid TrayIconStyle %q, falling back to %q", raw, TrayIconStylePercentage)
+	}
+	*s = style
+	return nil
+}
+
 type RawFileConfig struct {
 	Limit                   *int                `json:"limit,omitempty"`
 	PreventIdleSleep        *bool               `json:"preventIdleSleep,omitempty"`
@@ -118,9 +168,12 @@ type RawFileConfig struct {
 	LowerLimitDelta         *int                `json:"lowerLimitDelta,omitempty"`
 	ControlMagSafeLED       *ControlMagSafeMode `json:"controlMagSafeLED,omitempty"`
 
-	CalibrationDischargeThreshold  *int    `json:"calibrationDischargeThreshold,omitempty"`
-	CalibrationHoldDurationMinutes *int    `json:"calibrationHoldDurationMinutes,omitempty"`
-	Cron                           *string `json:"cron,omitempty"`
+	CalibrationDischargeThreshold             *int    `json:"calibrationDischargeThreshold,omitempty"`
+	CalibrationHoldDurationMinutes            *int    `json:"calibrationHoldDurationMinutes,omitempty"`
+	TemperatureMonitoringEnabled              *bool   `json:"temperatureMonitoringEnabled,omitempty"`
+	TemperatureProtectionThresholdCelsius     *int    `json:"temperatureProtectionThresholdCelsius,omitempty"`
+	TemperatureProtectionRecoveryDeltaCelsius *int    `json:"temperatureProtectionRecoveryDeltaCelsius,omitempty"`
+	Cron                                      *string `json:"cron,omitempty"`
 }
 
 func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
@@ -129,14 +182,19 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 	}
 
 	rawConfig := &RawFileConfig{
-		Limit:                   ptr.To(c.UpperLimit()),
-		PreventIdleSleep:        ptr.To(c.PreventIdleSleep()),
-		DisableChargingPreSleep: ptr.To(c.DisableChargingPreSleep()),
-		PreventSystemSleep:      ptr.To(c.PreventSystemSleep()),
-		AllowNonRootAccess:      ptr.To(c.AllowNonRootAccess()),
-		LowerLimitDelta:         ptr.To(c.UpperLimit() - c.LowerLimit()),
-		ControlMagSafeLED:       ptr.To(c.ControlMagSafeLED()),
-		Cron:                    ptr.To(c.Cron()),
+		Limit:                                     ptr.To(c.UpperLimit()),
+		PreventIdleSleep:                          ptr.To(c.PreventIdleSleep()),
+		DisableChargingPreSleep:                   ptr.To(c.DisableChargingPreSleep()),
+		PreventSystemSleep:                        ptr.To(c.PreventSystemSleep()),
+		AllowNonRootAccess:                        ptr.To(c.AllowNonRootAccess()),
+		LowerLimitDelta:                           ptr.To(c.UpperLimit() - c.LowerLimit()),
+		ControlMagSafeLED:                         ptr.To(c.ControlMagSafeLED()),
+		CalibrationDischargeThreshold:             ptr.To(c.CalibrationDischargeThreshold()),
+		CalibrationHoldDurationMinutes:            ptr.To(c.CalibrationHoldDurationMinutes()),
+		TemperatureMonitoringEnabled:              ptr.To(c.TemperatureMonitoringEnabled()),
+		TemperatureProtectionThresholdCelsius:     ptr.To(c.TemperatureProtectionThresholdCelsius()),
+		TemperatureProtectionRecoveryDeltaCelsius: ptr.To(c.TemperatureProtectionRecoveryDeltaCelsius()),
+		Cron:                                      ptr.To(c.Cron()),
 	}
 
 	return rawConfig, nil
@@ -318,6 +376,62 @@ func (f *File) CalibrationHoldDurationMinutes() int {
 	return val
 }
 
+func (f *File) TemperatureMonitoringEnabled() bool {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.TemperatureMonitoringEnabled == nil {
+		return *defaultFileConfig.TemperatureMonitoringEnabled
+	}
+	return *f.c.TemperatureMonitoringEnabled
+}
+
+func (f *File) TemperatureProtectionThresholdCelsius() int {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.TemperatureProtectionThresholdCelsius == nil {
+		return *defaultFileConfig.TemperatureProtectionThresholdCelsius
+	}
+	val := *f.c.TemperatureProtectionThresholdCelsius
+	if val < 30 {
+		return 30
+	}
+	if val > 55 {
+		return 55
+	}
+	return val
+}
+
+func (f *File) TemperatureProtectionRecoveryDeltaCelsius() int {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.TemperatureProtectionRecoveryDeltaCelsius == nil {
+		return *defaultFileConfig.TemperatureProtectionRecoveryDeltaCelsius
+	}
+	val := *f.c.TemperatureProtectionRecoveryDeltaCelsius
+	if val < 1 {
+		return 1
+	}
+	if val > 15 {
+		return 15
+	}
+	return val
+}
+
 func (f *File) SetUpperLimit(i int) {
 	if f.c == nil {
 		panic("config is nil")
@@ -451,6 +565,53 @@ func (f *File) SetCalibrationHoldDurationMinutes(i int) {
 	f.c.CalibrationHoldDurationMinutes = &i
 }
 
+func (f *File) SetTemperatureMonitoringEnabled(b bool) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.TemperatureMonitoringEnabled = &b
+}
+
+func (f *File) SetTemperatureProtectionThresholdCelsius(i int) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.TemperatureProtectionThresholdCelsius = &i
+}
+
+func (f *File) SetTemperatureProtectionRecoveryDeltaCelsius(i int) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.TemperatureProtectionRecoveryDeltaCelsius = &i
+}
+
+func stripConfigCommentLines(configString string) string {
+	var builder strings.Builder
+	scanner := bufio.NewScanner(strings.NewReader(configString))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		builder.WriteString(line)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
+}
+
 func (f *File) Load() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -487,8 +648,14 @@ func (f *File) Load() error {
 		return nil
 	}
 
+	configString = stripConfigCommentLines(configString)
+	if strings.TrimSpace(configString) == "" {
+		f.c = &RawFileConfig{}
+		return nil
+	}
+
 	conf := RawFileConfig{}
-	err = json.Unmarshal(b, &conf)
+	err = json.Unmarshal([]byte(configString), &conf)
 	if err != nil {
 		return pkgerrors.Wrapf(err, "failed to unmarshal config from file %s", f.filepath)
 	}
@@ -539,5 +706,8 @@ func (f *File) LogrusFields() logrus.Fields {
 		"preventSystemSleep":      f.PreventSystemSleep(),
 		"allowNonRootAccess":      f.AllowNonRootAccess(),
 		"controlMagsafeLed":       f.ControlMagSafeLED(),
+		"temperatureMonitoring":   f.TemperatureMonitoringEnabled(),
+		"temperatureThreshold":    f.TemperatureProtectionThresholdCelsius(),
+		"temperatureRecoveryDelta": f.TemperatureProtectionRecoveryDeltaCelsius(),
 	}
 }

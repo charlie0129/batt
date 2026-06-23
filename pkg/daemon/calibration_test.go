@@ -30,8 +30,14 @@ func (m *mockConf) ControlMagSafeLED() config.ControlMagSafeMode {
 }
 func (m *mockConf) CalibrationDischargeThreshold() int             { return 15 }
 func (m *mockConf) CalibrationHoldDurationMinutes() int            { return 1 }
+func (m *mockConf) TemperatureMonitoringEnabled() bool             { return false }
+func (m *mockConf) TemperatureProtectionThresholdCelsius() int      { return 40 }
+func (m *mockConf) TemperatureProtectionRecoveryDeltaCelsius() int  { return 3 }
 func (m *mockConf) SetCalibrationDischargeThreshold(int)           {}
 func (m *mockConf) SetCalibrationHoldDurationMinutes(int)          {}
+func (m *mockConf) SetTemperatureMonitoringEnabled(bool)           {}
+func (m *mockConf) SetTemperatureProtectionThresholdCelsius(int)    {}
+func (m *mockConf) SetTemperatureProtectionRecoveryDeltaCelsius(int) {}
 func (m *mockConf) SetUpperLimit(i int)                            { m.upper = i }
 func (m *mockConf) SetLowerLimit(i int)                            { m.lower = i }
 func (m *mockConf) SetPreventIdleSleep(bool)                       {}
