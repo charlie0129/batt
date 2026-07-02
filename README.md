@@ -58,7 +58,7 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 | `11881.x.x`             | ✅    | ✅              | ✅                       |                                  |
 | `13822.x.x`             | ✅    | ✅              | ✅                       |                                  |
 | `18000.x.x`             | ✅    | ✅              | ✅                       |                                  |
-| `20356.x.x`             | ❌    | ❌              | ❌                       | Wait for future versions of batt |
+| `20xxx.x.x`             | ❌    | ❌              | ❌                       | Wait for future versions of batt |
 | Other                   | ❓    | ❓              | ❓                       |                                  |
 
 - ❌: Unsupported
