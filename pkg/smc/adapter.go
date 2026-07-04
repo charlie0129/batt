@@ -23,6 +23,8 @@ func (c *AppleSMC) IsAdapterEnabled() (bool, error) {
 		key = AdapterKey2
 	case c.capabilities[AdapterKey3]: // Tahoe firmware versions.
 		key = AdapterKey3
+	case c.capabilities[AdapterKey4]: // macOS 27+ (Sequoia) firmware versions.
+		key = AdapterKey4
 	default:
 		return false, ErrNoAdapterCapability
 	}
@@ -34,7 +36,7 @@ func (c *AppleSMC) IsAdapterEnabled() (bool, error) {
 
 	ret = len(v.Bytes) == 1 && v.Bytes[0] == 0x0
 
-	logrus.Tracef("IsAdapterEnabled returned %t", ret)
+	logrus.Tracef("IsAdapterEnabled (key=%s) returned %t", key, ret)
 
 	return ret, nil
 }
@@ -50,6 +52,8 @@ func (c *AppleSMC) EnableAdapter() error {
 		return c.Write(AdapterKey2, []byte{0x0})
 	case c.capabilities[AdapterKey3]: // Tahoe firmware versions.
 		return c.Write(AdapterKey3, []byte{0x0})
+	case c.capabilities[AdapterKey4]: // macOS 27+ (Sequoia) firmware versions.
+		return c.Write(AdapterKey4, []byte{0x0})
 	default:
 		return ErrNoAdapterCapability
 	}
@@ -66,6 +70,8 @@ func (c *AppleSMC) DisableAdapter() error {
 		return c.Write(AdapterKey2, []byte{0x1})
 	case c.capabilities[AdapterKey3]: // Tahoe firmware versions.
 		return c.Write(AdapterKey3, []byte{0x8})
+	case c.capabilities[AdapterKey4]: // macOS 27+ (Sequoia) firmware versions.
+		return c.Write(AdapterKey4, []byte{0x1})
 	default:
 		return ErrNoAdapterCapability
 	}
