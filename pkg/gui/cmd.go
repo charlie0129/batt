@@ -106,6 +106,8 @@ func startEventBridge(api *client.Client, ctrl *menuController) {
 
 //nolint:gocyclo
 func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menuController) {
+	var ctrl *menuController
+
 	menubarIcon := appkit.StatusBar_SystemStatusBar().StatusItemWithLength(appkit.VariableStatusItemLength)
 	objc.Retain(&menubarIcon)
 	setMenubarImage(menubarIcon, false, false, false)
@@ -161,7 +163,12 @@ func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menu
 			return
 		}
 
-		setMenubarImage(menubarIcon, true, true, false)
+		if ctrl != nil {
+			ctrl.toggleMenusRequiringInstall(true, true, false)
+			ctrl.refreshTrayIcon()
+		} else {
+			setMenubarImage(menubarIcon, true, true, false)
+		}
 	}
 
 	upgradeItem := appkit.NewMenuItemWithAction("Upgrade Daemon...", "u", uninstallOrUpgrade)
@@ -179,6 +186,43 @@ func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menu
 	currentLimitItem := appkit.NewMenuItemWithAction("Loading...", "", func(sender objc.Object) {})
 	currentLimitItem.SetEnabled(false)
 	menu.AddItem(currentLimitItem)
+
+	trayIconStyleMenu := appkit.NewMenuWithTitle("Menu Bar Icon Style")
+	trayIconStyleSubMenuItem := appkit.NewSubMenuItem(trayIconStyleMenu)
+	trayIconStyleSubMenuItem.SetTitle("Menu Bar Icon Style")
+	trayIconStyleSubMenuItem.SetToolTip(`Choose how much battery information the menu bar icon shows.`)
+
+	trayIconFixedItem := appkit.NewMenuItemWithAction("Fixed Icon", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStyleFixed)
+		}
+	})
+	trayIconFixedItem.SetToolTip(`Show the original fixed batt menubar icon.`)
+	trayIconStyleMenu.AddItem(trayIconFixedItem)
+
+	trayIconFixedPercentItem := appkit.NewMenuItemWithAction("Fixed Icon + Percentage", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStyleFixedPercent)
+		}
+	})
+	trayIconFixedPercentItem.SetToolTip(`Show the original batt menubar icon with the current charge percentage centered inside it.`)
+	trayIconStyleMenu.AddItem(trayIconFixedPercentItem)
+
+	trayIconBatteryItem := appkit.NewMenuItemWithAction("Battery Fill", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStyleBattery)
+		}
+	})
+	trayIconBatteryItem.SetToolTip(`Show a battery outline with a fill area that follows the current charge percentage.`)
+	trayIconStyleMenu.AddItem(trayIconBatteryItem)
+
+	trayIconPercentageItem := appkit.NewMenuItemWithAction("Percentage Fill", "", func(sender objc.Object) {
+		if ctrl != nil {
+			ctrl.setTrayIconStyle(config.TrayIconStylePercentage)
+		}
+	})
+	trayIconPercentageItem.SetToolTip(`Show the charge percentage inside a rounded icon with a fill area that follows the current charge percentage.`)
+	trayIconStyleMenu.AddItem(trayIconPercentageItem)
 
 	// ==================== QUICK LIMITS ====================
 	menu.AddItem(appkit.MenuItem_SeparatorItem())
@@ -210,6 +254,7 @@ func addMenubar(app appkit.Application, apiClient *client.Client) (func(), *menu
 	advancedSubMenuItem := appkit.NewSubMenuItem(advancedMenu)
 	advancedSubMenuItem.SetTitle("Advanced")
 	menu.AddItem(advancedSubMenuItem)
+	advancedMenu.AddItem(trayIconStyleSubMenuItem)
 
 	controlMagSafeLEDMenu := appkit.NewMenuWithTitle("Control MagSafe LED")
 	controlMagSafeLEDItem := appkit.NewSubMenuItem(controlMagSafeLEDMenu)
@@ -458,7 +503,12 @@ NOTES:
 			return
 		}
 
-		setMenubarImage(menubarIcon, false, true, false)
+		if ctrl != nil {
+			ctrl.hasBatteryStatus = false
+			ctrl.toggleMenusRequiringInstall(false, true, false)
+		} else {
+			setMenubarImage(menubarIcon, false, true, false)
+		}
 	})
 	uninstallItem.SetToolTip(`Uninstall the batt daemon. This will remove the batt daemon from your system. You must enter your password to uninstall it.
 
@@ -482,27 +532,36 @@ After uninstalling the batt daemon, no charging control will be present on your 
 	menubarIcon.SetMenu(menu)
 
 	// ==================== CALLBACKS & OBSERVER ====================
-	ctrl := &menuController{
-		api:                         apiClient,
-		menubarIcon:                 menubarIcon,
-		powerFlowSubMenuItem:        powerFlowSubMenuItem,
-		installItem:                 installItem,
-		upgradeItem:                 upgradeItem,
-		stateItem:                   stateItem,
-		currentLimitItem:            currentLimitItem,
-		quickLimitsItem:             quickLimitsItem,
-		quickLimitsItems:            setQuickLimitsItems,
-		advancedSubMenuItem:         advancedSubMenuItem,
-		controlMagSafeLEDItem:       controlMagSafeLEDItem,
-		controlMagSafeEnableItem:    controlMagSafeEnableItem,
-		controlMagSafeDisableItem:   controlMagSafeDisableItem,
-		controlMagSafeAlwaysOffItem: controlMagSafeAlwaysOffItem,
-		preventIdleSleepItem:        preventIdleSleepItem,
-		disableChargingPreSleepItem: disableChargingPreSleepItem,
-		preventSystemSleepItem:      preventSystemSleepItem,
-		forceDischargeItem:          forceDischargeItem,
-		uninstallItem:               uninstallItem,
-		disableItem:                 disableItem,
+	ctrl = &menuController{
+		api:                            apiClient,
+		menubarIcon:                    menubarIcon,
+		trayIconStyle:                  config.TrayIconStylePercentage,
+		trayIconRefreshIntervalSeconds: defaultTrayIconRefreshIntervalSeconds,
+		upperLimit:                     100,
+		lowerLimit:                     100,
+		powerFlowSubMenuItem:           powerFlowSubMenuItem,
+		installItem:                    installItem,
+		upgradeItem:                    upgradeItem,
+		stateItem:                      stateItem,
+		currentLimitItem:               currentLimitItem,
+		quickLimitsItem:                quickLimitsItem,
+		quickLimitsItems:               setQuickLimitsItems,
+		advancedSubMenuItem:            advancedSubMenuItem,
+		controlMagSafeLEDItem:          controlMagSafeLEDItem,
+		controlMagSafeEnableItem:       controlMagSafeEnableItem,
+		controlMagSafeDisableItem:      controlMagSafeDisableItem,
+		controlMagSafeAlwaysOffItem:    controlMagSafeAlwaysOffItem,
+		trayIconStyleSubMenuItem:       trayIconStyleSubMenuItem,
+		trayIconFixedItem:              trayIconFixedItem,
+		trayIconFixedPercentItem:       trayIconFixedPercentItem,
+		trayIconBatteryItem:            trayIconBatteryItem,
+		trayIconPercentageItem:         trayIconPercentageItem,
+		preventIdleSleepItem:             preventIdleSleepItem,
+		disableChargingPreSleepItem:      disableChargingPreSleepItem,
+		preventSystemSleepItem:           preventSystemSleepItem,
+		forceDischargeItem:               forceDischargeItem,
+		uninstallItem:                    uninstallItem,
+		disableItem:                      disableItem,
 		// Auto Calibration
 		autoCalSubMenuItem: autoCalibrationSub,
 		calStatusItem:      calStatusItem,
@@ -518,9 +577,12 @@ After uninstalling the batt daemon, no charging control will be present on your 
 
 	h := cgo.NewHandle(ctrl)
 	observerPtr := AttachPowerFlowObserver(menu, h)
+	trayIconTimerPtr := AttachTrayIconTimer(h, float64(ctrl.trayIconRefreshIntervalSeconds))
+	ctrl.trayIconTimerPtr = trayIconTimerPtr
 
 	cleanupFunc := func() {
 		logrus.Info("Cleaning up resources")
+		ReleaseTrayIconTimer(trayIconTimerPtr)
 		ReleasePowerFlowObserver(observerPtr)
 		h.Delete()
 	}
@@ -553,6 +615,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 		}
 		conf := config.NewFileFromConfig(rawConfig, "")
 		logrus.WithFields(conf.LogrusFields()).Info("Got config")
+		ctrl.applyTrayConfig(conf)
 		logrus.Info("Getting charging control capability")
 		capable, err := apiClient.GetChargingControlCapable()
 		if err != nil {
@@ -570,6 +633,7 @@ After uninstalling the batt daemon, no charging control will be present on your 
 			ctrl.toggleMenusRequiringInstall(true, capable, daemonVersion != version.Version)
 		}
 		logrus.WithField("daemonVersion", daemonVersion).WithField("clientVersion", version.Version).Info("Got daemon")
+		ctrl.refreshTrayIcon()
 	}
 
 	return cleanupFunc, ctrl

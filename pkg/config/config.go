@@ -14,6 +14,9 @@ type Config interface {
 	ControlMagSafeLED() ControlMagSafeMode
 	CalibrationDischargeThreshold() int
 	CalibrationHoldDurationMinutes() int
+	TemperatureMonitoringEnabled() bool
+	TemperatureProtectionThresholdCelsius() int
+	TemperatureProtectionRecoveryDeltaCelsius() int
 	Cron() string
 
 	SetUpperLimit(int)
@@ -26,6 +29,9 @@ type Config interface {
 	SetCron(string)
 	SetCalibrationDischargeThreshold(int)
 	SetCalibrationHoldDurationMinutes(int)
+	SetTemperatureMonitoringEnabled(bool)
+	SetTemperatureProtectionThresholdCelsius(int)
+	SetTemperatureProtectionRecoveryDeltaCelsius(int)
 
 	LogrusFields() logrus.Fields
 
