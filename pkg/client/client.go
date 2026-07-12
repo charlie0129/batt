@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -22,9 +23,16 @@ type Client struct {
 
 // NewClient is a constructor for creating a new Client
 func NewClient(socketPath string) *Client {
+	return NewClientWithTimeout(socketPath, 0)
+}
+
+// NewClientWithTimeout constructs a client with an optional whole-request
+// timeout. A zero timeout preserves the default behavior.
+func NewClientWithTimeout(socketPath string, timeout time.Duration) *Client {
 	return &Client{
 		socketPath: socketPath,
 		httpClient: &http.Client{
+			Timeout: timeout,
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 					conn, err := net.Dial("unix", socketPath)

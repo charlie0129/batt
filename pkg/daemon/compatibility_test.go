@@ -43,6 +43,7 @@ func TestDetectCapabilitiesForFirmwareControl(t *testing.T) {
 		value(smc.FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
 		value(smc.FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
 		value(smc.MagSafeLedKey, gosmc.TypeUInt8, 0),
+		value(smc.AdapterKey1, gosmc.TypeUInt8, 0),
 	)
 	if err := mock.Open(); err != nil {
 		t.Fatal(err)
@@ -56,7 +57,7 @@ func TestDetectCapabilitiesForFirmwareControl(t *testing.T) {
 	if !got.ChargingControl || got.ChargeControlMode != compatibility.ChargeControlFirmware {
 		t.Fatalf("unexpected charge control capability: %+v", got)
 	}
-	if got.SleepHooks || got.MagSafeLED || got.AdapterControl || got.Calibration {
+	if got.SleepHooks || got.MagSafeLED || !got.AdapterControl || !got.Calibration {
 		t.Fatalf("unexpected firmware-only capabilities: %+v", got)
 	}
 }

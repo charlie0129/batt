@@ -24,9 +24,9 @@ func detectCapabilities() compatibility.Capabilities {
 		// available when the firmware owns charge control.
 		MagSafeLED:     legacy && smcConn.CheckMagSafeExistence(),
 		AdapterControl: adapter,
-		// The calibration workflow requires both direct charge and adapter
-		// control to perform its discharge phases.
-		Calibration: legacy && adapter,
+		// Adapter control performs the discharge phases. Both the legacy and
+		// firmware backends can temporarily allow charging to 100%.
+		Calibration: mode != compatibility.ChargeControlUnsupported && adapter,
 	}
 }
 

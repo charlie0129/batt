@@ -42,6 +42,8 @@ var clientCapabilities = compatibility.Permissive()
 
 const capabilityAnnotation = "batt.requires-capability"
 
+const helpCompatibilityTimeout = 500 * time.Millisecond
+
 func annotateCapability(cmd *cobra.Command, feature compatibility.Feature) *cobra.Command {
 	if cmd.Annotations == nil {
 		cmd.Annotations = make(map[string]string)
@@ -57,6 +59,24 @@ func requiredCapability(cmd *cobra.Command) (compatibility.Feature, bool) {
 		}
 	}
 	return "", false
+}
+
+func hideUnsupportedCommands(root *cobra.Command, capabilities compatibility.Capabilities) {
+	for _, cmd := range root.Commands() {
+		if feature, required := requiredCapability(cmd); required {
+			cmd.Hidden = !capabilities.Supports(feature)
+		}
+		hideUnsupportedCommands(cmd, capabilities)
+	}
+}
+
+func capabilitiesForHelp() compatibility.Capabilities {
+	fallback := compatibility.Permissive()
+	detected, err := client.NewClientWithTimeout(unixSocketPath, helpCompatibilityTimeout).GetCompatibility()
+	if err != nil {
+		return fallback
+	}
+	return *detected
 }
 
 func setupLogger() error {
@@ -162,6 +182,11 @@ Report issues: https://github.com/charlie0129/batt/issues`,
 			return nil
 		},
 	}
+	defaultHelp := cmd.HelpFunc()
+	cmd.SetHelpFunc(func(selected *cobra.Command, args []string) {
+		hideUnsupportedCommands(selected.Root(), capabilitiesForHelp())
+		defaultHelp(selected, args)
+	})
 
 	if os.Getenv("BATT_RUN_GUI") != "" || path.Base(os.Args[0]) == "batt-gui" {
 		cmd.Run = func(_ *cobra.Command, _ []string) {

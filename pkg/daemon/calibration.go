@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/events"
 )
 
@@ -25,6 +26,43 @@ var (
 	smcDisableAdapter    = func() error { return smcConn.DisableAdapter() }
 	smcIsPluggedIn       = func() (bool, error) { return smcConn.IsPluggedIn() }
 )
+
+func calibrationNeedsMaintainLoop() bool {
+	calibrationMu.Lock()
+	defer calibrationMu.Unlock()
+	return calibrationState.Phase != calibration.PhaseIdle &&
+		calibrationState.Phase != calibration.PhaseError &&
+		!calibrationState.Paused
+}
+
+func enableChargingForCalibration() error {
+	if capabilities.ChargeControlMode == compatibility.ChargeControlFirmware {
+		_, err := smcConn.EnsureFirmwareChargeLimitDisabled()
+		return err
+	}
+	return smcEnableCharging()
+}
+
+func restoreChargeControlAfterCalibration(st *calibration.State) {
+	if capabilities.ChargeControlMode == compatibility.ChargeControlFirmware {
+		var err error
+		if st.SnapshotMaintain {
+			_, err = smcConn.EnsureFirmwareChargeLimit(st.SnapshotLowerLimit, st.SnapshotUpperLimit)
+		} else {
+			_, err = smcConn.EnsureFirmwareChargeLimitDisabled()
+		}
+		if err != nil {
+			logrus.WithError(err).Error("failed to restore firmware charge limit after calibration")
+		}
+		return
+	}
+
+	if st.SnapshotChargingOn {
+		_ = smcEnableCharging()
+	} else {
+		_ = smcDisableCharging()
+	}
+}
 
 var (
 	calibrationMu        = &sync.Mutex{}
@@ -91,7 +129,10 @@ func startCalibration(threshold, holdMinutes int) error {
 	}
 	upper := conf.UpperLimit()
 	lower := conf.LowerLimit()
-	chargingEnabled, _ := smcIsChargingEnabled()
+	chargingEnabled := true
+	if capabilities.ChargeControlMode != compatibility.ChargeControlFirmware {
+		chargingEnabled, _ = smcIsChargingEnabled()
+	}
 	adapterEnabled, _ := smcIsAdapterEnabled()
 
 	if sseHub != nil {
@@ -173,7 +214,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 				break
 			}
 			logrus.Info("enabling charging")
-			if err := smcEnableCharging(); err != nil {
+			if err := enableChargingForCalibration(); err != nil {
 				st.LastError = err.Error()
 				st.Phase = calibration.PhaseError
 				break
@@ -245,11 +286,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 			st.Phase = calibration.PhaseError
 			break
 		}
-		if st.SnapshotChargingOn {
-			_ = smcEnableCharging()
-		} else {
-			_ = smcDisableCharging()
-		}
+		restoreChargeControlAfterCalibration(st)
 		if st.SnapshotAdapterOn {
 			_ = smcEnableAdapter()
 		} else {
@@ -357,11 +394,7 @@ func cancelCalibration() error {
 		logrus.WithError(err).Warn("failed to save config while canceling calibration")
 	}
 
-	if st.SnapshotChargingOn {
-		_ = smcEnableCharging()
-	} else {
-		_ = smcDisableCharging()
-	}
+	restoreChargeControlAfterCalibration(st)
 	if st.SnapshotAdapterOn {
 		_ = smcEnableAdapter()
 	} else {

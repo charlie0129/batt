@@ -32,14 +32,14 @@ However, if you are nerdy and want to dive into the details, it does have some a
 
 - Control MagSafe LED (if present) according to charge status. [Docs](#control-magsafe-led)
 - Cut power from the wall (even if the adapter is physically plugged in) to use battery power. [Docs](#enabledisable-power-adapter)
-- On legacy firmware, it solves common sleep-related issues when controlling charging. [Docs1](#preventing-idle-sleep) [Docs2](#disabling-charging-before-sleep)
+- On firmware < `20xxx`, it solves common sleep-related issues when controlling charging. [Docs1](#preventing-idle-sleep) [Docs2](#disabling-charging-before-sleep)
 - Calibrate battery automatically. [Docs](#auto-calibration-experimental)
 
 ## How is it different from XXX?
 
 **It is free and opensource**. It even comes with some features (like idle sleep preventions and pre-sleep stop charging) that are only available in paid counterparts. It comes with no ads, no tracking, no telemetry, no analytics, no bullshit. It is open source, so you can read the code and verify that it does what it says it does.
 
-**It is simple but well-thought.** It only does charge limiting and does it well. On legacy firmware, `batt` handles sleep edge cases that can otherwise let a MacBook charge to 100%. On newer firmware, it delegates the range to Apple SMC so enforcement continues during sleep. Other features are intentionally limited to keep it simple. If you encounter a problem or want an additional feature, please raise an issue.
+**It is simple but well-thought.** It only does charge limiting and does it well. On firmware < `20xxx`, `batt` handles sleep edge cases that can otherwise let a MacBook charge to 100%. On newer firmware, it delegates the range to Apple SMC so enforcement continues during sleep. Other features are intentionally limited to keep it simple. If you encounter a problem or want an additional feature, please raise an issue.
 
 **It is light-weight.** No electron GUIs hogging your system resources like some other tools. You can use batt on the command-line, or use the native macOS menubar app if you prefer a GUI. The GUI is written using native macOS APIs, so it is light-weight and fast.
 
@@ -51,16 +51,16 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 ## Compatibility Matrix
 
-| Firmware Version        | Typical macOS release | GUI  | CLI (Prebuilt) | CLI (Build from Source) | Note                                      |
-| ----------------------- | ---------------------- | ---- | -------------- | ----------------------- | ----------------------------------------- |
-| `6723.x.x`              | Older                  | ❌    | ❌              | ⚠️                       |                                           |
-| `7429.x.x` / `7459.x.x` | Older                  | ❌    | ⚠️              | ✅                       |                                           |
-| `8419.x.x` / `8422.x.x` | Older                  | ⚠️    | ⚠️              | ✅                       |                                           |
-| `101xx.x.x`             | macOS 14               | ⚠️    | ⚠️              | ✅                       |                                           |
-| `118xx.x.x`             | macOS 15               | ✅    | ✅              | ✅                       |                                           |
-| `138xx.x.x` / `18xxx.x.x` | macOS 26 Tahoe      | ✅    | ✅              | ✅                       |                                           |
-| `20xxx.x.x`             | macOS 27 Golden Gate   | ✅    | ✅              | ✅                       | Firmware-managed limits; see below        |
-| Other                   | Unknown                | ❓    | ❓              | ❓                       |                                           |
+| Firmware Version          | First macOS release  | GUI | CLI (Prebuilt) | CLI (Build from Source) | Note                               |
+| ------------------------- | -------------------- | --- | -------------- | ----------------------- | ---------------------------------- |
+| `6723.x.x`                | macOS 11 Big Sur     | ❌   | ❌              | ⚠️                       |                                    |
+| `7429.x.x` / `7459.x.x`   | macOS 12 Monterey    | ❌   | ⚠️              | ✅                       |                                    |
+| `8419.x.x` / `8422.x.x`   | macOS 13 Ventura     | ⚠️   | ⚠️              | ✅                       |                                    |
+| `101xx.x.x`               | macOS 14 Sonoma      | ⚠️   | ⚠️              | ✅                       |                                    |
+| `118xx.x.x`               | macOS 15 Sequoia     | ✅   | ✅              | ✅                       |                                    |
+| `138xx.x.x` / `18xxx.x.x` | macOS 26 Tahoe       | ✅   | ✅              | ✅                       |                                    |
+| `20xxx.x.x`               | macOS 27 Golden Gate | ✅   | ✅              | ✅                       | Firmware-managed limits; see below |
+| Other                     | Unknown              | ❓   | ❓              | ❓                       |                                    |
 
 - ❌: Unsupported
 - ✅: Supported
@@ -68,7 +68,7 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 - ❓: Unknown, please raise an issue if you have tested it.
 
 > [!NOTE]
-> Firmware version is different from macOS version. You can check your firmware version by running `system_profiler SPHardwareDataType | grep -i firmware` in Terminal.
+> Firmware version is different from macOS version. Old macOS versions may have newer firmware (macOS 15 but running firmware `138xx.x.x`). You can check your firmware version by running `system_profiler SPHardwareDataType | grep -i firmware` in Terminal.
 
 `batt` does not branch on the reported macOS or firmware version. It probes usable, non-empty SMC keys at runtime: `CH0B` + `CH0C` or `CHTE` select legacy direct charging control, while `bfF0` selects firmware-managed limits. Zero-sized placeholder keys are ignored. This also handles an older macOS installation receiving newer firmware.
 
@@ -80,8 +80,8 @@ This mode has several intentional differences and current limitations:
 
 - If the battery is above the upper limit, firmware can stop drawing wall power and use the battery to run the Mac. Unlike legacy control, the percentage may therefore fall.
 - MagSafe LED control is unavailable because `batt` no longer owns or reliably knows the charging-enabled state.
-- Adapter enable/disable (including GUI “Force Discharge”) is unavailable unless a known adapter-control SMC key is present. No such key is currently known on 20xxx firmware.
-- Auto calibration and calibration scheduling are unavailable without legacy direct charging and adapter controls.
+- Adapter enable/disable (including GUI “Force Discharge”) is available when a known adapter-control SMC key is present, including on tested 20xxx firmware.
+- Auto calibration and calibration scheduling are available when adapter control is supported. During the full-charge phase, `batt` temporarily deactivates the firmware limit, then restores the configured range afterward.
 - Legacy sleep options are unavailable and unnecessary. Incompatible values left in the configuration after an upgrade are disabled by the daemon.
 
 The daemon reports these capabilities to current CLI and GUI clients. Older daemons that do not provide detailed compatibility data retain the previous permissive client behavior.
@@ -176,7 +176,7 @@ To customize charge limit, see `batt limit`. For example,to set the limit to 80%
 
 Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in.
 
-This command is available only when the daemon detects a known adapter-control SMC key. It is currently unavailable on macOS 27 / 20xxx firmware.
+This command is available only when the daemon detects a known adapter-control SMC key. It is supported on tested macOS 27 / 20xxx firmware, but capability detection remains authoritative because keys can vary by model and firmware.
 
 This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.
 
@@ -203,7 +203,7 @@ These advanced features are not for most users. Using the default setting for th
 
 Automatically performs a full charging cycle to help calibrate reported battery percentage.
 
-This workflow requires legacy direct charging control and adapter control. It is unavailable on macOS 27 / 20xxx firmware.
+This workflow requires adapter control. On macOS 27 / 20xxx firmware, `batt` uses adapter control for discharge phases and temporarily deactivates the firmware limit while charging to full.
 
 Phases: `Idle → DischargeToThreshold → ChargeToFull → HoldAfterFull → DischargeAfterHold → RestoreAndFinish → Idle`.
 

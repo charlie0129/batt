@@ -304,6 +304,17 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 // firmware. It deliberately does not read battery/charging state or interact
 // with sleep, MagSafe, adapter, or calibration features.
 func maintainFirmwareChargeLimit() bool {
+	if calibrationNeedsMaintainLoop() {
+		batteryCharge, err := smcConn.GetBatteryCharge()
+		if err != nil {
+			logrus.Errorf("GetBatteryCharge failed during calibration: %v", err)
+			return false
+		}
+		if applyCalibrationWithinLoop(batteryCharge) {
+			return true
+		}
+	}
+
 	upper := conf.UpperLimit()
 	if upper >= 100 {
 		changed, err := smcConn.EnsureFirmwareChargeLimitDisabled()

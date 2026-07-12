@@ -4,10 +4,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charlie0129/gosmc"
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/smc"
 )
 
 // NOTE: These tests are simplified and mock minimal parts; smcConn and conf must be
@@ -124,5 +127,92 @@ func TestCalibrationFlow(t *testing.T) {
 	applyCalibrationWithinLoop(fake.charge)
 	if calibrationState.Phase != calibration.PhaseIdle {
 		t.Fatalf("expected idle at end, got %s", calibrationState.Phase)
+	}
+}
+
+func TestCalibrationFlowWithFirmwareChargeControl(t *testing.T) {
+	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
+		v, err := gosmc.NewValue(key, dataType, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	mock := smc.NewMockValues(
+		value(smc.FirmwareChargeLimitActivationKey, gosmc.TypeUInt8, 0),
+		value(smc.FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
+		value(smc.FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
+		value(smc.AdapterKey1, gosmc.TypeUInt8, 0),
+	)
+	if err := mock.Open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mock.Close() })
+	if _, err := mock.EnsureFirmwareChargeLimit(78, 80); err != nil {
+		t.Fatal(err)
+	}
+
+	previousSMC, previousConf, previousCapabilities := smcConn, conf, capabilities
+	previousState, previousStatePath := calibrationState, calibrationStatePath
+	previousIsAdapter := smcIsAdapterEnabled
+	previousEnableAdapter, previousDisableAdapter := smcEnableAdapter, smcDisableAdapter
+	t.Cleanup(func() {
+		smcConn, conf, capabilities = previousSMC, previousConf, previousCapabilities
+		calibrationState, calibrationStatePath = previousState, previousStatePath
+		smcIsAdapterEnabled = previousIsAdapter
+		smcEnableAdapter, smcDisableAdapter = previousEnableAdapter, previousDisableAdapter
+	})
+	smcConn = mock
+	conf = &mockConf{upper: 80, lower: 78}
+	capabilities = compatibility.Capabilities{
+		ChargingControl:   true,
+		ChargeControlMode: compatibility.ChargeControlFirmware,
+		AdapterControl:    true,
+		Calibration:       true,
+	}
+	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
+	calibrationStatePath = ""
+	smcIsAdapterEnabled = func() (bool, error) { return mock.IsAdapterEnabled() }
+	smcEnableAdapter = func() error { return mock.EnableAdapter() }
+	smcDisableAdapter = func() error { return mock.DisableAdapter() }
+
+	if err := startCalibration(15, 10); err != nil {
+		t.Fatal(err)
+	}
+	applyCalibrationWithinLoop(40)
+	adapterEnabled, err := mock.IsAdapterEnabled()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapterEnabled {
+		t.Fatal("adapter should be disabled during discharge")
+	}
+
+	applyCalibrationWithinLoop(14)
+	if calibrationState.Phase != calibration.PhaseCharge {
+		t.Fatalf("phase = %s, want charge", calibrationState.Phase)
+	}
+	firmwareState, err := mock.GetFirmwareChargeLimit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firmwareState.Active {
+		t.Fatal("firmware charge limit should be inactive while charging to full")
+	}
+
+	applyCalibrationWithinLoop(100)
+	calibrationState.HoldEndTime = time.Now().Add(-time.Second)
+	applyCalibrationWithinLoop(100)
+	applyCalibrationWithinLoop(80)
+	applyCalibrationWithinLoop(80)
+	if calibrationState.Phase != calibration.PhaseIdle {
+		t.Fatalf("phase = %s, want idle", calibrationState.Phase)
+	}
+	firmwareState, err = mock.GetFirmwareChargeLimit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !firmwareState.Active || firmwareState.Lower != 78 || firmwareState.Upper != 80 {
+		t.Fatalf("firmware charge limit was not restored: %+v", firmwareState)
 	}
 }
