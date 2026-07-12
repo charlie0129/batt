@@ -99,6 +99,8 @@ You must run this command as root.`,
 			}
 
 			if !noResetCharging {
+				logrus.Infof("resetting charge limits")
+
 				// Open Apple SMC for read/writing
 				smcC := smc.New()
 				if err := smcC.Open(); err != nil {
@@ -119,8 +121,6 @@ You must run this command as root.`,
 					return fmt.Errorf("failed to close SMC: %v", err)
 				}
 			}
-
-			logrus.Infof("resetting charge limits")
 
 			fmt.Println("successfully uninstalled")
 

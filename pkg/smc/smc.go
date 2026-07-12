@@ -5,9 +5,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// AppleSMC is a wrapper of gosmc.Connection.
+// AppleSMC is a wrapper of gosmc.Client.
 type AppleSMC struct {
-	conn gosmc.Connection
+	conn *gosmc.Client
 	// capabilities is a map of SMC keys and their availability. Cached
 	// after Open() call to avoid unnecessary SMC reads.
 	capabilities map[string]bool
@@ -23,17 +23,18 @@ func New() *AppleSMC {
 
 // NewMock returns a new mocked AppleSMC with prefill values.
 func NewMock(prefillValues map[string][]byte) *AppleSMC {
-	conn := gosmc.NewMockConnection()
-
+	values := make([]gosmc.Value, 0, len(prefillValues))
 	for key, value := range prefillValues {
-		err := conn.Write(key, value)
+		v, err := gosmc.NewValue(key, gosmc.DataType("hex_"), value)
 		if err != nil {
 			panic(err)
 		}
+		values = append(values, v)
 	}
 
 	return &AppleSMC{
-		conn: conn,
+		conn:         gosmc.NewMock(values...),
+		capabilities: make(map[string]bool),
 	}
 }
 
@@ -57,7 +58,7 @@ func (c *AppleSMC) Close() error {
 }
 
 // Read reads a value from SMC.
-func (c *AppleSMC) Read(key string) (gosmc.SMCVal, error) {
+func (c *AppleSMC) Read(key string) (gosmc.Value, error) {
 	logrus.WithFields(logrus.Fields{
 		"key": key,
 	}).Trace("Trying to read from SMC")
@@ -88,7 +89,7 @@ func (c *AppleSMC) Write(key string, value []byte) error {
 		"val": value,
 	}).Trace("Trying to write to SMC")
 
-	err := c.conn.Write(key, value)
+	err := c.conn.WriteBytes(key, value)
 	if err != nil {
 		return err
 	}

@@ -3,7 +3,7 @@ module github.com/charlie0129/batt
 go 1.24.5
 
 require (
-	github.com/charlie0129/gosmc v0.0.0-20250206014004-02656b3859e0
+	github.com/charlie0129/gosmc v0.0.0-20260712130932-24306d80e612
 	github.com/fatih/color v1.15.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/peterneutron/powerkit-go v0.9.4
@@ -11,7 +11,7 @@ require (
 	github.com/progrium/darwinkit v0.5.1-0.20240715194340-61b9e31a12fa
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/sirupsen/logrus v1.9.3
-	github.com/spf13/cobra v1.7.0
+	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.37.0
 )
 
@@ -34,7 +34,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.8 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	golang.org/x/arch v0.3.0 // indirect
