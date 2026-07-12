@@ -10,7 +10,7 @@ void batt_show_alert(const char *message, const char *body) {
     @autoreleasepool {
         NSAlert *alert = [[[NSAlert alloc] init] autorelease];
         alert.icon = [NSImage imageWithSystemSymbolName:@"exclamationmark.triangle"
-                              accessibilityDescription:@"s"];
+                              accessibilityDescription:@"Warning"];
         alert.alertStyle = NSAlertStyleWarning;
         alert.messageText = AlertString(message);
         alert.informativeText = AlertString(body);
