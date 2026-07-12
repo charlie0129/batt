@@ -23,14 +23,16 @@ func (c *AppleSMC) IsChargingEnabled() (bool, error) {
 		return ret, nil
 	}
 
-	// Tahoe firmware versions.
-	v, err := c.Read(ChargingKey3)
+	// Tahoe / macOS 27+ firmware versions.
+	// Both use the same 4-byte format: all zeros means charging enabled.
+	chargingKey := c.getChargingKey()
+	v, err := c.Read(chargingKey)
 	if err != nil {
 		return false, err
 	}
 
 	ret := len(v.Bytes) == 4 && bytes.Equal(v.Bytes, []byte{0x00, 0x00, 0x00, 0x00})
-	logrus.Tracef("IsChargingEnabled returned %t", ret)
+	logrus.Tracef("IsChargingEnabled (key=%s) returned %t", chargingKey, ret)
 
 	return ret, nil
 }
@@ -38,7 +40,7 @@ func (c *AppleSMC) IsChargingEnabled() (bool, error) {
 func (c *AppleSMC) IsChargingControlCapable() bool {
 	logrus.Tracef("IsChargingControlCapable called")
 
-	for _, key := range []string{ChargingKey1, ChargingKey2, ChargingKey3} {
+	for _, key := range []string{ChargingKey1, ChargingKey2, ChargingKey3, ChargingKey4} {
 		if c.capabilities[key] {
 			logrus.Tracef("IsChargingControlCapable returned true for key %s", key)
 			return true
@@ -65,8 +67,11 @@ func (c *AppleSMC) EnableCharging() error {
 		return nil
 	}
 
-	// Tahoe firmware versions.
-	return c.Write(ChargingKey3, []byte{0x00, 0x00, 0x00, 0x00})
+	// Tahoe / macOS 27+ firmware versions.
+	// Both use the same 4-byte format: all zeros means charging enabled.
+	key := c.getChargingKey()
+	logrus.Tracef("EnableCharging writing to key %s", key)
+	return c.Write(key, []byte{0x00, 0x00, 0x00, 0x00})
 }
 
 // DisableCharging disables charging.
@@ -86,6 +91,19 @@ func (c *AppleSMC) DisableCharging() error {
 		return nil
 	}
 
-	// Tahoe firmware versions.
-	return c.Write(ChargingKey3, []byte{0x01, 0x00, 0x00, 0x00})
+	// Tahoe / macOS 27+ firmware versions.
+	// Both use the same 4-byte format: 0x01 in first byte means charging disabled.
+	key := c.getChargingKey()
+	logrus.Tracef("DisableCharging writing to key %s", key)
+	return c.Write(key, []byte{0x01, 0x00, 0x00, 0x00})
+}
+
+// getChargingKey returns the SMC key to use for charging control.
+// Priority: ChargingKey4 (macOS 27+) > ChargingKey3 (Tahoe).
+// Pre-Tahoe uses ChargingKey1+ChargingKey2 and is handled separately.
+func (c *AppleSMC) getChargingKey() string {
+	if c.capabilities[ChargingKey4] {
+		return ChargingKey4
+	}
+	return ChargingKey3
 }
