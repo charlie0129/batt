@@ -5,112 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime/cgo"
 	"strings"
-	"unsafe"
 
 	pkgerrors "github.com/pkg/errors"
-	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/sirupsen/logrus"
 )
-
-// #cgo CFLAGS: -x objective-c
-// #cgo LDFLAGS: -framework Cocoa -framework ServiceManagement -framework CoreFoundation
-// #include <stdint.h>
-// #include <stdbool.h>
-// #include <stdlib.h>
-// // C/ObjC functions are implemented in bridge.m; only prototypes here.
-// void *batt_attachMenuObserver(uintptr_t menuPtr, uintptr_t handle);
-// void batt_releaseMenuObserver(void *obsPtr);
-// bool registerAppWithSMAppService(void);
-// bool unregisterAppWithSMAppService(void);
-// bool isRegisteredWithSMAppService(void);
-// void batt_showNotification(const char* title, const char* body);
-import "C"
-
-//export battMenuWillOpen
-func battMenuWillOpen(h C.uintptr_t) {
-	defer func() {
-		if r := recover(); r != nil {
-			logrus.Errorf("panic in battMenuWillOpen: %v", r)
-		}
-	}()
-	handle := cgo.Handle(h)
-	if v := handle.Value(); v != nil {
-		if c, ok := v.(*menuController); ok {
-			c.onWillOpen()
-		}
-	}
-}
-
-//export battMenuDidClose
-func battMenuDidClose(h C.uintptr_t) {
-	defer func() {
-		if r := recover(); r != nil {
-			logrus.Errorf("panic in battMenuDidClose: %v", r)
-		}
-	}()
-	handle := cgo.Handle(h)
-	if v := handle.Value(); v != nil {
-		if c, ok := v.(*menuController); ok {
-			c.onDidClose()
-		}
-	}
-}
-
-//export battMenuTimerFired
-func battMenuTimerFired(h C.uintptr_t) {
-	defer func() {
-		if r := recover(); r != nil {
-			logrus.Errorf("panic in battMenuTimerFired: %v", r)
-		}
-	}()
-	handle := cgo.Handle(h)
-	if v := handle.Value(); v != nil {
-		if c, ok := v.(*menuController); ok {
-			c.onTimerTick()
-		}
-	}
-}
-
-// AttachPowerFlowObserver wires an Objective-C NSMenu notifications observer to a Go handle.
-// It returns an opaque pointer retained on the ObjC side; call ReleasePowerFlowObserver to free.
-func AttachPowerFlowObserver(menu appkit.Menu, h cgo.Handle) unsafe.Pointer {
-	return C.batt_attachMenuObserver(C.uintptr_t(uintptr(menu.Ptr())), C.uintptr_t(h))
-}
-
-func ReleasePowerFlowObserver(ptr unsafe.Pointer) {
-	C.batt_releaseMenuObserver(ptr)
-}
-
-// RegisterLoginItem registers the application to start at login using SMAppService
-func RegisterLoginItem() error {
-	logrus.Info("Registering application to start at login")
-
-	if C.registerAppWithSMAppService() == C.bool(true) {
-		logrus.Info("Successfully registered as login item")
-		return nil
-	}
-
-	return fmt.Errorf("failed to register application as login item")
-}
-
-// UnregisterLoginItem removes the application from login items
-func UnregisterLoginItem() error {
-	logrus.Info("Removing application from login items")
-
-	if C.unregisterAppWithSMAppService() == C.bool(true) {
-		logrus.Info("Successfully unregistered login item")
-		return nil
-	}
-
-	return fmt.Errorf("failed to unregister application as login item")
-}
-
-// IsLoginItemRegistered checks if the application is registered as a login item
-func IsLoginItemRegistered() bool {
-	return bool(C.isRegisteredWithSMAppService())
-}
 
 var (
 	battSymlinkLocation = "/usr/local/bin/batt"
@@ -144,26 +43,6 @@ func escapeShellInAppleScript(in string) string {
 		}
 	}
 	return out.String()
-}
-
-func showNotification(title, body string) {
-	// Use UNUserNotificationCenter via Objective-C bridge. Best-effort, async.
-	go func() {
-		ctitle := C.CString(title)
-		cbody := C.CString(body)
-		defer C.free(unsafe.Pointer(ctitle))
-		defer C.free(unsafe.Pointer(cbody))
-		C.batt_showNotification(ctitle, cbody)
-	}()
-}
-
-func showAlert(msg, body string) {
-	alert := appkit.NewAlert()
-	alert.SetIcon(appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription("exclamationmark.triangle", "s"))
-	alert.SetAlertStyle(appkit.AlertStyleWarning)
-	alert.SetMessageText(msg)
-	alert.SetInformativeText(body)
-	alert.RunModal()
 }
 
 // uninstallDaemon removes daemon and resets charging limits.
