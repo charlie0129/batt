@@ -83,7 +83,9 @@ void batt_showNotification(const char* title, const char* body) {
     }
 }
 
-// need codesign app bundle
+// need codesign app bundle, otherwise it does not send notification to the user.
+// codesignning is NOT possible. so we do not use this.
+//
 // void batt_showNotification(const char* title, const char* body) {
 //     @autoreleasepool {
 //         NSString *nsTitle = title ? [NSString stringWithUTF8String:title] : @"";
