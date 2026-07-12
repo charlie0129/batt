@@ -72,7 +72,11 @@ Check your firmware version by running `system_profiler SPHardwareDataType | gre
 > [!NOTE]
 > Firmware version is different from macOS version. Old macOS versions may have newer firmware, e.g. macOS 15 with firmware `138xx.x.x` (macOS Tahoe version).
 
-`batt` does not branch on the reported macOS or firmware version. It probes usable, non-empty SMC keys at runtime: `CH0B` + `CH0C` or `CHTE` select legacy direct charging control, while `bfF0` selects firmware-managed limits. Zero-sized placeholder keys are ignored. This also handles an older macOS installation receiving newer firmware.
+`batt` does not branch on the reported macOS or firmware version. It probes usable SMC keys at runtime (mainly tied to the firmware version, not the macOS version). This also handles an older macOS installation receiving newer firmware.
+
+If you want to know which MacBooks I personally developed it on, I am using it on all my personal MacBooks every single day, including MacBook Air M1 2020 (A2337), MacBook Air M2 2022 (A2681), MacBook Pro 14' M1 Pro 2021 (A2442), MacBook Pro 16' M1 Max 2021 (A2485).
+
+If you encounter any incompatibility, please raise an issue with your MacBook model, firmware version, batt version, macOS version, and batt logs (`/tmp/batt.log`).
 
 ### macOS 27 / 20xxx firmware behavior
 
@@ -82,15 +86,9 @@ This mode has several intentional differences and current limitations:
 
 - If the battery is above the upper limit, firmware can stop drawing wall power and use the battery to run the Mac. Unlike legacy control, the percentage may therefore fall.
 - MagSafe LED control is unavailable because `batt` no longer owns or reliably knows the charging-enabled state.
-- Adapter enable/disable (including GUI “Force Discharge”) is available when a known adapter-control SMC key is present, including on tested 20xxx firmware.
-- Auto calibration and calibration scheduling are available when adapter control is supported. During the full-charge phase, `batt` temporarily deactivates the firmware limit, then restores the configured range afterward.
 - Legacy sleep options are unavailable and unnecessary. Incompatible values left in the configuration after an upgrade are disabled by the daemon.
 
 The daemon reports these capabilities to current CLI and GUI clients. Older daemons that do not provide detailed compatibility data retain the previous permissive client behavior.
-
-If you want to know which MacBooks I personally developed it on, I am using it on all my personal MacBooks every single day, including MacBook Air M1 2020 (A2337), MacBook Air M2 2022 (A2681), MacBook Pro 14' M1 Pro 2021 (A2442), MacBook Pro 16' M1 Max 2021 (A2485).
-
-If you encounter any incompatibility, please raise an issue with your MacBook model and macOS version.
 
 ## Installation (GUI Version)
 
@@ -152,7 +150,7 @@ You can choose either one. Please do not use both at the same time to avoid conf
 - Test if it works by running `sudo batt status`. If you see your battery status, you are good to go!
 - Time to customize. By default `batt` will set a charge limit to 60%. For example, to set the charge limit to 80%, run `sudo batt limit 80`.
 - As said before, it is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`. Built-in charge limit also need to be disabled if you are on macOS 26.4 or later.
-- If your current charge is above the limit, behavior depends on the detected backend. Legacy firmware stops charging and keeps running from the wall, so the percentage stays steady. macOS 27-era firmware may run from the battery until it falls back into the configured range.
+- If your current charge is above the limit, behavior depends on the detected backend. Firmwares < `20xxx` stops charging and keeps running from the wall, so the percentage stays steady. `20xxx` firmware may run from the battery until it falls back into the configured range.
 - You can refer to [Usage](#usage) for additional configurations. Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
 - To disable the charge limit, run `batt disable` or `batt limit 100`.
 - [How to uninstall?](#how-to-uninstall) [How to upgrade?](#how-to-upgrade)
@@ -178,8 +176,6 @@ To customize charge limit, see `batt limit`. For example,to set the limit to 80%
 
 Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in.
 
-This command is available only when the daemon detects a known adapter-control SMC key. It is supported on tested macOS 27 / 20xxx firmware, but capability detection remains authoritative because keys can vary by model and firmware.
-
 This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.
 
 NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.
@@ -204,8 +200,6 @@ These advanced features are not for most users. Using the default setting for th
 > Thanks @brookqin for implementing the initial version of this feature.
 
 Automatically performs a full charging cycle to help calibrate reported battery percentage.
-
-This workflow requires adapter control. On macOS 27 / 20xxx firmware, `batt` uses adapter control for discharge phases and temporarily deactivates the firmware limit while charging to full.
 
 Phases: `Idle → DischargeToThreshold → ChargeToFull → HoldAfterFull → DischargeAfterHold → RestoreAndFinish → Idle`.
 
@@ -244,7 +238,7 @@ Before a scheduled calibration actually begins, `batt` checks that the Mac is pl
 ### Preventing idle sleep
 
 > [!NOTE]
-> This is a legacy-control option for older firmware (`CH0B` + `CH0C` or `CHTE`). It is unavailable and unnecessary with macOS 27-era `bfF0` firmware, where the firmware enforces limits during sleep.
+> This is a legacy-control option for older firmware < `20xxx`. It is unavailable and unnecessary with `20xxx` firmware, where the firmware enforces limits during sleep.
 
 Set whether to prevent idle sleep during a charging session.
 
@@ -259,7 +253,7 @@ To enable this feature, run `sudo batt prevent-idle-sleep enable`. To disable, r
 ### Disabling charging before sleep
 
 > [!NOTE]
-> This is a legacy-control option for older firmware (`CH0B` + `CH0C` or `CHTE`). It is unavailable and unnecessary with macOS 27-era `bfF0` firmware, where the firmware enforces limits during sleep.
+> This is a legacy-control option for older firmware < `20xxx`. It is unavailable and unnecessary with `20xxx` firmware, where the firmware enforces limits during sleep.
 
 Set whether to disable charging before sleep if charge limit is enabled.
 
@@ -270,7 +264,7 @@ To enable this feature, run `sudo batt disable-charging-pre-sleep enable`. To di
 ### Prevent system sleep
 
 > [!NOTE]
-> This is a legacy-control option for older firmware (`CH0B` + `CH0C` or `CHTE`). It is unavailable with macOS 27-era `bfF0` firmware.
+> This is a legacy-control option for older firmware < `20xxx`. It is unavailable with `20xxx` firmware.
 
 Set whether to prevent system sleep during a charging session (experimental).
 
@@ -439,7 +433,7 @@ Probably not. `batt` was made Apple-Silicon-only after some early development. I
 ### Why does my MacBook stop charging after I close the lid?
 
 > [!NOTE]
-> This FAQ applies only to older firmware using legacy direct charging control. On macOS 27-era `bfF0` firmware, the charge limit persists through sleep and `batt` does not disable charging before sleep.
+> This FAQ applies only to older firmware < `20xxx` using direct charging control. On `20xxx` firmware, the charge limit persists through sleep and `batt` does not disable charging before sleep.
 
 TL,DR; This is intended, and is the default behavior. It is described [here](#disabling-charging-before-sleep). You can turn this feature off by running `sudo batt disable-charging-pre-sleep disable` (not recommended, keep reading).
 
@@ -478,7 +472,7 @@ If you want to prevent this, you need to disable sleep globally using pmset, or 
 ### My Mac does not start charging after waking up from sleep
 
 > [!NOTE]
-> This FAQ applies only to older firmware using legacy direct charging control. macOS 27-era `bfF0` firmware has no `batt` post-wake delay.
+> This FAQ applies only to older firmware < `20xxx` using legacy direct charging control. `20xxx` firmware has no `batt` post-wake delay.
 
 This is expected. batt will prevent your Mac from charging temporarily if your Mac has just woken up from sleep. This is to prevent overcharging during sleep. Your Mac will start charging soon (at most 2 minutes).
 
@@ -487,7 +481,7 @@ If you absolutely need to charge your Mac _immediately_ after waking up from sle
 ### Why does my Mac starts charging after entering sleep?
 
 > [!NOTE]
-> This FAQ applies only to older firmware using legacy direct charging control. On macOS 27-era `bfF0` firmware, Apple firmware continues enforcing the configured range during sleep.
+> This FAQ applies only to older firmware < `20xxx` using legacy direct charging control. `20xxx` firmware continues enforcing the configured range during sleep.
 
 If you are using the default batt settings (i.e., `prevent-idle-sleep` and `disable-charging-pre-sleep` are both enabled), this should not happen.
 
