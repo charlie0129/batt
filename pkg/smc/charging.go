@@ -22,7 +22,9 @@ var (
 // presence, not the macOS version. bfF0 takes precedence because old macOS
 // versions may receive the newer firmware.
 func (c *AppleSMC) ChargeControlMode() compatibility.ChargeControlMode {
-	if c.capabilities[FirmwareChargeLimitActivationKey] {
+	if c.capabilities[FirmwareChargeLimitActivationKey] &&
+		c.capabilities[FirmwareChargeLimitUpperKey] &&
+		c.capabilities[FirmwareChargeLimitLowerKey] {
 		return compatibility.ChargeControlFirmware
 	}
 	if (c.capabilities[ChargingKey1] && c.capabilities[ChargingKey2]) || c.capabilities[ChargingKey3] {

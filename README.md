@@ -28,7 +28,7 @@ Quick link to [installation guide](#installation).
 
 - Limit battery charge, with a lower and upper bound, like ThinkPads. [Docs](#limit-battery-charge)
 
-However, if you are nerdy and want to dive into the details, it does have some advanced features for the computer nerds out there :). These are shown only when the current Mac's SMC keys support them.
+However, if you are nerdy and want to dive into the details, it does have some advanced features for power users. These are shown only when the current Mac's SMC keys support them.
 
 - Control MagSafe LED (if present) according to charge status. [Docs](#control-magsafe-led)
 - Cut power from the wall (even if the adapter is physically plugged in) to use battery power. [Docs](#enabledisable-power-adapter)
