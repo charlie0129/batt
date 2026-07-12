@@ -51,6 +51,8 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 ## Compatibility Matrix
 
+Check your firmware version by running `system_profiler SPHardwareDataType | grep -i firmware` in Terminal. Do NOT rely on macOS version.
+
 | Firmware Version          | First macOS release  | GUI | CLI (Prebuilt) | CLI (Build from Source) | Note                               |
 | ------------------------- | -------------------- | --- | -------------- | ----------------------- | ---------------------------------- |
 | `6723.x.x`                | macOS 11 Big Sur     | ❌   | ❌              | ⚠️                       |                                    |
@@ -68,7 +70,7 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 - ❓: Unknown, please raise an issue if you have tested it.
 
 > [!NOTE]
-> Firmware version is different from macOS version. Old macOS versions may have newer firmware (macOS 15 but running firmware `138xx.x.x`). You can check your firmware version by running `system_profiler SPHardwareDataType | grep -i firmware` in Terminal.
+> Firmware version is different from macOS version. Old macOS versions may have newer firmware, e.g. macOS 15 with firmware `138xx.x.x` (macOS Tahoe version).
 
 `batt` does not branch on the reported macOS or firmware version. It probes usable, non-empty SMC keys at runtime: `CH0B` + `CH0C` or `CHTE` select legacy direct charging control, while `bfF0` selects firmware-managed limits. Zero-sized placeholder keys are ignored. This also handles an older macOS installation receiving newer firmware.
 
