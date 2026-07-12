@@ -16,14 +16,16 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/events"
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
 var (
-	smcConn *smc.AppleSMC
-	conf    config.Config
+	smcConn      *smc.AppleSMC
+	conf         config.Config
+	capabilities compatibility.Capabilities
 
 	sseHub    *events.EventHub // global hub instance initialized in Run()
 	scheduler *Scheduler
@@ -52,6 +54,7 @@ func setupRoutes() *gin.Engine {
 	router.GET("/current-charge", getCurrentCharge)
 	router.GET("/plugged-in", getPluggedIn)
 	router.GET("/charging-control-capable", getChargingControlCapable)
+	router.GET("/compatibility", getCompatibility)
 	router.GET("/version", getVersion)
 	// Deprecated
 	router.GET("/power-telemetry", getPowerTelemetry)
@@ -75,17 +78,34 @@ func setupRoutes() *gin.Engine {
 }
 
 func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
-	router := setupRoutes()
-
-	// Initialize global SSE hub
-	sseHub = events.NewEventHub()
-
 	var err error
 	conf, err = config.NewFile(configPath)
 	if err != nil {
 		logrus.Fatalf("failed to parse config during startup: %v", err)
 	}
 	logrus.WithFields(conf.LogrusFields()).Infof("config loaded")
+
+	// Open Apple SMC and detect the charge-control mechanism from key
+	// presence before starting any loop, listener, scheduler, or API server.
+	smcConn = smc.New()
+	if err := smcConn.Open(); err != nil {
+		return fmt.Errorf("open Apple SMC: %w", err)
+	}
+	capabilities = detectCapabilities()
+	logrus.WithFields(capabilityLogFields(capabilities)).Info("detected hardware capabilities")
+	disableUnsupportedConfiguredFeatures()
+
+	// Initialize calibration state before the scheduler and main loop can use it.
+	if configPath != "" {
+		dir := filepath.Dir(configPath)
+		initCalibrationState(filepath.Join(dir, "batt.state.json"))
+	} else {
+		initCalibrationState("/etc/batt.state.json")
+	}
+	disableUnsupportedCalibrationState()
+
+	router := setupRoutes()
+	sseHub = events.NewEventHub()
 
 	// Receive SIGHUP to reload config
 	go func() {
@@ -97,6 +117,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 				logrus.Errorf("failed to reload config: %v", err)
 				continue
 			}
+			disableUnsupportedConfiguredFeatures()
 			logrus.Infof("config reloaded")
 		}
 	}()
@@ -137,7 +158,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	defer scheduler.Stop()
 
 	// Load persisted schedule from config
-	if cronExpr := conf.Cron(); cronExpr != "" {
+	if cronExpr := conf.Cron(); capabilities.Calibration && cronExpr != "" {
 		if err := scheduler.Schedule(cronExpr); err != nil {
 			logrus.WithError(err).Warn("failed to restore schedule from config")
 		} else {
@@ -172,19 +193,16 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		}
 	}()
 
-	// Listen to system sleep notifications.
-	go func() {
-		err := listenNotifications()
-		if err != nil {
-			logrus.Errorf("failed to listen to system sleep notifications: %v", err)
-			os.Exit(1)
-		}
-	}()
-
-	// Open Apple SMC for read/writing
-	smcConn = smc.New()
-	if err := smcConn.Open(); err != nil {
-		logrus.Fatal(err)
+	listeningForSleep := capabilities.SleepHooks
+	if listeningForSleep {
+		go func() {
+			if err := listenNotifications(); err != nil {
+				logrus.Errorf("failed to listen to system sleep notifications: %v", err)
+				os.Exit(1)
+			}
+		}()
+	} else {
+		logrus.Info("system sleep notifications are not needed for this charge-control mode")
 	}
 
 	go func() {
@@ -195,14 +213,6 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		logrus.Errorf("main loop exited unexpectedly")
 	}()
 
-	// Initialize calibration state file next to config path (derive directory from configPath)
-	if configPath != "" {
-		dir := filepath.Dir(configPath)
-		initCalibrationState(filepath.Join(dir, "batt.state.json"))
-	} else {
-		initCalibrationState("/etc/batt.state.json")
-	}
-
 	// Handle common process-killing signals, so we can gracefully shut down:
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
@@ -211,7 +221,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	logrus.Infof("caught signal \"%s\": shutting down.", sig)
 
 	logrus.Info("gracefully shutting down http server")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	err = srv.Shutdown(ctx)
 	if err != nil {
 		logrus.Errorf("failed to gracefully shutdown http server, closing it immediately: %v", err)
@@ -219,19 +229,25 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	}
 	cancel()
 
-	logrus.Info("stopping listening notifications")
-	stopListeningNotifications()
+	if listeningForSleep {
+		logrus.Info("stopping listening notifications")
+		stopListeningNotifications()
+	}
 
 	if err := AllowSleepOnAC(); err != nil {
 		logrus.Errorf("failed to remove PM assertion before exiting: %v", err)
 	}
 
-	if err := smcConn.EnableCharging(); err != nil {
-		logrus.Errorf("failed to re-enable charging before exiting: %v", err)
+	if capabilities.ChargingControl {
+		if err := smcConn.ResetChargeControl(); err != nil {
+			logrus.Errorf("failed to reset charge control before exiting: %v", err)
+		}
 	}
 
-	if err := smcConn.EnableAdapter(); err != nil {
-		logrus.Errorf("failed to re-enable adapter before exiting: %v", err)
+	if capabilities.AdapterControl {
+		if err := smcConn.EnableAdapter(); err != nil {
+			logrus.Errorf("failed to re-enable adapter before exiting: %v", err)
+		}
 	}
 
 	logrus.Info("closing smc connection")

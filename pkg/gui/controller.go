@@ -9,6 +9,7 @@ import (
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/client"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
 	"github.com/charlie0129/batt/pkg/version"
@@ -19,6 +20,8 @@ type menuController struct {
 	menu *nativeMenu
 
 	calibrationThreshold int
+	capabilities         compatibility.Capabilities
+	compatibilityKnown   bool
 	eventCancel          context.CancelFunc
 }
 
@@ -36,28 +39,29 @@ func (c *menuController) refreshCompatibility() {
 	rawConfig, err := c.api.GetConfig()
 	if err != nil {
 		logrus.WithError(err).Warn("Failed to get config")
-		c.setCompatibility(false, false, false)
+		c.setCompatibility(false, compatibility.Permissive(), false)
 		return
 	}
 	conf := config.NewFileFromConfig(rawConfig, "")
 	logrus.WithFields(conf.LogrusFields()).Info("Got config")
 
-	logrus.Info("Getting charging control capability")
-	capable, err := c.api.GetChargingControlCapable()
+	logrus.Info("Getting hardware compatibility")
+	capabilities, err := c.api.GetCompatibility()
+	c.compatibilityKnown = err == nil
 	if err != nil {
-		logrus.WithError(err).Warn("Failed to get charging capablility")
-		c.setCompatibility(true, false, false)
-		return
+		logrus.WithError(err).Warn("Detailed compatibility unavailable; enabling all GUI features")
+		fallback := compatibility.Permissive()
+		capabilities = &fallback
 	}
-	logrus.WithField("capable", capable).Info("Got charging control capability")
+	logrus.WithField("capabilities", capabilities).Info("Got hardware compatibility")
 
 	logrus.Info("Getting daemon version")
 	daemonVersion, err := c.api.GetVersion()
 	if err != nil {
 		logrus.WithError(err).Warn("Failed to get version")
-		c.setCompatibility(true, capable, true)
+		c.setCompatibility(true, *capabilities, true)
 	} else {
-		c.setCompatibility(true, capable, daemonVersion != version.Version)
+		c.setCompatibility(true, *capabilities, daemonVersion != version.Version)
 	}
 	logrus.WithFields(logrus.Fields{
 		"daemonVersion": daemonVersion,
@@ -69,32 +73,28 @@ func (c *menuController) refreshOnOpen() {
 	rawConfig, err := c.api.GetConfig()
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get config")
-		c.setCompatibility(false, false, false)
+		c.setCompatibility(false, compatibility.Permissive(), false)
 		return
 	}
-	capable, err := c.api.GetChargingControlCapable()
+	capabilities, err := c.api.GetCompatibility()
+	c.compatibilityKnown = err == nil
 	if err != nil {
-		logrus.WithError(err).Error("Failed to get charging capablility")
-		c.setCompatibility(true, false, false)
-		return
+		logrus.WithError(err).Warn("Detailed compatibility unavailable; enabling all GUI features")
+		fallback := compatibility.Permissive()
+		capabilities = &fallback
 	}
 	daemonVersion, err := c.api.GetVersion()
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get version")
-		c.setCompatibility(true, capable, true)
+		c.setCompatibility(true, *capabilities, true)
 	} else {
-		c.setCompatibility(true, capable, daemonVersion != version.Version)
+		c.setCompatibility(true, *capabilities, daemonVersion != version.Version)
 	}
 	logrus.WithFields(logrus.Fields{
 		"daemonVersion": daemonVersion,
 		"clientVersion": version.Version,
 	}).Info("Got daemon")
 
-	isCharging, err := c.api.GetCharging()
-	if err != nil {
-		c.setStateError("Failed to get charging state", err)
-		return
-	}
 	isPluggedIn, err := c.api.GetPluggedIn()
 	if err != nil {
 		c.setStateError("Failed to get plugged in state", err)
@@ -109,6 +109,14 @@ func (c *menuController) refreshOnOpen() {
 	if err != nil {
 		c.setStateError("Failed to get battery info", err)
 		return
+	}
+	allowsCharging := batteryInfo.State == powerinfo.Charging
+	if capabilities.ChargeControlMode == compatibility.ChargeControlLegacy {
+		allowsCharging, err = c.api.GetCharging()
+		if err != nil {
+			c.setStateError("Failed to get charging state", err)
+			return
+		}
 	}
 
 	conf := config.NewFileFromConfig(rawConfig, "")
@@ -130,7 +138,7 @@ func (c *menuController) refreshOnOpen() {
 	case powerinfo.Full:
 		state = "Full"
 	}
-	if !isCharging && isPluggedIn && conf.UpperLimit() < 100 && currentCharge < conf.LowerLimit() {
+	if capabilities.ChargeControlMode == compatibility.ChargeControlLegacy && !allowsCharging && isPluggedIn && conf.UpperLimit() < 100 && currentCharge < conf.LowerLimit() {
 		state = "Will Charge Soon"
 	}
 	c.menu.setTitle(itemState, "State: "+state)
@@ -139,11 +147,15 @@ func (c *menuController) refreshOnOpen() {
 	c.menu.setChecked(itemPreventIdleSleep, conf.PreventIdleSleep())
 	c.menu.setChecked(itemDisableChargingPreSleep, conf.DisableChargingPreSleep())
 	c.menu.setChecked(itemPreventSystemSleep, conf.PreventSystemSleep())
-	if adapter, err := c.api.GetAdapter(); err == nil {
-		c.menu.setChecked(itemForceDischarge, !adapter)
-	} else {
-		logrus.WithError(err).Error("Failed to get adapter")
-		c.menu.setEnabled(itemForceDischarge, false)
+	if capabilities.AdapterControl {
+		if adapter, err := c.api.GetAdapter(); err == nil {
+			c.menu.setChecked(itemForceDischarge, !adapter)
+		} else {
+			logrus.WithError(err).Error("Failed to get adapter")
+			if c.compatibilityKnown {
+				c.menu.setEnabled(itemForceDischarge, false)
+			}
+		}
 	}
 }
 
@@ -152,34 +164,31 @@ func (c *menuController) setStateError(message string, err error) {
 	c.menu.setTitle(itemState, "State: Error")
 }
 
-func (c *menuController) setCompatibility(installed, capable, needsUpgrade bool) {
+func (c *menuController) setCompatibility(installed bool, capabilities compatibility.Capabilities, needsUpgrade bool) {
 	if value := os.Getenv("BATT_GUI_NO_COMPATIBILITY_CHECK"); value == "1" || value == "true" {
 		return
 	}
-	c.menu.setStatusIcon(installed, capable, needsUpgrade)
+	c.capabilities = capabilities
+	c.menu.setStatusIcon(installed, capabilities.ChargingControl, needsUpgrade)
 
-	usable := installed && capable && !needsUpgrade
+	usable := installed && capabilities.ChargingControl && !needsUpgrade
 	c.menu.setHidden(itemPowerFlow, !usable)
 	c.menu.setHidden(itemInstall, installed)
-	c.menu.setHidden(itemUpgrade, !installed || (!needsUpgrade && capable))
-	c.menu.setHidden(itemState, !installed || !capable)
-	c.menu.setHidden(itemCurrentLimit, !installed || !capable)
+	c.menu.setHidden(itemUpgrade, !installed || (!needsUpgrade && capabilities.ChargingControl))
+	c.menu.setHidden(itemState, !installed || !capabilities.ChargingControl)
+	c.menu.setHidden(itemCurrentLimit, !installed || !capabilities.ChargingControl)
 	c.menu.setHidden(itemQuickLimits, !usable)
 	for _, item := range quickLimitItems {
 		c.menu.setHidden(item, !usable)
 	}
 
 	c.menu.setHidden(itemAdvanced, !installed)
-	for _, item := range []menuItem{
-		itemMagSafe,
-		itemPreventIdleSleep,
-		itemDisableChargingPreSleep,
-		itemPreventSystemSleep,
-		itemForceDischarge,
-		itemAutoCalibration,
-	} {
-		c.menu.setHidden(item, !usable)
-	}
+	c.menu.setHidden(itemMagSafe, !usable || !capabilities.MagSafeLED)
+	c.menu.setHidden(itemPreventIdleSleep, !usable || !capabilities.SleepHooks)
+	c.menu.setHidden(itemDisableChargingPreSleep, !usable || !capabilities.SleepHooks)
+	c.menu.setHidden(itemPreventSystemSleep, !usable || !capabilities.SleepHooks)
+	c.menu.setHidden(itemForceDischarge, !usable || !capabilities.AdapterControl)
+	c.menu.setHidden(itemAutoCalibration, !usable || !capabilities.Calibration)
 	c.menu.setHidden(itemUninstall, !installed)
 	c.menu.setHidden(itemDisableLimit, !usable)
 	if installed {

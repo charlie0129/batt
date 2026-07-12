@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 )
 
 func NewCalibrationCommand() *cobra.Command {
@@ -144,7 +145,7 @@ Must be between 10 and 1440 minutes (24 hours). Default is 120 minutes.`,
 	}
 
 	cmd.AddCommand(startCmd, pauseCmd, resumeCmd, cancelCmd, statusCmd, dischargeThresholdCmd, holdDurationCmd)
-	return cmd
+	return annotateCapability(cmd, compatibility.FeatureCalibration)
 }
 
 func printCalibrationStatus(st *calibration.Status) {

@@ -7,6 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
@@ -37,7 +38,7 @@ func NewVersionCommand() *cobra.Command {
 }
 
 func NewLimitCommand() *cobra.Command {
-	return &cobra.Command{
+	return annotateCapability(&cobra.Command{
 		Use:     "limit [percentage]",
 		Short:   "Set upper charge limit",
 		GroupID: gBasic,
@@ -65,11 +66,11 @@ Setting the limit to 10-99 will enable the battery charge limit. However, settin
 
 			return nil
 		},
-	}
+	}, compatibility.FeatureChargingControl)
 }
 
 func NewDisableCommand() *cobra.Command {
-	return &cobra.Command{
+	return annotateCapability(&cobra.Command{
 		Use:     "disable",
 		Short:   "Disable batt",
 		GroupID: gBasic,
@@ -90,7 +91,7 @@ Stop batt from controlling battery charging. This will allow your Mac to charge 
 
 			return nil
 		},
-	}
+	}, compatibility.FeatureChargingControl)
 }
 
 func NewAdapterCommand() *cobra.Command {
@@ -162,7 +163,7 @@ NOTE: if you are using Clamshell mode (using a Mac laptop with an external monit
 		},
 	)
 
-	return cmd
+	return annotateCapability(cmd, compatibility.FeatureAdapterControl)
 }
 
 func NewLowerLimitDeltaCommand() *cobra.Command {
@@ -198,5 +199,5 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 		},
 	}
 
-	return cmd
+	return annotateCapability(cmd, compatibility.FeatureChargingControl)
 }

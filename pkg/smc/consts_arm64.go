@@ -8,8 +8,13 @@ const (
 	ChargingKey2  = "CH0C"
 	// ChargingKey3 is used for Tahoe firmware versions.
 	ChargingKey3 = "CHTE"
-	AdapterKey1  = "CH0I"
-	AdapterKey2  = "CH0J"
+	// FirmwareChargeLimit* keys are used by macOS 27-era firmware. The
+	// firmware, rather than batt, enforces the configured hysteresis limits.
+	FirmwareChargeLimitActivationKey = "bfF0"
+	FirmwareChargeLimitUpperKey      = "bfD0"
+	FirmwareChargeLimitLowerKey      = "bfE0"
+	AdapterKey1                      = "CH0I"
+	AdapterKey2                      = "CH0J"
 	// AdapterKey3 is used for Tahoe firmware versions.
 	AdapterKey3      = "CHIE"
 	BatteryChargeKey = "BUIC"
@@ -29,6 +34,9 @@ var allKeys = []string{
 	ChargingKey1,
 	ChargingKey2,
 	ChargingKey3,
+	FirmwareChargeLimitActivationKey,
+	FirmwareChargeLimitUpperKey,
+	FirmwareChargeLimitLowerKey,
 	AdapterKey1,
 	AdapterKey2,
 	AdapterKey3,

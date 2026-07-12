@@ -4,6 +4,11 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/charlie0129/gosmc"
+
+	"github.com/charlie0129/batt/pkg/compatibility"
+	"github.com/charlie0129/batt/pkg/smc"
 )
 
 func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
@@ -88,5 +93,59 @@ func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
 				t.Errorf("GetRecordsIn() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMaintainFirmwareChargeLimitWithoutLegacyPolling(t *testing.T) {
+	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
+		v, err := gosmc.NewValue(key, dataType, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+
+	mock := smc.NewMockValues(
+		value(smc.FirmwareChargeLimitActivationKey, gosmc.TypeUInt8, 0),
+		value(smc.FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
+		value(smc.FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
+	)
+	if err := mock.Open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mock.Close() })
+
+	previousSMC, previousConf, previousCapabilities := smcConn, conf, capabilities
+	t.Cleanup(func() {
+		smcConn, conf, capabilities = previousSMC, previousConf, previousCapabilities
+	})
+	smcConn = mock
+	conf = &mockConf{upper: 80, lower: 78}
+	capabilities = compatibility.Capabilities{
+		ChargingControl:   true,
+		ChargeControlMode: compatibility.ChargeControlFirmware,
+	}
+
+	if !maintainLoopForced() {
+		t.Fatal("firmware maintain loop failed")
+	}
+	state, err := mock.GetFirmwareChargeLimit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.Active || state.Lower != 78 || state.Upper != 80 {
+		t.Fatalf("unexpected firmware state: %+v", state)
+	}
+
+	conf.SetUpperLimit(100)
+	if !maintainLoopForced() {
+		t.Fatal("firmware disable loop failed")
+	}
+	state, err = mock.GetFirmwareChargeLimit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Active {
+		t.Fatal("firmware charge limit should be inactive at 100%")
 	}
 }

@@ -38,6 +38,14 @@ func NewMock(prefillValues map[string][]byte) *AppleSMC {
 	}
 }
 
+// NewMockValues returns a mocked AppleSMC with explicitly typed values.
+func NewMockValues(values ...gosmc.Value) *AppleSMC {
+	return &AppleSMC{
+		conn:         gosmc.NewMock(values...),
+		capabilities: make(map[string]bool),
+	}
+}
+
 // Open opens the connection and checks capabilities.
 func (c *AppleSMC) Open() error {
 	err := c.conn.Open()
@@ -78,8 +86,15 @@ func (c *AppleSMC) Read(key string) (gosmc.Value, error) {
 
 // test tells whether the key exists in SMC.
 func (c *AppleSMC) test(key string) bool {
-	_, err := c.Read(key)
-	return err == nil
+	info, err := c.conn.KeyInfo(key)
+	// Some firmware exposes placeholder key metadata with a zero data size.
+	// Such a key cannot be read or written and must not select a control mode.
+	return err == nil && info.DataSize > 0
+}
+
+// HasKey reports whether an SMC key was detected when the connection opened.
+func (c *AppleSMC) HasKey(key string) bool {
+	return c.capabilities[key]
 }
 
 // Write writes a value to SMC.
@@ -99,5 +114,23 @@ func (c *AppleSMC) Write(key string, value []byte) error {
 		"val": value,
 	}).Trace("Write to SMC succeed")
 
+	return nil
+}
+
+// WriteUint32 writes a typed uint32 value to SMC.
+func (c *AppleSMC) WriteUint32(key string, value uint32) error {
+	logrus.WithFields(logrus.Fields{
+		"key": key,
+		"val": value,
+	}).Trace("Trying to write uint32 to SMC")
+
+	if err := c.conn.WriteUint32(key, value); err != nil {
+		return err
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"key": key,
+		"val": value,
+	}).Trace("Write uint32 to SMC succeeded")
 	return nil
 }

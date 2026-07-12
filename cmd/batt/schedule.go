@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/charlie0129/batt/pkg/compatibility"
 )
 
 func NewScheduleCommand() *cobra.Command {
@@ -43,7 +45,7 @@ The schedule command can be used in multiple ways:
 		newScheduleShowCommand(),
 	)
 
-	return cmd
+	return annotateCapability(cmd, compatibility.FeatureCalibration)
 }
 
 func newScheduleDisableCommand() *cobra.Command {

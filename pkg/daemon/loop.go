@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/smc"
 )
@@ -77,6 +78,10 @@ func checkMissedMaintainLoops(logStatus bool) bool {
 // prevent parallel runs. So if one maintain loop is already running,
 // the next one will need to wait until the first one finishes.
 func maintainLoop() bool {
+	if capabilities.ChargeControlMode != compatibility.ChargeControlLegacy {
+		return maintainLoopForced()
+	}
+
 	defer loopRecorder.AddRecordNow()
 
 	if conf.PreventSystemSleep() {
@@ -283,6 +288,53 @@ func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool,
 func maintainLoopInner(ignoreMissedLoops bool) bool {
 	maintainLoopInnerLock.Lock()
 	defer maintainLoopInnerLock.Unlock()
+
+	switch capabilities.ChargeControlMode {
+	case compatibility.ChargeControlFirmware:
+		return maintainFirmwareChargeLimit()
+	case compatibility.ChargeControlLegacy:
+		return maintainLegacyCharging(ignoreMissedLoops)
+	default:
+		maintainedChargingInProgress = false
+		return false
+	}
+}
+
+// maintainFirmwareChargeLimit delegates hysteresis enforcement to the
+// firmware. It deliberately does not read battery/charging state or interact
+// with sleep, MagSafe, adapter, or calibration features.
+func maintainFirmwareChargeLimit() bool {
+	upper := conf.UpperLimit()
+	if upper >= 100 {
+		changed, err := smcConn.EnsureFirmwareChargeLimitDisabled()
+		if err != nil {
+			logrus.Errorf("failed to deactivate firmware charge limit: %v", err)
+			return false
+		}
+		if changed {
+			logrus.Info("deactivated firmware charge limit")
+		}
+		maintainedChargingInProgress = false
+		return true
+	}
+
+	lower := conf.LowerLimit()
+	changed, err := smcConn.EnsureFirmwareChargeLimit(lower, upper)
+	if err != nil {
+		logrus.Errorf("failed to reconcile firmware charge limit: %v", err)
+		return false
+	}
+	if changed {
+		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Info("reconciled firmware charge limit")
+	} else {
+		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Trace("firmware charge limit is correct")
+	}
+	maintainedChargingInProgress = false
+	return true
+}
+
+// maintainLegacyCharging contains the original batt-managed charge loop.
+func maintainLegacyCharging(ignoreMissedLoops bool) bool {
 
 	upper := conf.UpperLimit()
 	lower := conf.LowerLimit()

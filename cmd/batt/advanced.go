@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 func NewSetPreventIdleSleepCommand() *cobra.Command {
-	return newEnableDisableCommand(
+	return annotateCapability(newEnableDisableCommand(
 		"prevent-idle-sleep",
 		"Set whether to prevent idle sleep during a charging session",
 		`Set whether to prevent idle sleep during a charging session.
@@ -21,11 +22,11 @@ This option tells macOS NOT to go to sleep when the computer is in a charging se
 However, this options does not prevent manual sleep (limitation of macOS). For example, if you manually put your computer to sleep (by choosing the Sleep option in the top-left Apple menu) or close the lid, batt will still be paused and the issue mentioned above will still happen. This is where disable-charging-pre-sleep comes in.`,
 		func() (string, error) { return apiClient.SetPreventIdleSleep(true) },
 		func() (string, error) { return apiClient.SetPreventIdleSleep(false) },
-	)
+	), compatibility.FeatureSleepHooks)
 }
 
 func NewSetDisableChargingPreSleepCommand() *cobra.Command {
-	return newEnableDisableCommand(
+	return annotateCapability(newEnableDisableCommand(
 		"disable-charging-pre-sleep",
 		"Set whether to disable charging before sleep if charge limit is enabled",
 		`Set whether to disable charging before sleep if charge limit is enabled.
@@ -33,11 +34,11 @@ func NewSetDisableChargingPreSleepCommand() *cobra.Command {
 As described in preventing-idle-sleep, batt will be paused by macOS when your computer goes to sleep, and there is no way for batt to continue controlling battery charging. This option will disable charging just before sleep, so your computer will not overcharge during sleep, even if the battery charge is below the limit.`,
 		func() (string, error) { return apiClient.SetDisableChargingPreSleep(true) },
 		func() (string, error) { return apiClient.SetDisableChargingPreSleep(false) },
-	)
+	), compatibility.FeatureSleepHooks)
 }
 
 func NewSetPreventSystemSleepCommand() *cobra.Command {
-	return newEnableDisableCommand(
+	return annotateCapability(newEnableDisableCommand(
 		"prevent-system-sleep",
 		"Set whether to prevent system sleep during a charging session (experimental)",
 		`This option tells macOS to create power assertion, which prevents sleep, when all conditions are met:
@@ -52,7 +53,7 @@ Does similar thing to prevent-idle-sleep, but works for manual sleep too.
 Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while this feature is in use`,
 		func() (string, error) { return apiClient.SetPreventSystemSleep(true) },
 		func() (string, error) { return apiClient.SetPreventSystemSleep(false) },
-	)
+	), compatibility.FeatureSleepHooks)
 }
 
 func NewSetControlMagSafeLEDCommand() *cobra.Command {
@@ -115,5 +116,5 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(enable, disable, alwaysOff)
-	return cmd
+	return annotateCapability(cmd, compatibility.FeatureMagSafeLED)
 }

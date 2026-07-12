@@ -9,6 +9,11 @@ var (
 	ErrNoAdapterCapability = errors.New("no adapter capability found")
 )
 
+// IsAdapterControlCapable reports whether a known adapter-control key exists.
+func (c *AppleSMC) IsAdapterControlCapable() bool {
+	return c.capabilities[AdapterKey1] || c.capabilities[AdapterKey2] || c.capabilities[AdapterKey3]
+}
+
 // IsAdapterEnabled returns whether the adapter is enabled.
 func (c *AppleSMC) IsAdapterEnabled() (bool, error) {
 	logrus.Tracef("IsAdapterEnabled called")
