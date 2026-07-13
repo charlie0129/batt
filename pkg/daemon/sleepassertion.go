@@ -8,6 +8,7 @@ package daemon
 
 // Expose the macro
 const CFStringRef AssertionTypePreventSystemSleep = kIOPMAssertionTypePreventSystemSleep;
+const CFStringRef AssertionTypePreventUserIdleSystemSleep = kIOPMAssertPreventUserIdleSystemSleep;
 const IOPMAssertionID NullAssertionID = kIOPMNullAssertionID;
 */
 import "C"
@@ -17,7 +18,7 @@ import (
 	"unsafe"
 )
 
-func createAssertionSystemSleep(name, details string) (C.IOPMAssertionID, error) {
+func createSleepAssertion(assertionType C.CFStringRef, name, details string) (C.IOPMAssertionID, error) {
 	cname := C.CString(name)
 	cdetail := C.CString(details)
 	defer C.free(unsafe.Pointer(cname))
@@ -38,7 +39,7 @@ func createAssertionSystemSleep(name, details string) (C.IOPMAssertionID, error)
 
 	var assertionID C.IOPMAssertionID
 	status := C.IOPMAssertionCreateWithDescription(
-		C.AssertionTypePreventSystemSleep,
+		assertionType,
 		cfName,
 		cfDetails,
 		0,
@@ -66,7 +67,7 @@ var assertionID C.IOPMAssertionID = C.NullAssertionID
 // PreventSleepOnAC Keeps system in Dark Wake, has effect only on AC
 func PreventSleepOnAC() error {
 	if assertionID == C.NullAssertionID {
-		id, err := createAssertionSystemSleep("batt", "Maintained charging by batt is in progress")
+		id, err := createSleepAssertion(C.AssertionTypePreventSystemSleep, "batt", "Maintained charging by batt is in progress")
 		if err != nil {
 			return err
 		}
@@ -74,6 +75,36 @@ func PreventSleepOnAC() error {
 		assertionID = id
 	}
 	return nil
+}
+
+var calibrationSleepAssertionID C.IOPMAssertionID = C.NullAssertionID
+
+// PreventCalibrationSleep prevents idle system sleep on both battery and AC
+// power. macOS still permits forced sleep, such as closing the lid.
+func PreventCalibrationSleep() error {
+	if calibrationSleepAssertionID != C.NullAssertionID {
+		return nil
+	}
+	id, err := createSleepAssertion(
+		C.AssertionTypePreventUserIdleSystemSleep,
+		"batt auto calibration",
+		"Auto calibration is in progress",
+	)
+	if err != nil {
+		return err
+	}
+	calibrationSleepAssertionID = id
+	return nil
+}
+
+// AllowCalibrationSleep releases the calibration-specific sleep assertion.
+func AllowCalibrationSleep() error {
+	if calibrationSleepAssertionID == C.NullAssertionID {
+		return nil
+	}
+	err := releaseAssertion(calibrationSleepAssertionID)
+	calibrationSleepAssertionID = C.NullAssertionID
+	return err
 }
 
 // AllowSleepOnAC Releases sleep assertion, allowing sleep on AC

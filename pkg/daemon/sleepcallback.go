@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/sirupsen/logrus"
 )
@@ -35,6 +36,10 @@ func canSystemSleepCallback() {
 	   seconds then go to sleep.
 	*/
 	logrus.Debugln("received kIOMessageCanSystemSleep notification, idle sleep is about to kick in")
+	if capabilities.ChargeControlMode != compatibility.ChargeControlLegacy {
+		C.AllowPowerChange()
+		return
+	}
 
 	if !conf.PreventIdleSleep() {
 		logrus.Debugln("PreventIdleSleep is disabled, allow idle sleep")
@@ -79,6 +84,10 @@ func systemWillSleepCallback() {
 	   kIOReturnSuccess, however the system WILL still go to sleep.
 	*/
 	logrus.Debugln("received kIOMessageSystemWillSleep notification, system will go to sleep")
+	if capabilities.ChargeControlMode != compatibility.ChargeControlLegacy {
+		C.AllowPowerChange()
+		return
+	}
 
 	if !conf.DisableChargingPreSleep() {
 		logrus.Debugln("DisableChargingPreSleep is disabled, allow sleep")
@@ -138,6 +147,9 @@ func systemWillPowerOnCallback() {
 func systemHasPoweredOnCallback() {
 	// System has finished waking up...
 	logrus.Debugln("received kIOMessageSystemHasPoweredOn notification, system has finished waking up")
+	if capabilities.ChargeControlMode != compatibility.ChargeControlLegacy {
+		return
+	}
 	lastWakeTime = time.Now()
 
 	if scheduler != nil {

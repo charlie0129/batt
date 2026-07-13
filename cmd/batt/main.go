@@ -15,6 +15,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/charlie0129/batt/pkg/client"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/gui"
 	"github.com/charlie0129/batt/pkg/utils/osver"
 )
@@ -37,6 +38,46 @@ var (
 )
 
 var apiClient *client.Client
+var clientCapabilities = compatibility.Permissive()
+
+const capabilityAnnotation = "batt.requires-capability"
+
+const helpCompatibilityTimeout = 500 * time.Millisecond
+
+func annotateCapability(cmd *cobra.Command, feature compatibility.Feature) *cobra.Command {
+	if cmd.Annotations == nil {
+		cmd.Annotations = make(map[string]string)
+	}
+	cmd.Annotations[capabilityAnnotation] = string(feature)
+	return cmd
+}
+
+func requiredCapability(cmd *cobra.Command) (compatibility.Feature, bool) {
+	for current := cmd; current != nil; current = current.Parent() {
+		if value, ok := current.Annotations[capabilityAnnotation]; ok {
+			return compatibility.Feature(value), true
+		}
+	}
+	return "", false
+}
+
+func hideUnsupportedCommands(root *cobra.Command, capabilities compatibility.Capabilities) {
+	for _, cmd := range root.Commands() {
+		if feature, required := requiredCapability(cmd); required {
+			cmd.Hidden = !capabilities.Supports(feature)
+		}
+		hideUnsupportedCommands(cmd, capabilities)
+	}
+}
+
+func capabilitiesForHelp() compatibility.Capabilities {
+	fallback := compatibility.Permissive()
+	detected, err := client.NewClientWithTimeout(unixSocketPath, helpCompatibilityTimeout).GetCompatibility()
+	if err != nil {
+		return fallback
+	}
+	return *detected
+}
 
 func setupLogger() error {
 	level, err := logrus.ParseLevel(logLevel)
@@ -105,13 +146,21 @@ func NewCommand() *cobra.Command {
 Website: https://github.com/charlie0129/batt
 Report issues: https://github.com/charlie0129/batt/issues`,
 		SilenceUsage: true,
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(selected *cobra.Command, _ []string) error {
 			err := setupLogger()
 			if err != nil {
 				return err
 			}
 
 			apiClient = client.NewClient(unixSocketPath)
+			clientCapabilities = compatibility.Permissive()
+			if detected, err := apiClient.GetCompatibility(); err == nil {
+				clientCapabilities = *detected
+			} else {
+				// An absent daemon or an older daemon without this endpoint must
+				// not prevent commands from running.
+				logrus.WithError(err).Debug("detailed compatibility unavailable; enabling all client features")
+			}
 
 			if clientVersion, daemonVersion, err := getVersion(); err == nil {
 				if daemonVersion != clientVersion {
@@ -126,9 +175,18 @@ Report issues: https://github.com/charlie0129/batt/issues`,
 				}
 			}
 
+			if feature, required := requiredCapability(selected); required && !clientCapabilities.Supports(feature) {
+				return fmt.Errorf("%s is not supported on this Mac", feature)
+			}
+
 			return nil
 		},
 	}
+	defaultHelp := cmd.HelpFunc()
+	cmd.SetHelpFunc(func(selected *cobra.Command, args []string) {
+		hideUnsupportedCommands(selected.Root(), capabilitiesForHelp())
+		defaultHelp(selected, args)
+	})
 
 	if os.Getenv("BATT_RUN_GUI") != "" || path.Base(os.Args[0]) == "batt-gui" {
 		cmd.Run = func(_ *cobra.Command, _ []string) {

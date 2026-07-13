@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
 )
@@ -19,6 +20,7 @@ type statusData struct {
 	currentCharge int
 	batteryInfo   *powerinfo.Battery
 	config        *config.RawFileConfig
+	capabilities  compatibility.Capabilities
 }
 
 // computeTimeToLimit calculates the estimated minutes until the charge limit is
@@ -56,19 +58,14 @@ func computeTimeToLimit(data *statusData, cfg *config.File) *int {
 
 // fetchStatusData gathers all data required for the status command from the daemon.
 func fetchStatusData() (*statusData, error) {
-	charging, err := apiClient.GetCharging()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get charging status: %w", err)
+	capabilities := compatibility.Permissive()
+	if detected, err := apiClient.GetCompatibility(); err == nil {
+		capabilities = *detected
 	}
 
 	pluggedIn, err := apiClient.GetPluggedIn()
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if you are plugged in: %w", err)
-	}
-
-	adapter, err := apiClient.GetAdapter()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get power adapter status: %w", err)
 	}
 
 	currentCharge, err := apiClient.GetCurrentCharge()
@@ -86,6 +83,22 @@ func fetchStatusData() (*statusData, error) {
 		return nil, fmt.Errorf("failed to get config: %w", err)
 	}
 
+	charging := false
+	if capabilities.ChargeControlMode == compatibility.ChargeControlLegacy {
+		charging, err = apiClient.GetCharging()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get charging status: %w", err)
+		}
+	}
+
+	adapter := false
+	if capabilities.AdapterControl {
+		adapter, err = apiClient.GetAdapter()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get power adapter status: %w", err)
+		}
+	}
+
 	return &statusData{
 		charging:      charging,
 		pluggedIn:     pluggedIn,
@@ -93,6 +106,7 @@ func fetchStatusData() (*statusData, error) {
 		currentCharge: currentCharge,
 		batteryInfo:   bat,
 		config:        conf,
+		capabilities:  capabilities,
 	}, nil
 }
 
@@ -121,48 +135,45 @@ func NewStatusCommand() *cobra.Command {
 			// Charging status.
 			cmd.Println(bold("Charging status:"))
 
-			additionalMsg := " (refreshes can take up to 2 minutes)"
-			//nolint:gocritic
-			if data.charging {
-				cmd.Println("  Allow charging: " + bool2Text(true) + additionalMsg)
-				cmd.Print("    Your Mac will charge")
-				if !data.pluggedIn {
-					cmd.Print(", but you are not plugged in yet.") // not plugged in but charging is allowed.
-				} else {
-					cmd.Print(".") // plugged in and charging is allowed.
-				}
-				cmd.Println()
-			} else if cfg.UpperLimit() < 100 {
-				cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
-				cmd.Print("    Your Mac will not charge")
-				if data.pluggedIn {
-					cmd.Print(" even if you plug in")
-				}
-				low := cfg.LowerLimit()
-				if data.currentCharge >= cfg.UpperLimit() {
-					cmd.Print(", because your current charge is above the limit.")
-				} else if data.currentCharge < cfg.UpperLimit() && data.currentCharge >= low {
-					cmd.Print(", because your current charge is above the lower limit. Charging will be allowed after current charge drops below the lower limit.")
-				}
-				if data.pluggedIn && data.currentCharge < low {
-					if data.adapter {
-						cmd.Print(". However, if no manual intervention is involved, charging should be allowed soon. Wait 2 minutes and come back.")
+			switch data.capabilities.ChargeControlMode {
+			case compatibility.ChargeControlFirmware:
+				cmd.Println("  Control mode: " + bold("firmware-managed"))
+				cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100))
+				cmd.Println("    The firmware decides when to charge and can continue enforcing the limit during sleep.")
+			case compatibility.ChargeControlUnsupported:
+				cmd.Println("  Control mode: " + bold("unsupported"))
+			default:
+				additionalMsg := " (refreshes can take up to 2 minutes)"
+				//nolint:gocritic
+				if data.charging {
+					cmd.Println("  Allow charging: " + bool2Text(true) + additionalMsg)
+					cmd.Print("    Your Mac will charge")
+					if !data.pluggedIn {
+						cmd.Print(", but you are not plugged in yet.")
 					} else {
+						cmd.Print(".")
+					}
+					cmd.Println()
+				} else if cfg.UpperLimit() < 100 {
+					cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
+					cmd.Print("    Your Mac will not charge")
+					low := cfg.LowerLimit()
+					if data.currentCharge >= cfg.UpperLimit() {
+						cmd.Print(", because your current charge is above the limit.")
+					} else if data.currentCharge >= low {
+						cmd.Print(", because your current charge is above the lower limit. Charging will be allowed after current charge drops below the lower limit.")
+					}
+					if data.pluggedIn && data.currentCharge < low && !data.adapter {
 						cmd.Print(", because adapter is disabled.")
 					}
+					cmd.Println()
+				} else {
+					cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
 				}
-				cmd.Println()
-			} else { // not charging and limit is 100%
-				cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
-				cmd.Print("    Your Mac will not charge")
 			}
 
-			if data.adapter {
-				cmd.Println("  Use power adapter: " + bool2Text(true))
-				cmd.Println("    Your Mac will use power from the wall (to operate or charge), if it is plugged in.")
-			} else {
-				cmd.Println("  Use power adapter: " + bool2Text(false))
-				cmd.Println("    Your Mac will not use power from the wall (to operate or charge), even if it is plugged in.")
+			if data.capabilities.AdapterControl {
+				cmd.Println("  Use power adapter: " + bool2Text(data.adapter))
 			}
 
 			cmd.Println()
@@ -217,23 +228,37 @@ func NewStatusCommand() *cobra.Command {
 			} else {
 				cmd.Printf("  Charge limit: %s\n", bold("100%% (batt disabled)"))
 			}
-			cmd.Printf("  Prevent idle-sleep when charging: %s\n", bool2Text(cfg.PreventIdleSleep()))
-			cmd.Printf("  Disable charging before sleep if charge limit is enabled: %s\n", bool2Text(cfg.DisableChargingPreSleep()))
-			cmd.Printf("  Prevent system-sleep when charging: %s\n", bool2Text(cfg.PreventSystemSleep()))
+			if data.capabilities.SleepHooks {
+				cmd.Printf("  Prevent idle-sleep when charging: %s\n", bool2Text(cfg.PreventIdleSleep()))
+				cmd.Printf("  Disable charging before sleep if charge limit is enabled: %s\n", bool2Text(cfg.DisableChargingPreSleep()))
+				cmd.Printf("  Prevent system-sleep when charging: %s\n", bool2Text(cfg.PreventSystemSleep()))
+			} else {
+				cmd.Println("  Legacy sleep controls: " + bold("unsupported/not required"))
+			}
 			cmd.Printf("  Allow non-root users to access the daemon: %s\n", bool2Text(cfg.AllowNonRootAccess()))
 
-			mode := cfg.ControlMagSafeLED()
-			enabled := mode != config.ControlMagSafeModeDisabled
-			ledStatus := bool2Text(enabled)
-			if mode == config.ControlMagSafeModeAlwaysOff {
-				ledStatus += " (" + bold("always off") + ")"
+			if data.capabilities.MagSafeLED {
+				mode := cfg.ControlMagSafeLED()
+				enabled := mode != config.ControlMagSafeModeDisabled
+				ledStatus := bool2Text(enabled)
+				if mode == config.ControlMagSafeModeAlwaysOff {
+					ledStatus += " (" + bold("always off") + ")"
+				}
+				cmd.Printf("  Control MagSafe LED: %s\n", ledStatus)
+			} else {
+				cmd.Println("  Control MagSafe LED: " + bold("unsupported"))
 			}
-			cmd.Printf("  Control MagSafe LED: %s\n", ledStatus)
 
 			cmd.Println()
+			cmd.Println(bold("Hardware compatibility:"))
+			cmd.Printf("  Charge control mode: %s\n", bold("%s", data.capabilities.ChargeControlMode))
+			cmd.Printf("  Sleep hooks: %s\n", bool2Text(data.capabilities.SleepHooks))
+			cmd.Printf("  MagSafe LED control: %s\n", bool2Text(data.capabilities.MagSafeLED))
+			cmd.Printf("  Power adapter control: %s\n", bool2Text(data.capabilities.AdapterControl))
+			cmd.Printf("  Auto calibration: %s\n", bool2Text(data.capabilities.Calibration))
 
 			tr, err := apiClient.GetTelemetry(false, true)
-			if err == nil {
+			if data.capabilities.Calibration && err == nil && tr.Calibration != nil {
 				cmd.Println(bold("Calibration status:"))
 				cmd.Printf("  Phase: %s\n", bold("%s", string(tr.Calibration.Phase)))
 				if tr.Calibration.Phase != calibration.PhaseIdle {

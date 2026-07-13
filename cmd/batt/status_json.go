@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
 )
@@ -17,13 +18,14 @@ type statusJSON struct {
 	Battery       statusBatteryJSON  `json:"battery"`
 	Configuration statusConfigJSON   `json:"configuration"`
 	// Calibration is omitted when telemetry data is unavailable (e.g. API error).
-	Calibration *statusCalibrationJSON `json:"calibration,omitempty"`
+	Calibration   *statusCalibrationJSON     `json:"calibration,omitempty"`
+	Compatibility compatibility.Capabilities `json:"compatibility"`
 }
 
 type statusChargingJSON struct {
-	AllowCharging bool `json:"allowCharging"`
-	UseAdapter    bool `json:"useAdapter"`
-	PluggedIn     bool `json:"pluggedIn"`
+	AllowCharging *bool `json:"allowCharging,omitempty"`
+	UseAdapter    *bool `json:"useAdapter,omitempty"`
+	PluggedIn     bool  `json:"pluggedIn"`
 }
 
 type statusBatteryJSON struct {
@@ -96,10 +98,19 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 		lowerLimit = upperLimit
 	}
 
+	var allowCharging *bool
+	if data.capabilities.ChargeControlMode == compatibility.ChargeControlLegacy {
+		allowCharging = &data.charging
+	}
+	var useAdapter *bool
+	if data.capabilities.AdapterControl {
+		useAdapter = &data.adapter
+	}
+
 	out := statusJSON{
 		Charging: statusChargingJSON{
-			AllowCharging: data.charging,
-			UseAdapter:    data.adapter,
+			AllowCharging: allowCharging,
+			UseAdapter:    useAdapter,
 			PluggedIn:     data.pluggedIn,
 		},
 		Battery: statusBatteryJSON{
@@ -123,10 +134,11 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 				Mode:    string(mode),
 			},
 		},
+		Compatibility: data.capabilities,
 	}
 
 	tr, err := apiClient.GetTelemetry(false, true)
-	if err == nil && tr.Calibration != nil {
+	if data.capabilities.Calibration && err == nil && tr.Calibration != nil {
 		cal := tr.Calibration
 
 		var startedAt *time.Time

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 )
 
 func NewCalibrationCommand() *cobra.Command {
@@ -24,12 +25,18 @@ func NewCalibrationCommand() *cobra.Command {
 	startCmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start a new calibration session using current config thresholds",
+		Long: `Start a new calibration session using the current thresholds.
+
+batt prevents idle sleep until calibration completes, is cancelled, or fails.
+Closing the lid or explicitly choosing Sleep can still force sleep, so keep the
+lid open during calibration.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			_, err := apiClient.StartCalibration()
 			if err != nil {
 				return fmt.Errorf("failed to start calibration: %w", err)
 			}
-			fmt.Println("Calibration started.")
+			fmt.Println("Calibration started. batt will prevent idle sleep until the session ends.")
+			fmt.Println("Warning: closing the lid or explicitly choosing Sleep can still force sleep; keep the lid open during calibration.")
 			return nil
 		},
 	}
@@ -144,7 +151,7 @@ Must be between 10 and 1440 minutes (24 hours). Default is 120 minutes.`,
 	}
 
 	cmd.AddCommand(startCmd, pauseCmd, resumeCmd, cancelCmd, statusCmd, dischargeThresholdCmd, holdDurationCmd)
-	return cmd
+	return annotateCapability(cmd, compatibility.FeatureCalibration)
 }
 
 func printCalibrationStatus(st *calibration.Status) {

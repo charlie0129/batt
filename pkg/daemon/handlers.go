@@ -13,6 +13,7 @@ import (
 	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
 	"github.com/charlie0129/batt/pkg/version"
@@ -32,6 +33,9 @@ func getLimit(c *gin.Context) {
 }
 
 func setLimit(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureChargingControl) {
+		return
+	}
 	var l int
 	if err := c.BindJSON(&l); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -70,7 +74,11 @@ func setLimit(c *gin.Context) {
 	} else {
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", conf.UpperLimit(), conf.LowerLimit(), charge)
 		if charge > conf.UpperLimit() {
-			msg += ". Current charge is above the limit, so your computer will use power from the wall only. Battery charge will remain the same."
+			if capabilities.ChargeControlMode == compatibility.ChargeControlFirmware {
+				msg += ". Current charge is above the limit; the firmware may use battery power until it falls within the configured range."
+			} else {
+				msg += ". Current charge is above the limit, so your computer will use power from the wall only. Battery charge will remain the same."
+			}
 		}
 	}
 
@@ -85,6 +93,9 @@ func setLimit(c *gin.Context) {
 }
 
 func setPreventIdleSleep(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureSleepHooks) {
+		return
+	}
 	var p bool
 	if err := c.BindJSON(&p); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -106,6 +117,9 @@ func setPreventIdleSleep(c *gin.Context) {
 }
 
 func setDisableChargingPreSleep(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureSleepHooks) {
+		return
+	}
 	var d bool
 	if err := c.BindJSON(&d); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -127,6 +141,9 @@ func setDisableChargingPreSleep(c *gin.Context) {
 }
 
 func setPreventSystemSleep(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureSleepHooks) {
+		return
+	}
 	var p bool
 	if err := c.BindJSON(&p); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -148,6 +165,9 @@ func setPreventSystemSleep(c *gin.Context) {
 }
 
 func setAdapter(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureAdapterControl) {
+		return
+	}
 	var d bool
 	if err := c.BindJSON(&d); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -177,6 +197,9 @@ func setAdapter(c *gin.Context) {
 }
 
 func getAdapter(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureAdapterControl) {
+		return
+	}
 	enabled, err := smcConn.IsAdapterEnabled()
 	if err != nil {
 		logrus.Errorf("getAdapter failed: %v", err)
@@ -189,6 +212,12 @@ func getAdapter(c *gin.Context) {
 }
 
 func getCharging(c *gin.Context) {
+	if capabilities.ChargeControlMode != compatibility.ChargeControlLegacy {
+		err := fmt.Errorf("direct charging state is not available in %s charge-control mode", capabilities.ChargeControlMode)
+		c.IndentedJSON(http.StatusConflict, err.Error())
+		_ = c.AbortWithError(http.StatusConflict, err)
+		return
+	}
 	charging, err := smcConn.IsChargingEnabled()
 	if err != nil {
 		logrus.Errorf("getCharging failed: %v", err)
@@ -242,6 +271,9 @@ func getBatteryInfo(c *gin.Context) {
 }
 
 func setLowerLimitDelta(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureChargingControl) {
+		return
+	}
 	var d int
 	if err := c.BindJSON(&d); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -273,11 +305,15 @@ func setLowerLimitDelta(c *gin.Context) {
 
 	ret := fmt.Sprintf("set lower limit delta to %d, current upper/lower limit is %d%%/%d%%", d, conf.UpperLimit(), conf.LowerLimit())
 	logrus.Info(ret)
+	maintainLoopForced()
 
 	c.IndentedJSON(http.StatusCreated, ret)
 }
 
 func setControlMagSafeLED(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureMagSafeLED) {
+		return
+	}
 	// Check if MasSafe is supported first. If not, return error.
 	if !smcConn.CheckMagSafeExistence() {
 		logrus.Errorf("setControlMagSafeLED called but there is no MasSafe LED on this device")
@@ -395,7 +431,7 @@ func getUnifiedTelemetry(c *gin.Context) {
 		}
 	}
 
-	if wantCal {
+	if wantCal && capabilities.Calibration {
 		resp["calibration"] = getCalibrationStatus()
 	}
 
@@ -462,6 +498,9 @@ func getEventStream(c *gin.Context) {
 // ===== Calibration Handlers =====
 
 func postStartCalibration(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureCalibration) {
+		return
+	}
 	// Read threshold & hold from current config getters
 	threshold := conf.CalibrationDischargeThreshold()
 	hold := conf.CalibrationHoldDurationMinutes()
@@ -474,6 +513,9 @@ func postStartCalibration(c *gin.Context) {
 }
 
 func postPauseCalibration(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureCalibration) {
+		return
+	}
 	if err := pauseCalibration(); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
@@ -483,6 +525,9 @@ func postPauseCalibration(c *gin.Context) {
 }
 
 func postResumeCalibration(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureCalibration) {
+		return
+	}
 	if err := resumeCalibration(); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
@@ -492,6 +537,9 @@ func postResumeCalibration(c *gin.Context) {
 }
 
 func postCancelCalibration(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureCalibration) {
+		return
+	}
 	if err := cancelCalibration(); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
@@ -501,6 +549,9 @@ func postCancelCalibration(c *gin.Context) {
 }
 
 func setSchedule(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureCalibration) {
+		return
+	}
 	var cronExpr string
 	if err := c.BindJSON(&cronExpr); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -524,6 +575,9 @@ func setSchedule(c *gin.Context) {
 }
 
 func skipSchedule(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureCalibration) {
+		return
+	}
 	if err := skipNextSchedule(); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
@@ -534,6 +588,9 @@ func skipSchedule(c *gin.Context) {
 }
 
 func postponeSchedule(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureCalibration) {
+		return
+	}
 	var raw string
 	if err := c.ShouldBindJSON(&raw); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -563,6 +620,9 @@ func postponeSchedule(c *gin.Context) {
 }
 
 func setCalibrationDischargeThreshold(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureCalibration) {
+		return
+	}
 	var threshold int
 	if err := c.BindJSON(&threshold); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -598,6 +658,9 @@ func setCalibrationDischargeThreshold(c *gin.Context) {
 }
 
 func setCalibrationHoldDurationMinutes(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureCalibration) {
+		return
+	}
 	var minutes int
 	if err := c.BindJSON(&minutes); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())

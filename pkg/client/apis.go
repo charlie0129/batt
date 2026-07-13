@@ -14,6 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/events"
 	"github.com/charlie0129/batt/pkg/powerinfo"
@@ -113,6 +114,19 @@ func (c *Client) GetChargingControlCapable() (bool, error) {
 	}
 
 	return capable, nil
+}
+
+// GetCompatibility returns detailed hardware-dependent daemon capabilities.
+func (c *Client) GetCompatibility() (*compatibility.Capabilities, error) {
+	ret, err := c.Get("/compatibility")
+	if err != nil {
+		return nil, pkgerrors.Wrap(err, "failed to get compatibility")
+	}
+	var capabilities compatibility.Capabilities
+	if err := json.Unmarshal([]byte(ret), &capabilities); err != nil {
+		return nil, pkgerrors.Wrap(err, "failed to unmarshal compatibility")
+	}
+	return &capabilities, nil
 }
 
 func (c *Client) GetConfig() (*config.RawFileConfig, error) {

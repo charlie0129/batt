@@ -107,14 +107,18 @@ You must run this command as root.`,
 					return fmt.Errorf("failed to open SMC: %v", err)
 				}
 
-				err = smcC.EnableCharging()
-				if err != nil {
-					return fmt.Errorf("failed to enable charging: %v", err)
+				if smcC.IsChargingControlCapable() {
+					err = smcC.ResetChargeControl()
+					if err != nil {
+						return fmt.Errorf("failed to reset charge control: %v", err)
+					}
 				}
 
-				err = smcC.EnableAdapter()
-				if err != nil {
-					return fmt.Errorf("failed to enable adapter: %v", err)
+				if smcC.IsAdapterControlCapable() {
+					err = smcC.EnableAdapter()
+					if err != nil {
+						return fmt.Errorf("failed to enable adapter: %v", err)
+					}
 				}
 
 				if err := smcC.Close(); err != nil {

@@ -1,6 +1,6 @@
 # Auto Calibration - Design Document
 
-Last updated: 2025-11-11
+Last updated: 2026-07-13
 Owner branch: auto-calibration
 
 ## Goals
@@ -16,7 +16,7 @@ This feature is initiated from the GUI Advanced submenu and orchestrated by the 
 
 ## Non-Goals / Constraints
 
-- Do not interfere with sleep/idle behavior during the discharge phase. The computer should naturally discharge; no sleep assertions will be created.
+- Prevent idle system sleep throughout the calibration session, including while paused. Forced sleep from closing the lid or explicitly choosing Sleep cannot be prevented.
 - No automatic failure/retry strategies. If something goes wrong, the user can Cancel and restore the previous state.
 - No new GUI controls for calibration parameters; they are edited manually in the config file.
 
@@ -55,13 +55,13 @@ Idle → DischargeToThreshold → ChargeToFull → HoldAfterFull → DischargeAf
 
 - DischargeToThreshold
   - Goal: Reach < threshold (default 15%).
-  - Method: Prefer `SetAdapter(false)` or `SetCharging(false)` to prevent charging. Do not create sleep assertions. If adapter control is unavailable, the flow can continue; the GUI may suggest unplugging the adapter for faster discharge.
+  - Method: Disable adapter input while retaining the calibration sleep assertion.
 
 - ChargeToFull
   - Temporarily set upper limit to 100 and enable charging. Wait until the battery reaches 100%.
 
 - HoldAfterFull
-  - After reaching 100%, hold for `calibrationHoldDurationMinutes` (default 120 minutes). Do not create sleep assertions.
+  - After reaching 100%, hold for `calibrationHoldDurationMinutes` (default 120 minutes) while retaining the calibration sleep assertion.
   - If paused during Hold, the effective end time is extended by the paused duration (hold time does not count while paused).
 
 - DischargeAfterHold
@@ -75,6 +75,7 @@ Idle → DischargeToThreshold → ChargeToFull → HoldAfterFull → DischargeAf
 
 - Persist calibration state and original configuration snapshot to disk.
 - On daemon restart, recover to a safe paused state; user can Resume or Cancel from the GUI.
+- Recreate the calibration sleep assertion when restoring an active session after daemon restart.
 
 ### Public API (daemon)
 
@@ -104,8 +105,8 @@ Add RPC endpoints (names illustrative):
 ### Safety
 
 - If the battery is already below the threshold at start, skip to ChargeToFull.
-- If adapter control is missing or charging cannot be toggled, proceed but surface hints to the GUI.
-- No sleep prevention; clamshell/idle/sleep may slow the process naturally.
+- Expose calibration only when adapter control and a supported charge-control backend are available.
+- Hold a `PreventUserIdleSystemSleep` assertion from start until completion, cancellation, or error. Keep it active while paused. This works on AC and battery power but cannot override forced sleep.
 
 ## GUI Design
 
@@ -117,7 +118,7 @@ Add RPC endpoints (names illustrative):
 ### Interactions
 
 - Clicking "Auto Calibration…" shows a confirmation dialog:
-  - Explains the flow and the constraints (no sleep interference; needs to keep the Mac awake for faster completion, etc.).
+  - Explains the flow, automatic idle-sleep prevention, and the forced-sleep limitation.
   - Buttons: Start (default) / Cancel
 
 - Once started, the menu entry changes to a statusful item, e.g.:
@@ -156,6 +157,6 @@ Add RPC endpoints (names illustrative):
 
 ## Open Questions (Resolved by product decision)
 
-- Sleep/idle prevention during discharge: Not desired; do nothing.
+- Sleep/idle prevention: Hold a supported idle-system-sleep assertion for the entire session; forced sleep remains possible.
 - Failure auto-retry policy: None; user cancels manually.
 - GUI editability of parameters: None; edit config file directly.

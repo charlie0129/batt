@@ -46,6 +46,7 @@ void BattApplyTooltips(BattMenuController *controller) {
          "NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.");
     SetTooltip(controller, BattItemAutoCalibration,
         @"Calibration helps you calibrate your battery by automatically discharging and charging it according to best practices.\n\n"
+         "batt prevents idle sleep for the entire calibration session. Closing the lid or explicitly choosing Sleep can still force sleep.\n\n"
          "It's recommended to run the calibration process every few months.");
     SetTooltip(controller, BattItemUninstall,
         @"Uninstall the batt daemon. This will remove the batt daemon from your system. You must enter your password to uninstall it.\n\n"

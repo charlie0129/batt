@@ -53,8 +53,7 @@ func (c *AppleSMC) GetMagSafeLedState() (MagSafeLedState, error) {
 
 // CheckMagSafeExistence .
 func (c *AppleSMC) CheckMagSafeExistence() bool {
-	_, err := c.Read(MagSafeLedKey)
-	return err == nil
+	return c.capabilities[MagSafeLedKey]
 }
 
 // SetMagSafeCharging .

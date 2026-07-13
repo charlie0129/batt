@@ -11,20 +11,79 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/events"
 )
 
 // smc accessors (function vars) for test seam; default to smcConn methods.
 var (
-	smcGetBatteryCharge  = func() (int, error) { return smcConn.GetBatteryCharge() }
-	smcIsChargingEnabled = func() (bool, error) { return smcConn.IsChargingEnabled() }
-	smcEnableCharging    = func() error { return smcConn.EnableCharging() }
-	smcDisableCharging   = func() error { return smcConn.DisableCharging() }
-	smcIsAdapterEnabled  = func() (bool, error) { return smcConn.IsAdapterEnabled() }
-	smcEnableAdapter     = func() error { return smcConn.EnableAdapter() }
-	smcDisableAdapter    = func() error { return smcConn.DisableAdapter() }
-	smcIsPluggedIn       = func() (bool, error) { return smcConn.IsPluggedIn() }
+	smcGetBatteryCharge     = func() (int, error) { return smcConn.GetBatteryCharge() }
+	smcIsChargingEnabled    = func() (bool, error) { return smcConn.IsChargingEnabled() }
+	smcEnableCharging       = func() error { return smcConn.EnableCharging() }
+	smcDisableCharging      = func() error { return smcConn.DisableCharging() }
+	smcIsAdapterEnabled     = func() (bool, error) { return smcConn.IsAdapterEnabled() }
+	smcEnableAdapter        = func() error { return smcConn.EnableAdapter() }
+	smcDisableAdapter       = func() error { return smcConn.DisableAdapter() }
+	smcIsPluggedIn          = func() (bool, error) { return smcConn.IsPluggedIn() }
+	preventCalibrationSleep = PreventCalibrationSleep
+	allowCalibrationSleep   = AllowCalibrationSleep
 )
+
+func calibrationSessionActive() bool {
+	return calibrationState.Phase != calibration.PhaseIdle && calibrationState.Phase != calibration.PhaseError
+}
+
+func releaseCalibrationSleepAssertion() {
+	if err := allowCalibrationSleep(); err != nil {
+		logrus.WithError(err).Error("failed to release calibration sleep assertion")
+	}
+}
+
+func restoreCalibrationSleepAssertion() {
+	calibrationMu.Lock()
+	defer calibrationMu.Unlock()
+	if !calibrationSessionActive() {
+		return
+	}
+	if err := preventCalibrationSleep(); err != nil {
+		logrus.WithError(err).Error("failed to restore calibration sleep assertion")
+	}
+}
+
+func calibrationNeedsMaintainLoop() bool {
+	calibrationMu.Lock()
+	defer calibrationMu.Unlock()
+	return calibrationSessionActive() && !calibrationState.Paused
+}
+
+func enableChargingForCalibration() error {
+	if capabilities.ChargeControlMode == compatibility.ChargeControlFirmware {
+		_, err := smcConn.EnsureFirmwareChargeLimitDisabled()
+		return err
+	}
+	return smcEnableCharging()
+}
+
+func restoreChargeControlAfterCalibration(st *calibration.State) {
+	if capabilities.ChargeControlMode == compatibility.ChargeControlFirmware {
+		var err error
+		if st.SnapshotMaintain {
+			_, err = smcConn.EnsureFirmwareChargeLimit(st.SnapshotLowerLimit, st.SnapshotUpperLimit)
+		} else {
+			_, err = smcConn.EnsureFirmwareChargeLimitDisabled()
+		}
+		if err != nil {
+			logrus.WithError(err).Error("failed to restore firmware charge limit after calibration")
+		}
+		return
+	}
+
+	if st.SnapshotChargingOn {
+		_ = smcEnableCharging()
+	} else {
+		_ = smcDisableCharging()
+	}
+}
 
 var (
 	calibrationMu        = &sync.Mutex{}
@@ -76,6 +135,9 @@ func startCalibration(threshold, holdMinutes int) error {
 	if calibrationState.Phase != calibration.PhaseIdle && calibrationState.Phase != calibration.PhaseError {
 		return ErrCalibrationInProgress
 	}
+	if err := preventCalibrationSleep(); err != nil {
+		return fmt.Errorf("prevent sleep during calibration: %w", err)
+	}
 
 	if threshold < 5 {
 		threshold = 5
@@ -91,7 +153,10 @@ func startCalibration(threshold, holdMinutes int) error {
 	}
 	upper := conf.UpperLimit()
 	lower := conf.LowerLimit()
-	chargingEnabled, _ := smcIsChargingEnabled()
+	chargingEnabled := true
+	if capabilities.ChargeControlMode != compatibility.ChargeControlFirmware {
+		chargingEnabled, _ = smcIsChargingEnabled()
+	}
 	adapterEnabled, _ := smcIsAdapterEnabled()
 
 	if sseHub != nil {
@@ -173,7 +238,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 				break
 			}
 			logrus.Info("enabling charging")
-			if err := smcEnableCharging(); err != nil {
+			if err := enableChargingForCalibration(); err != nil {
 				st.LastError = err.Error()
 				st.Phase = calibration.PhaseError
 				break
@@ -245,11 +310,7 @@ func applyCalibrationWithinLoop(charge int) bool {
 			st.Phase = calibration.PhaseError
 			break
 		}
-		if st.SnapshotChargingOn {
-			_ = smcEnableCharging()
-		} else {
-			_ = smcDisableCharging()
-		}
+		restoreChargeControlAfterCalibration(st)
 		if st.SnapshotAdapterOn {
 			_ = smcEnableAdapter()
 		} else {
@@ -258,6 +319,9 @@ func applyCalibrationWithinLoop(charge int) bool {
 		st.Phase = calibration.PhaseIdle
 	}
 	persistCalibrationState()
+	if st.Phase == calibration.PhaseIdle || st.Phase == calibration.PhaseError {
+		releaseCalibrationSleepAssertion()
+	}
 
 	// Broadcast phase change if any
 	if sseHub != nil && st.Phase != prevPhase {
@@ -357,11 +421,7 @@ func cancelCalibration() error {
 		logrus.WithError(err).Warn("failed to save config while canceling calibration")
 	}
 
-	if st.SnapshotChargingOn {
-		_ = smcEnableCharging()
-	} else {
-		_ = smcDisableCharging()
-	}
+	restoreChargeControlAfterCalibration(st)
 	if st.SnapshotAdapterOn {
 		_ = smcEnableAdapter()
 	} else {
@@ -378,6 +438,7 @@ func cancelCalibration() error {
 
 	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
 	persistCalibrationState()
+	releaseCalibrationSleepAssertion()
 	return nil
 }
 
@@ -412,6 +473,7 @@ func cancelCalibrationNoRestoreNoError() {
 
 	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
 	persistCalibrationState()
+	releaseCalibrationSleepAssertion()
 }
 
 func getCalibrationStatus() *calibration.Status {
