@@ -70,8 +70,32 @@ func (f *fakeSMC) inject() {
 	smcIsPluggedIn = func() (bool, error) { return f.adapter, nil }
 }
 
+type calibrationSleepCalls struct {
+	prevent int
+	allow   int
+}
+
+func stubCalibrationSleep(t *testing.T) *calibrationSleepCalls {
+	t.Helper()
+	previousPrevent, previousAllow := preventCalibrationSleep, allowCalibrationSleep
+	t.Cleanup(func() {
+		preventCalibrationSleep, allowCalibrationSleep = previousPrevent, previousAllow
+	})
+	calls := &calibrationSleepCalls{}
+	preventCalibrationSleep = func() error {
+		calls.prevent++
+		return nil
+	}
+	allowCalibrationSleep = func() error {
+		calls.allow++
+		return nil
+	}
+	return calls
+}
+
 // TestCalibrationFlow simulates the main phase transitions.
 func TestCalibrationFlow(t *testing.T) {
+	sleepCalls := stubCalibrationSleep(t)
 	// Inject mocks
 	fake := newFakeSMC(40, 0, true)
 	fake.inject()
@@ -83,6 +107,15 @@ func TestCalibrationFlow(t *testing.T) {
 	}
 	if calibrationState.Phase != calibration.PhaseDischarge {
 		t.Fatalf("expected discharge phase, got %s", calibrationState.Phase)
+	}
+	if err := pauseCalibration(); err != nil {
+		t.Fatal(err)
+	}
+	if sleepCalls.allow != 0 {
+		t.Fatal("pausing calibration released its sleep assertion")
+	}
+	if err := resumeCalibration(); err != nil {
+		t.Fatal(err)
 	}
 
 	// Move charge below threshold to trigger charging phase
@@ -128,9 +161,13 @@ func TestCalibrationFlow(t *testing.T) {
 	if calibrationState.Phase != calibration.PhaseIdle {
 		t.Fatalf("expected idle at end, got %s", calibrationState.Phase)
 	}
+	if sleepCalls.prevent != 1 || sleepCalls.allow != 1 {
+		t.Fatalf("sleep assertion calls = prevent:%d allow:%d, want 1/1", sleepCalls.prevent, sleepCalls.allow)
+	}
 }
 
 func TestCalibrationFlowWithFirmwareChargeControl(t *testing.T) {
+	sleepCalls := stubCalibrationSleep(t)
 	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
 		v, err := gosmc.NewValue(key, dataType, data)
 		if err != nil {
@@ -214,5 +251,8 @@ func TestCalibrationFlowWithFirmwareChargeControl(t *testing.T) {
 	}
 	if !firmwareState.Active || firmwareState.Lower != 78 || firmwareState.Upper != 80 {
 		t.Fatalf("firmware charge limit was not restored: %+v", firmwareState)
+	}
+	if sleepCalls.prevent != 1 || sleepCalls.allow != 1 {
+		t.Fatalf("sleep assertion calls = prevent:%d allow:%d, want 1/1", sleepCalls.prevent, sleepCalls.allow)
 	}
 }

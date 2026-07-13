@@ -103,6 +103,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		initCalibrationState("/etc/batt.state.json")
 	}
 	disableUnsupportedCalibrationState()
+	restoreCalibrationSleepAssertion()
 
 	router := setupRoutes()
 	sseHub = events.NewEventHub()
@@ -236,6 +237,9 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 
 	if err := AllowSleepOnAC(); err != nil {
 		logrus.Errorf("failed to remove PM assertion before exiting: %v", err)
+	}
+	if err := AllowCalibrationSleep(); err != nil {
+		logrus.Errorf("failed to remove calibration sleep assertion before exiting: %v", err)
 	}
 
 	if capabilities.ChargingControl {

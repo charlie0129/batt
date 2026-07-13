@@ -210,6 +210,8 @@ Flow:
 4. After hold, charging is disabled again and the battery is allowed to naturally discharge back down to the original upper limit snapshot.
 5. Restore original upper/lower limits and adapter/charging states and return to Idle.
 
+`batt` prevents idle system sleep for the entire calibration session, including while paused, and releases the assertion on completion, cancellation, or error. macOS can still force sleep when you close the lid or explicitly choose Sleep, so keep the lid open during calibration.
+
 You can start, pause, resume, cancel via the GUI (Advanced → Auto Calibration) or CLI (`batt calibration start|pause|resume|cancel|status`) or HTTP API. Cancel restores original settings immediately.
 
 To change the discharge threshold (defaults to 15%), run `batt calibration discharge-threshold <percentage>`.

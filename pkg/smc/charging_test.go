@@ -40,6 +40,8 @@ func TestChargeControlModeFromKeys(t *testing.T) {
 				smcValue(t, ChargingKey1, gosmc.TypeUInt8, 0),
 				smcValue(t, ChargingKey2, gosmc.TypeUInt8, 0),
 				smcValue(t, FirmwareChargeLimitActivationKey, gosmc.TypeUInt8, 0),
+				smcValue(t, FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
+				smcValue(t, FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
 			},
 			want: compatibility.ChargeControlFirmware,
 		},
@@ -49,6 +51,8 @@ func TestChargeControlModeFromKeys(t *testing.T) {
 				smcValue(t, ChargingKey1, gosmc.TypeUInt8, 0),
 				smcValue(t, ChargingKey2, gosmc.TypeUInt8, 0),
 				smcValue(t, FirmwareChargeLimitActivationKey, gosmc.TypeUInt8),
+				smcValue(t, FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
+				smcValue(t, FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
 			},
 			want: compatibility.ChargeControlLegacy,
 		},
@@ -80,7 +84,7 @@ func TestChargeControlModeFromKeys(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			client := openMockSMC(t, test.values...)
 			if got := client.ChargeControlMode(); got != test.want {
-				t.Fatalf("ChargeControlMode() = %q, want %q", got, test.want)
+				t.Fatalf("ChargeControlMode() = %q, want %q; capabilities=%v", got, test.want, client.capabilities)
 			}
 		})
 	}

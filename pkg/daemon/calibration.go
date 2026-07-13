@@ -17,22 +17,43 @@ import (
 
 // smc accessors (function vars) for test seam; default to smcConn methods.
 var (
-	smcGetBatteryCharge  = func() (int, error) { return smcConn.GetBatteryCharge() }
-	smcIsChargingEnabled = func() (bool, error) { return smcConn.IsChargingEnabled() }
-	smcEnableCharging    = func() error { return smcConn.EnableCharging() }
-	smcDisableCharging   = func() error { return smcConn.DisableCharging() }
-	smcIsAdapterEnabled  = func() (bool, error) { return smcConn.IsAdapterEnabled() }
-	smcEnableAdapter     = func() error { return smcConn.EnableAdapter() }
-	smcDisableAdapter    = func() error { return smcConn.DisableAdapter() }
-	smcIsPluggedIn       = func() (bool, error) { return smcConn.IsPluggedIn() }
+	smcGetBatteryCharge     = func() (int, error) { return smcConn.GetBatteryCharge() }
+	smcIsChargingEnabled    = func() (bool, error) { return smcConn.IsChargingEnabled() }
+	smcEnableCharging       = func() error { return smcConn.EnableCharging() }
+	smcDisableCharging      = func() error { return smcConn.DisableCharging() }
+	smcIsAdapterEnabled     = func() (bool, error) { return smcConn.IsAdapterEnabled() }
+	smcEnableAdapter        = func() error { return smcConn.EnableAdapter() }
+	smcDisableAdapter       = func() error { return smcConn.DisableAdapter() }
+	smcIsPluggedIn          = func() (bool, error) { return smcConn.IsPluggedIn() }
+	preventCalibrationSleep = PreventCalibrationSleep
+	allowCalibrationSleep   = AllowCalibrationSleep
 )
+
+func calibrationSessionActive() bool {
+	return calibrationState.Phase != calibration.PhaseIdle && calibrationState.Phase != calibration.PhaseError
+}
+
+func releaseCalibrationSleepAssertion() {
+	if err := allowCalibrationSleep(); err != nil {
+		logrus.WithError(err).Error("failed to release calibration sleep assertion")
+	}
+}
+
+func restoreCalibrationSleepAssertion() {
+	calibrationMu.Lock()
+	defer calibrationMu.Unlock()
+	if !calibrationSessionActive() {
+		return
+	}
+	if err := preventCalibrationSleep(); err != nil {
+		logrus.WithError(err).Error("failed to restore calibration sleep assertion")
+	}
+}
 
 func calibrationNeedsMaintainLoop() bool {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
-	return calibrationState.Phase != calibration.PhaseIdle &&
-		calibrationState.Phase != calibration.PhaseError &&
-		!calibrationState.Paused
+	return calibrationSessionActive() && !calibrationState.Paused
 }
 
 func enableChargingForCalibration() error {
@@ -113,6 +134,9 @@ func startCalibration(threshold, holdMinutes int) error {
 
 	if calibrationState.Phase != calibration.PhaseIdle && calibrationState.Phase != calibration.PhaseError {
 		return ErrCalibrationInProgress
+	}
+	if err := preventCalibrationSleep(); err != nil {
+		return fmt.Errorf("prevent sleep during calibration: %w", err)
 	}
 
 	if threshold < 5 {
@@ -295,6 +319,9 @@ func applyCalibrationWithinLoop(charge int) bool {
 		st.Phase = calibration.PhaseIdle
 	}
 	persistCalibrationState()
+	if st.Phase == calibration.PhaseIdle || st.Phase == calibration.PhaseError {
+		releaseCalibrationSleepAssertion()
+	}
 
 	// Broadcast phase change if any
 	if sseHub != nil && st.Phase != prevPhase {
@@ -411,6 +438,7 @@ func cancelCalibration() error {
 
 	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
 	persistCalibrationState()
+	releaseCalibrationSleepAssertion()
 	return nil
 }
 
@@ -445,6 +473,7 @@ func cancelCalibrationNoRestoreNoError() {
 
 	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
 	persistCalibrationState()
+	releaseCalibrationSleepAssertion()
 }
 
 func getCalibrationStatus() *calibration.Status {

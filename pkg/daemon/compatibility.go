@@ -51,6 +51,7 @@ func disableUnsupportedCalibrationState() {
 		return
 	}
 	logrus.WithField("phase", calibrationState.Phase).Info("discarding unsupported persisted calibration state")
+	releaseCalibrationSleepAssertion()
 	// Calibration may have temporarily changed the configured limit to 100%.
 	// Restore its saved limits without touching unsupported charging/adapter
 	// keys before discarding the workflow state.
