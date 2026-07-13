@@ -117,7 +117,7 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 			CurrentChargePercent: data.currentCharge,
 			State:                batteryStateString(data.batteryInfo.State, data.batteryInfo.ChargeRate),
 			TimeToLimitMinutes:   computeTimeToLimit(data, cfg),
-			FullCapacityMah:      data.batteryInfo.Design,
+			FullCapacityMah:      data.batteryInfo.DesignCapacity,
 			ChargeRateWatts:      math.Round(float64(data.batteryInfo.ChargeRate)/1e3*10) / 10,
 			VoltageVolts:         math.Round(data.batteryInfo.DesignVoltage*100) / 100,
 		},

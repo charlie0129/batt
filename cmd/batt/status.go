@@ -32,9 +32,9 @@ func computeTimeToLimit(data *statusData, cfg *config.File) *int {
 	}
 
 	// Work in mAh directly (no Wh conversions)
-	designCapacitymAh := float64(data.batteryInfo.Design)
-	targetCapacitymAh := float64(cfg.UpperLimit()) / 100.0 * designCapacitymAh
-	currentCapacitymAh := float64(data.currentCharge) / 100.0 * designCapacitymAh
+	maxCapacitymAh := float64(data.batteryInfo.MaxCapacity)
+	targetCapacitymAh := float64(cfg.UpperLimit()) / 100.0 * maxCapacitymAh
+	currentCapacitymAh := float64(data.currentCharge) / 100.0 * maxCapacitymAh
 	capacityToChargemAh := targetCapacitymAh - currentCapacitymAh
 
 	// Convert charge rate (mW) to mA using V: mA = mW / V
@@ -203,7 +203,15 @@ func NewStatusCommand() *cobra.Command {
 				displayState = "not charging"
 			}
 			cmd.Printf("  State: %s\n", bold("%s", displayState))
-			cmd.Printf("  Full capacity: %s\n", bold("%d mAh", data.batteryInfo.Design))
+			batteryHealth := 0.0
+			if data.batteryInfo.DesignCapacity > 0 {
+				batteryHealth = float64(data.batteryInfo.MaxCapacity) / float64(data.batteryInfo.DesignCapacity) * 100
+			}
+			cmd.Printf("  Full capacity: %s / %d mAh (%d%%)\n",
+				bold("%d mAh", data.batteryInfo.MaxCapacity),
+				data.batteryInfo.DesignCapacity,
+				int(batteryHealth),
+			)
 			// Show charge rate in Watts with sign (+ charging, - discharging) and bright color (bold)
 			watts := float64(data.batteryInfo.ChargeRate) / 1e3
 			var rateStr string
@@ -256,6 +264,8 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Printf("  MagSafe LED control: %s\n", bool2Text(data.capabilities.MagSafeLED))
 			cmd.Printf("  Power adapter control: %s\n", bool2Text(data.capabilities.AdapterControl))
 			cmd.Printf("  Auto calibration: %s\n", bool2Text(data.capabilities.Calibration))
+
+			cmd.Println()
 
 			tr, err := apiClient.GetTelemetry(false, true)
 			if data.capabilities.Calibration && err == nil && tr.Calibration != nil {

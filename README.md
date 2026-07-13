@@ -189,7 +189,41 @@ To enable/disable power adapter, see `batt adapter`. For example, to disable the
 
 Check the current config, battery info, and charging status.
 
-To do so, run `sudo batt status`.
+To do so, run `sudo batt status`. Example output:
+
+```
+Charging status:
+  Allow charging: ✘ (refreshes can take up to 2 minutes)
+    Your Mac will not charge, because your current charge is above the limit.
+  Use power adapter: ✔
+
+Battery status:
+  Current charge: 65%
+  State: not charging
+  Full capacity: 8648 mAh / 8694 mAh (99%)
+  Charge rate: +0.0 W
+  Voltage: 11.89 V
+
+Battery configuration:
+  Upper limit: 60%
+  Lower limit: 58%
+  Prevent idle-sleep when charging: ✔
+  Disable charging before sleep if charge limit is enabled: ✔
+  Prevent system-sleep when charging: ✘
+  Allow non-root users to access the daemon: ✔
+  Control MagSafe LED: ✔
+
+Hardware compatibility:
+  Charge control mode: legacy
+  Sleep hooks: ✔
+  MagSafe LED control: ✔
+  Power adapter control: ✔
+  Auto calibration: ✔
+
+Calibration status:
+  Phase: Idle
+  Schedule: disabled
+```
 
 ## Advanced
 

@@ -19,10 +19,11 @@ const (
 // - ChargeRate: mW (may be negative when discharging)
 // - DesignVoltage: Volts
 type Battery struct {
-	State         BatteryState `json:"State"`
-	Design        int          `json:"Design"`
-	ChargeRate    int          `json:"ChargeRate"`
-	DesignVoltage float64      `json:"DesignVoltage"`
+	State          BatteryState `json:"State"`
+	DesignCapacity int          `json:"DesignCapacity"`
+	MaxCapacity    int          `json:"MaxCapacity"`
+	ChargeRate     int          `json:"ChargeRate"`
+	DesignVoltage  float64      `json:"DesignVoltage"`
 }
 
 // PowerTelemetry holds a simplified snapshot used by the GUI.
