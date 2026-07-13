@@ -124,7 +124,7 @@ You can choose either one. Please do not use both at the same time to avoid conf
 
 ### Homebrew
 
-> Homebrew installation is known to have issues due to breaking changes from Homebrew. [#141](https://github.com/charlie0129/batt/issues/141)
+> Homebrew installation is known to have issues due to breaking changes from Homebrew [#141](https://github.com/charlie0129/batt/issues/141). Use GUI or installation script if you encounter problems.
 
 1. `brew install batt`
 2. `sudo brew services start batt`
@@ -516,6 +516,7 @@ No. batt only works when macOS is running. After shutdown, there is no way to co
 - [@peterneutron](https://github.com/peterneutron) for refactoring the power metrics code and the power flow feature.
 - [@invisiblepixel](https://github.com/invisiblepixel) for app icon design.
 - [@brookqin](https://github.com/brookqin) for implementing auto calibration.
+- [@ashwinr64](https://github.com/ashwinr64) for investigating SMC keys on macOS 27 [#140 comment](https://github.com/charlie0129/batt/pull/140#issuecomment-4950731214) [actuallymentor/battery#469](https://github.com/actuallymentor/battery/pull/469), also [@lilianmoraru](https://github.com/lilianmoraru) for the initial PR.
 
 ## Star History
 
