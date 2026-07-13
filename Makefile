@@ -42,4 +42,4 @@ app: build
 	cp bin/batt bin/batt.app/Contents/MacOS/batt
 
 dmg: app
-	cd bin && create-dmg --volname batt --app-drop-link 360 130 --icon batt 130 130 --format ULFO "batt-$(VERSION).dmg" batt.app
+	cd bin && create-dmg --volname batt --app-drop-link 360 130 --icon batt 130 130 --format ULMO "batt-$(VERSION).dmg" batt.app
