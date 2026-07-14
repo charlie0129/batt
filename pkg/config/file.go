@@ -123,8 +123,8 @@ type RawFileConfig struct {
 	CalibrationHoldDurationMinutes *int    `json:"calibrationHoldDurationMinutes,omitempty"`
 	Cron                           *string `json:"cron,omitempty"`
 
-	DisableUntil    *int64 `json:"disableUntil,omitempty"`
-	PreDisableLimit *int   `json:"preDisableLimit,omitempty"`
+	DisableUntil    *time.Time `json:"disableUntil,omitempty"`
+	PreDisableLimit *int       `json:"preDisableLimit,omitempty"`
 }
 
 func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
@@ -144,7 +144,7 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 	}
 
 	if until := c.DisableUntil(); !until.IsZero() {
-		rawConfig.DisableUntil = ptr.To(until.Unix())
+		rawConfig.DisableUntil = ptr.To(until)
 		rawConfig.PreDisableLimit = ptr.To(c.PreDisableLimit())
 	}
 
@@ -472,7 +472,7 @@ func (f *File) DisableUntil() time.Time {
 		return time.Time{}
 	}
 
-	return time.Unix(*f.c.DisableUntil, 0)
+	return *f.c.DisableUntil
 }
 
 func (f *File) PreDisableLimit() int {
@@ -505,7 +505,7 @@ func (f *File) SetDisableTimer(until time.Time, prevLimit int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.c.DisableUntil = ptr.To(until.Unix())
+	f.c.DisableUntil = ptr.To(until)
 	f.c.PreDisableLimit = ptr.To(prevLimit)
 }
 
