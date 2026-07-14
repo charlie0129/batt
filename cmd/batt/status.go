@@ -236,7 +236,7 @@ func NewStatusCommand() *cobra.Command {
 			} else {
 				cmd.Printf("  Charge limit: %s\n", bold("100%% (batt disabled)"))
 				if until := cfg.DisableUntil(); !until.IsZero() {
-					cmd.Printf("  Restoring %d%% limit: %s\n", cfg.PreDisableLimit(), bold("in %s (%s)", formatRestoreDelay(time.Until(until)), until.Format(time.DateTime)))
+					cmd.Printf("  Restoring %d%% limit: %s\n", cfg.PreDisableLimit(), bold("in %s (%s)", formatRestoreDelay(time.Until(until)), until.Local().Format(time.DateTime)))
 				}
 			}
 			if data.capabilities.SleepHooks {
