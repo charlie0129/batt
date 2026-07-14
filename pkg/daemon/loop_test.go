@@ -100,13 +100,13 @@ func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
 func TestRestoreDisabledLimit(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
-		name            string
-		disableUntil    time.Time
-		preDisableLimit int
-		calibrating     bool
-		want            bool
-		wantUpper       int
-		wantTimer       bool
+		name             string
+		disableUntil     time.Time
+		preDisableLimit  int
+		calibrationPhase calibration.Phase
+		want             bool
+		wantUpper        int
+		wantTimer        bool
 	}{
 		{
 			name:      "no timer set",
@@ -149,21 +149,32 @@ func TestRestoreDisabledLimit(t *testing.T) {
 		{
 			// Calibration force-writes the upper limit it snapshotted, so
 			// restoring now would be silently undone. Wait for it to finish.
-			name:            "deadline reached during calibration",
-			disableUntil:    now.Add(-time.Second),
-			preDisableLimit: 80,
-			calibrating:     true,
-			want:            false,
-			wantUpper:       100,
-			wantTimer:       true,
+			name:             "deadline reached during calibration",
+			disableUntil:     now.Add(-time.Second),
+			preDisableLimit:  80,
+			calibrationPhase: calibration.PhaseCharge,
+			want:             false,
+			wantUpper:        100,
+			wantTimer:        true,
+		},
+		{
+			// A failed calibration still holds its snapshot until it is
+			// cancelled, and cancelling force-writes the limit.
+			name:             "deadline reached after a failed calibration",
+			disableUntil:     now.Add(-time.Second),
+			preDisableLimit:  80,
+			calibrationPhase: calibration.PhaseError,
+			want:             false,
+			wantUpper:        100,
+			wantTimer:        true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			phase := calibration.PhaseIdle
-			if tt.calibrating {
-				phase = calibration.PhaseCharge
+			phase := tt.calibrationPhase
+			if phase == "" {
+				phase = calibration.PhaseIdle
 			}
 			calibrationState = &calibration.State{Phase: phase}
 			t.Cleanup(func() {

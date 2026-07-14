@@ -33,6 +33,17 @@ func calibrationSessionActive() bool {
 	return calibrationState.Phase != calibration.PhaseIdle && calibrationState.Phase != calibration.PhaseError
 }
 
+// calibrationOwnsChargeLimit reports whether a calibration still has to write
+// back the charge limit it snapshotted. It is broader than
+// calibrationSessionActive: a failed calibration keeps its snapshot until it is
+// cancelled, and cancelling restores it.
+func calibrationOwnsChargeLimit() bool {
+	calibrationMu.Lock()
+	defer calibrationMu.Unlock()
+
+	return calibrationState.Phase != calibration.PhaseIdle
+}
+
 func releaseCalibrationSleepAssertion() {
 	if err := allowCalibrationSleep(); err != nil {
 		logrus.WithError(err).Error("failed to release calibration sleep assertion")

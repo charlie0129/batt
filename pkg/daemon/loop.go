@@ -45,7 +45,7 @@ func restoreDisabledLimit(conf config.Config, now time.Time) bool {
 
 	// Calibration force-writes the upper limit it snapshotted when it finishes,
 	// which would silently undo the restore. Keep the timer pending until then.
-	if calibrationSessionActive() {
+	if calibrationOwnsChargeLimit() {
 		return false
 	}
 

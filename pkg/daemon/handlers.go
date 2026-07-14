@@ -139,8 +139,8 @@ func setDisableFor(c *gin.Context) {
 		return
 	}
 
-	if calibrationSessionActive() {
-		err := fmt.Errorf("a calibration is currently in progress, which controls the charge limit itself. Cancel it first with 'batt calibration cancel'")
+	if calibrationOwnsChargeLimit() {
+		err := fmt.Errorf("a calibration is in progress or awaiting cancellation, which controls the charge limit itself. Cancel it first with 'batt calibration cancel'")
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
