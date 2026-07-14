@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,6 +27,9 @@ func parseDuration(s string) (time.Duration, error) {
 		unit := 24 * time.Hour
 		if m[2] == "w" {
 			unit = 7 * 24 * time.Hour
+		}
+		if int64(n) > math.MaxInt64/int64(unit) {
+			return 0, fmt.Errorf("invalid duration %q: value out of range", s)
 		}
 		return time.Duration(n) * unit, nil
 	}
