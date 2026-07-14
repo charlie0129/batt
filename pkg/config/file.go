@@ -491,15 +491,18 @@ func (f *File) PreDisableLimit() int {
 }
 
 // SetDisableTimer records that the upper limit must be restored to prevLimit
-// at the given time. A zero time or an out-of-range prevLimit clears the timer.
+// at the given time. Use ClearDisableTimer to drop it.
 func (f *File) SetDisableTimer(until time.Time, prevLimit int) {
 	if f.c == nil {
 		panic("config is nil")
 	}
 
-	if until.IsZero() || prevLimit < 10 || prevLimit > 100 {
-		f.ClearDisableTimer()
-		return
+	if until.IsZero() {
+		panic("disable deadline must not be zero")
+	}
+
+	if prevLimit < 10 || prevLimit > 100 {
+		panic("limit to restore must be between 10 and 100")
 	}
 
 	f.mu.Lock()
