@@ -7,6 +7,7 @@ import (
 
 	"github.com/charlie0129/gosmc"
 
+	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/smc"
 )
@@ -102,13 +103,16 @@ func TestRestoreDisabledLimit(t *testing.T) {
 		name            string
 		disableUntil    time.Time
 		preDisableLimit int
+		calibrating     bool
 		want            bool
 		wantUpper       int
+		wantTimer       bool
 	}{
 		{
 			name:      "no timer set",
 			want:      false,
 			wantUpper: 100,
+			wantTimer: false,
 		},
 		{
 			name:            "deadline not reached",
@@ -116,6 +120,7 @@ func TestRestoreDisabledLimit(t *testing.T) {
 			preDisableLimit: 80,
 			want:            false,
 			wantUpper:       100,
+			wantTimer:       true,
 		},
 		{
 			name:            "deadline reached",
@@ -123,6 +128,7 @@ func TestRestoreDisabledLimit(t *testing.T) {
 			preDisableLimit: 80,
 			want:            true,
 			wantUpper:       80,
+			wantTimer:       false,
 		},
 		{
 			name:            "deadline elapsed while daemon was down",
@@ -130,6 +136,7 @@ func TestRestoreDisabledLimit(t *testing.T) {
 			preDisableLimit: 75,
 			want:            true,
 			wantUpper:       75,
+			wantTimer:       false,
 		},
 		{
 			name:            "invalid saved limit",
@@ -137,11 +144,32 @@ func TestRestoreDisabledLimit(t *testing.T) {
 			preDisableLimit: 0,
 			want:            false,
 			wantUpper:       100,
+			wantTimer:       false,
+		},
+		{
+			// Calibration force-writes the upper limit it snapshotted, so
+			// restoring now would be silently undone. Wait for it to finish.
+			name:            "deadline reached during calibration",
+			disableUntil:    now.Add(-time.Second),
+			preDisableLimit: 80,
+			calibrating:     true,
+			want:            false,
+			wantUpper:       100,
+			wantTimer:       true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			phase := calibration.PhaseIdle
+			if tt.calibrating {
+				phase = calibration.PhaseCharge
+			}
+			calibrationState = &calibration.State{Phase: phase}
+			t.Cleanup(func() {
+				calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
+			})
+
 			c := &mockConf{
 				upper:           100,
 				lower:           98,
@@ -155,10 +183,8 @@ func TestRestoreDisabledLimit(t *testing.T) {
 			if c.upper != tt.wantUpper {
 				t.Errorf("upper limit = %d, want %d", c.upper, tt.wantUpper)
 			}
-			// The timer must survive only while its deadline lies ahead.
-			wantTimer := !tt.disableUntil.IsZero() && now.Before(tt.disableUntil)
-			if gotTimer := !c.disableUntil.IsZero(); gotTimer != wantTimer {
-				t.Errorf("timer set = %v, want %v", gotTimer, wantTimer)
+			if gotTimer := !c.disableUntil.IsZero(); gotTimer != tt.wantTimer {
+				t.Errorf("timer set = %v, want %v", gotTimer, tt.wantTimer)
 			}
 		})
 	}
