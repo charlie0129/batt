@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -121,6 +122,9 @@ type RawFileConfig struct {
 	CalibrationDischargeThreshold  *int    `json:"calibrationDischargeThreshold,omitempty"`
 	CalibrationHoldDurationMinutes *int    `json:"calibrationHoldDurationMinutes,omitempty"`
 	Cron                           *string `json:"cron,omitempty"`
+
+	DisableUntil    *int64 `json:"disableUntil,omitempty"`
+	PreDisableLimit *int   `json:"preDisableLimit,omitempty"`
 }
 
 func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
@@ -137,6 +141,11 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 		LowerLimitDelta:         ptr.To(c.UpperLimit() - c.LowerLimit()),
 		ControlMagSafeLED:       ptr.To(c.ControlMagSafeLED()),
 		Cron:                    ptr.To(c.Cron()),
+	}
+
+	if until := c.DisableUntil(); !until.IsZero() {
+		rawConfig.DisableUntil = ptr.To(until.Unix())
+		rawConfig.PreDisableLimit = ptr.To(c.PreDisableLimit())
 	}
 
 	return rawConfig, nil
@@ -449,6 +458,67 @@ func (f *File) SetCalibrationHoldDurationMinutes(i int) {
 	defer f.mu.Unlock()
 
 	f.c.CalibrationHoldDurationMinutes = &i
+}
+
+func (f *File) DisableUntil() time.Time {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.DisableUntil == nil {
+		return time.Time{}
+	}
+
+	return time.Unix(*f.c.DisableUntil, 0)
+}
+
+func (f *File) PreDisableLimit() int {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.PreDisableLimit == nil {
+		return 0
+	}
+
+	return *f.c.PreDisableLimit
+}
+
+// SetDisableTimer records that the upper limit must be restored to prevLimit
+// at the given time. A zero time or an out-of-range prevLimit clears the timer.
+func (f *File) SetDisableTimer(until time.Time, prevLimit int) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	if until.IsZero() || prevLimit < 10 || prevLimit > 100 {
+		f.ClearDisableTimer()
+		return
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.DisableUntil = ptr.To(until.Unix())
+	f.c.PreDisableLimit = ptr.To(prevLimit)
+}
+
+func (f *File) ClearDisableTimer() {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.DisableUntil = nil
+	f.c.PreDisableLimit = nil
 }
 
 func (f *File) Load() error {

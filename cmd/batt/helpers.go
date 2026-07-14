@@ -2,11 +2,41 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
+
+var extendedDurationRe = regexp.MustCompile(`^(\d+)([dw])$`)
+
+// parseDuration parses a duration like time.ParseDuration, additionally
+// accepting whole days ("1d") and weeks ("2w").
+func parseDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+
+	if m := extendedDurationRe.FindStringSubmatch(s); m != nil {
+		n, err := strconv.Atoi(m[1])
+		if err != nil {
+			return 0, fmt.Errorf("invalid duration %q: %v", s, err)
+		}
+		unit := 24 * time.Hour
+		if m[2] == "w" {
+			unit = 7 * 24 * time.Hour
+		}
+		return time.Duration(n) * unit, nil
+	}
+
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration %q: use a value like 30m, 2h, 1d or 1w", s)
+	}
+
+	return d, nil
+}
 
 func parseIntArg(args []string, valueName string) (int, error) {
 	if len(args) != 1 {
@@ -19,6 +49,15 @@ func parseIntArg(args []string, valueName string) (int, error) {
 	}
 
 	return value, nil
+}
+
+// formatRestoreDelay renders a countdown at minute granularity.
+func formatRestoreDelay(d time.Duration) string {
+	if d < time.Minute {
+		return "less than a minute"
+	}
+
+	return d.Round(time.Minute).String()
 }
 
 func newEnableDisableCommand(

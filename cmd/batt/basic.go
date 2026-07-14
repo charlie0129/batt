@@ -70,15 +70,47 @@ Setting the limit to 10-99 will enable the battery charge limit. However, settin
 }
 
 func NewDisableCommand() *cobra.Command {
-	return annotateCapability(&cobra.Command{
+	var forDuration string
+
+	cmd := &cobra.Command{
 		Use:     "disable",
 		Short:   "Disable batt",
 		GroupID: gBasic,
 		Long: `Disable batt.
 
-Stop batt from controlling battery charging. This will allow your Mac to charge to 100%.`,
+Stop batt from controlling battery charging. This will allow your Mac to charge to 100%.
+
+Use --for to disable batt temporarily. The current charge limit is restored automatically once the given duration has elapsed. Setting a charge limit with "batt limit" in the meantime cancels the scheduled restore.`,
+		Example: `  batt disable
+  batt disable --for=1d
+  batt disable --for=30m`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ret, err := apiClient.SetLimit(100)
+			if forDuration == "" {
+				ret, err := apiClient.SetLimit(100)
+				if err != nil {
+					return fmt.Errorf("failed to disable batt: %v", err)
+				}
+
+				if ret != "" {
+					logrus.Infof("daemon responded: %s", ret)
+				}
+
+				logrus.Infof("successfully disabled batt. Charge limit has been reset to 100%%. To re-enable batt, just set a charge limit using \"batt limit\".")
+
+				return nil
+			}
+
+			d, err := parseDuration(forDuration)
+			if err != nil {
+				return err
+			}
+
+			if d <= 0 {
+				return fmt.Errorf("duration must be positive, got %s", d)
+			}
+
+			ret, err := apiClient.DisableFor(d)
 			if err != nil {
 				return fmt.Errorf("failed to disable batt: %v", err)
 			}
@@ -87,11 +119,15 @@ Stop batt from controlling battery charging. This will allow your Mac to charge 
 				logrus.Infof("daemon responded: %s", ret)
 			}
 
-			logrus.Infof("successfully disabled batt. Charge limit has been reset to 100%%. To re-enable batt, just set a charge limit using \"batt limit\".")
+			logrus.Infof("successfully disabled batt for %s. The charge limit will be restored automatically.", d)
 
 			return nil
 		},
-	}, compatibility.FeatureChargingControl)
+	}
+
+	cmd.Flags().StringVar(&forDuration, "for", "", "disable batt temporarily, e.g. 30m, 2h, 1d, 1w")
+
+	return annotateCapability(cmd, compatibility.FeatureChargingControl)
 }
 
 func NewAdapterCommand() *cobra.Command {

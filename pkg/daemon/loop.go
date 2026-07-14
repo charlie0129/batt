@@ -27,9 +27,41 @@ var (
 // which is called by the daemon.
 func infiniteLoop() {
 	for {
+		if restoreDisabledLimit(conf, time.Now()) {
+			maintainLoopForced()
+		}
 		maintainLoop()
 		time.Sleep(loopInterval)
 	}
+}
+
+// restoreDisabledLimit restores the upper limit saved by a "batt disable --for"
+// once its deadline has passed. It reports whether the limit was restored.
+func restoreDisabledLimit(conf config.Config, now time.Time) bool {
+	until := conf.DisableUntil()
+	if until.IsZero() || now.Before(until) {
+		return false
+	}
+
+	limit := conf.PreDisableLimit()
+	conf.ClearDisableTimer()
+
+	if limit < 10 || limit > 100 {
+		logrus.Warnf("invalid saved charge limit %d%%, not restoring", limit)
+		if err := conf.Save(); err != nil {
+			logrus.Errorf("saveConfig failed: %v", err)
+		}
+		return false
+	}
+
+	conf.SetUpperLimit(limit)
+	if err := conf.Save(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+	}
+
+	logrus.WithField("limit", limit).Infof("disable duration elapsed, charge limit restored")
+
+	return true
 }
 
 // checkMissedMaintainLoops checks if there are too many missed maintain loops,

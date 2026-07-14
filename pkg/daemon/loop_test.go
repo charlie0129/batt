@@ -96,6 +96,74 @@ func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
 	}
 }
 
+func TestRestoreDisabledLimit(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name            string
+		disableUntil    time.Time
+		preDisableLimit int
+		want            bool
+		wantUpper       int
+	}{
+		{
+			name:      "no timer set",
+			want:      false,
+			wantUpper: 100,
+		},
+		{
+			name:            "deadline not reached",
+			disableUntil:    now.Add(time.Hour),
+			preDisableLimit: 80,
+			want:            false,
+			wantUpper:       100,
+		},
+		{
+			name:            "deadline reached",
+			disableUntil:    now.Add(-time.Second),
+			preDisableLimit: 80,
+			want:            true,
+			wantUpper:       80,
+		},
+		{
+			name:            "deadline elapsed while daemon was down",
+			disableUntil:    now.Add(-48 * time.Hour),
+			preDisableLimit: 75,
+			want:            true,
+			wantUpper:       75,
+		},
+		{
+			name:            "invalid saved limit",
+			disableUntil:    now.Add(-time.Second),
+			preDisableLimit: 0,
+			want:            false,
+			wantUpper:       100,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &mockConf{
+				upper:           100,
+				lower:           98,
+				disableUntil:    tt.disableUntil,
+				preDisableLimit: tt.preDisableLimit,
+			}
+
+			if got := restoreDisabledLimit(c, now); got != tt.want {
+				t.Errorf("restoreDisabledLimit() = %v, want %v", got, tt.want)
+			}
+			if c.upper != tt.wantUpper {
+				t.Errorf("upper limit = %d, want %d", c.upper, tt.wantUpper)
+			}
+			// The timer must survive only while its deadline lies ahead.
+			wantTimer := !tt.disableUntil.IsZero() && now.Before(tt.disableUntil)
+			if gotTimer := !c.disableUntil.IsZero(); gotTimer != wantTimer {
+				t.Errorf("timer set = %v, want %v", gotTimer, wantTimer)
+			}
+		})
+	}
+}
+
 func TestMaintainFirmwareChargeLimitWithoutLegacyPolling(t *testing.T) {
 	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
 		v, err := gosmc.NewValue(key, dataType, data)
