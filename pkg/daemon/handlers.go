@@ -94,6 +94,26 @@ func setLimit(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, msg)
 }
 
+// resolveDisableLimit returns the limit to restore once a temporary disable
+// elapses. A pending timer is rescheduled with the limit it already saved. It
+// reports false when batt is disabled with no limit left to restore.
+func resolveDisableLimit(conf config.Config) (int, bool) {
+	if limit := conf.UpperLimit(); limit < 100 {
+		return limit, true
+	}
+
+	if conf.DisableUntil().IsZero() {
+		return 0, false
+	}
+
+	limit := conf.PreDisableLimit()
+	if limit < 10 || limit > 100 {
+		return 0, false
+	}
+
+	return limit, true
+}
+
 func setDisableFor(c *gin.Context) {
 	if !requireCapability(c, compatibility.FeatureChargingControl) {
 		return
@@ -119,9 +139,11 @@ func setDisableFor(c *gin.Context) {
 		return
 	}
 
-	prevLimit := conf.UpperLimit()
-	if prevLimit >= 100 {
-		c.IndentedJSON(http.StatusOK, "batt is already disabled, nothing to do")
+	prevLimit, ok := resolveDisableLimit(conf)
+	if !ok {
+		err := fmt.Errorf("batt is already disabled and no previous charge limit is recorded, nothing to restore. Set a limit first with 'batt limit <percentage>'")
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
