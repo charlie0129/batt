@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bufio"
 	"encoding/json"
 	"io"
 	"os"
@@ -18,26 +17,14 @@ const (
 	ctrlMagSafeModeEnabledStr   = "enabled"
 	ctrlMagSafeModeDisabledStr  = "disabled"
 	ctrlMagSafeModeAlwaysOffStr = "always-off"
-	trayIconStyleFixedStr        = "fixed"
-	trayIconStyleFixedPercentStr = "fixed-percentage"
-	trayIconStyleBatteryStr      = "battery"
-	trayIconStylePercentageStr   = "percentage"
 )
 
 type ControlMagSafeMode string
-type TrayIconStyle string
 
 const (
-	DefaultTrayIconRefreshIntervalSeconds = 60
-
 	ControlMagSafeModeEnabled   ControlMagSafeMode = ctrlMagSafeModeEnabledStr
 	ControlMagSafeModeDisabled  ControlMagSafeMode = ctrlMagSafeModeDisabledStr
 	ControlMagSafeModeAlwaysOff ControlMagSafeMode = ctrlMagSafeModeAlwaysOffStr
-
-	TrayIconStyleFixed        TrayIconStyle = trayIconStyleFixedStr
-	TrayIconStyleFixedPercent TrayIconStyle = trayIconStyleFixedPercentStr
-	TrayIconStyleBattery      TrayIconStyle = trayIconStyleBatteryStr
-	TrayIconStylePercentage   TrayIconStyle = trayIconStylePercentageStr
 )
 
 var (
@@ -125,40 +112,6 @@ func (c *ControlMagSafeMode) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func ParseTrayIconStyle(s string) (TrayIconStyle, bool) {
-	switch s {
-	case trayIconStyleFixedStr:
-		return TrayIconStyleFixed, true
-	case trayIconStyleFixedPercentStr:
-		return TrayIconStyleFixedPercent, true
-	case trayIconStyleBatteryStr:
-		return TrayIconStyleBattery, true
-	case trayIconStylePercentageStr:
-		return TrayIconStylePercentage, true
-	default:
-		return TrayIconStylePercentage, false
-	}
-}
-
-func (s TrayIconStyle) IsValid() bool {
-	_, ok := ParseTrayIconStyle(string(s))
-	return ok
-}
-
-func (s *TrayIconStyle) UnmarshalJSON(data []byte) error {
-	var raw string
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-
-	style, ok := ParseTrayIconStyle(raw)
-	if !ok {
-		logrus.Warnf("invalid TrayIconStyle %q, falling back to %q", raw, TrayIconStylePercentage)
-	}
-	*s = style
-	return nil
-}
-
 type RawFileConfig struct {
 	Limit                   *int                `json:"limit,omitempty"`
 	PreventIdleSleep        *bool               `json:"preventIdleSleep,omitempty"`
@@ -194,7 +147,7 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 		TemperatureMonitoringEnabled:              ptr.To(c.TemperatureMonitoringEnabled()),
 		TemperatureProtectionThresholdCelsius:     ptr.To(c.TemperatureProtectionThresholdCelsius()),
 		TemperatureProtectionRecoveryDeltaCelsius: ptr.To(c.TemperatureProtectionRecoveryDeltaCelsius()),
-		Cron:                                      ptr.To(c.Cron()),
+		Cron: ptr.To(c.Cron()),
 	}
 
 	return rawConfig, nil
@@ -598,20 +551,6 @@ func (f *File) SetTemperatureProtectionRecoveryDeltaCelsius(i int) {
 	f.c.TemperatureProtectionRecoveryDeltaCelsius = &i
 }
 
-func stripConfigCommentLines(configString string) string {
-	var builder strings.Builder
-	scanner := bufio.NewScanner(strings.NewReader(configString))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		builder.WriteString(line)
-		builder.WriteByte('\n')
-	}
-	return builder.String()
-}
-
 func (f *File) Load() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -648,14 +587,8 @@ func (f *File) Load() error {
 		return nil
 	}
 
-	configString = stripConfigCommentLines(configString)
-	if strings.TrimSpace(configString) == "" {
-		f.c = &RawFileConfig{}
-		return nil
-	}
-
 	conf := RawFileConfig{}
-	err = json.Unmarshal([]byte(configString), &conf)
+	err = json.Unmarshal(b, &conf)
 	if err != nil {
 		return pkgerrors.Wrapf(err, "failed to unmarshal config from file %s", f.filepath)
 	}
@@ -699,15 +632,15 @@ func (f *File) LogrusFields() logrus.Fields {
 	}
 
 	return logrus.Fields{
-		"upperLimit":              f.UpperLimit(),
-		"lowerLimit":              f.LowerLimit(),
-		"preventIdleSleep":        f.PreventIdleSleep(),
-		"disableChargingPreSleep": f.DisableChargingPreSleep(),
-		"preventSystemSleep":      f.PreventSystemSleep(),
-		"allowNonRootAccess":      f.AllowNonRootAccess(),
-		"controlMagsafeLed":       f.ControlMagSafeLED(),
-		"temperatureMonitoring":   f.TemperatureMonitoringEnabled(),
-		"temperatureThreshold":    f.TemperatureProtectionThresholdCelsius(),
+		"upperLimit":               f.UpperLimit(),
+		"lowerLimit":               f.LowerLimit(),
+		"preventIdleSleep":         f.PreventIdleSleep(),
+		"disableChargingPreSleep":  f.DisableChargingPreSleep(),
+		"preventSystemSleep":       f.PreventSystemSleep(),
+		"allowNonRootAccess":       f.AllowNonRootAccess(),
+		"controlMagsafeLed":        f.ControlMagSafeLED(),
+		"temperatureMonitoring":    f.TemperatureMonitoringEnabled(),
+		"temperatureThreshold":     f.TemperatureProtectionThresholdCelsius(),
 		"temperatureRecoveryDelta": f.TemperatureProtectionRecoveryDeltaCelsius(),
 	}
 }

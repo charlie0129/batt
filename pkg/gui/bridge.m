@@ -14,7 +14,7 @@ static const NSTimeInterval kMenuUpdateTimerInterval = 1.0;
 extern void battMenuWillOpen(uintptr_t handle);
 extern void battMenuDidClose(uintptr_t handle);
 extern void battMenuTimerFired(uintptr_t handle);
-extern void battTrayIconTimerFired(uintptr_t handle);
+extern void battMenuBarIconTimerFired(uintptr_t handle);
 extern void battTemperatureThresholdChanged(uintptr_t handle, int value);
 
 @interface BattMenuObserver : NSObject
@@ -36,7 +36,7 @@ extern void battTemperatureThresholdChanged(uintptr_t handle, int value);
 - (void)setEnabled:(BOOL)enabled;
 @end
 
-@interface BattTrayIconTimerTarget : NSObject
+@interface BattMenuBarIconTimerTarget : NSObject
 @property(nonatomic, assign) uintptr_t handle;
 @property(nonatomic, strong) NSTimer *timer;
 - (instancetype)initWithHandle:(uintptr_t)handle;
@@ -696,7 +696,7 @@ void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int 
 #endif
 }
 
-@implementation BattTrayIconTimerTarget
+@implementation BattMenuBarIconTimerTarget
 - (instancetype)initWithHandle:(uintptr_t)handle {
     if ((self = [super init])) {
         _handle = handle;
@@ -719,25 +719,25 @@ void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int 
     [[NSRunLoop mainRunLoop] addTimer:self.timer forMode:NSRunLoopCommonModes];
 }
 - (void)timerTick:(NSTimer *)timer {
-    battTrayIconTimerFired(_handle);
+    battMenuBarIconTimerFired(_handle);
 }
 @end
 
-void *batt_attachTrayIconTimer(uintptr_t handle, double intervalSeconds) {
-    BattTrayIconTimerTarget *target = [[BattTrayIconTimerTarget alloc] initWithHandle:handle];
+void *batt_attachMenuBarIconTimer(uintptr_t handle, double intervalSeconds) {
+    BattMenuBarIconTimerTarget *target = [[BattMenuBarIconTimerTarget alloc] initWithHandle:handle];
     [target setInterval:intervalSeconds];
     return (void *)CFBridgingRetain(target);
 }
 
-void batt_setTrayIconTimerInterval(void *timerPtr, double intervalSeconds) {
+void batt_setMenuBarIconTimerInterval(void *timerPtr, double intervalSeconds) {
     if (timerPtr == NULL) return;
-    BattTrayIconTimerTarget *target = (BattTrayIconTimerTarget *)timerPtr;
+    BattMenuBarIconTimerTarget *target = (BattMenuBarIconTimerTarget *)timerPtr;
     [target setInterval:intervalSeconds];
 }
 
-void batt_releaseTrayIconTimer(void *timerPtr) {
+void batt_releaseMenuBarIconTimer(void *timerPtr) {
     if (timerPtr == NULL) return;
-    BattTrayIconTimerTarget *target = (BattTrayIconTimerTarget *)timerPtr;
+    BattMenuBarIconTimerTarget *target = (BattMenuBarIconTimerTarget *)timerPtr;
     if (target.timer) {
         [target.timer invalidate];
         target.timer = nil;

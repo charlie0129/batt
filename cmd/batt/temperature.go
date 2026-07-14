@@ -158,13 +158,6 @@ func printTemperatureStatus(cmd *cobra.Command, status *temperature.Status) {
 	}
 
 	hasSample := status.LastUpdatedUnix > 0 || status.CurrentCelsius != nil
-	if status.ActivityUnavailableReason != "" {
-		cmd.Printf("  Activity detection: %s (%s)\n", bold("unavailable"), status.ActivityUnavailableReason)
-	} else if !hasSample {
-		cmd.Printf("  Activity: %s\n", bold("no data yet"))
-	} else {
-		cmd.Printf("  Activity: %s\n", activityStateText(status.UserActive))
-	}
 	if hasSample {
 		cmd.Printf("  Sample charging state: %s\n", chargingStateText(status.Charging))
 	} else {
@@ -178,13 +171,6 @@ func protectionStateText(active bool) string {
 		return bold("active")
 	}
 	return "inactive"
-}
-
-func activityStateText(active bool) string {
-	if active {
-		return "active"
-	}
-	return "idle"
 }
 
 func chargingStateText(charging bool) string {

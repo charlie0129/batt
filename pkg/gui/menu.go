@@ -24,19 +24,19 @@ type menuController struct {
 	api         *client.Client
 	menubarIcon appkit.StatusItem
 
-	daemonInstalled                bool
-	capable                        bool
-	needUpgrade                    bool
-	trayIconStyle                  config.TrayIconStyle
-	trayIconRefreshIntervalSeconds int
-	trayIconTimerPtr               unsafe.Pointer
-	upperLimit                     int
-	lowerLimit                     int
-	lastCharge                     int
-	lastCharging                   bool
-	lastPaused                     bool
-	lastThermalPaused              bool
-	hasBatteryStatus               bool
+	daemonInstalled                   bool
+	capable                           bool
+	needUpgrade                       bool
+	menuBarIconStyle                  menuBarIconStyle
+	menuBarIconRefreshIntervalSeconds int
+	menuBarIconTimerPtr               unsafe.Pointer
+	upperLimit                        int
+	lowerLimit                        int
+	lastCharge                        int
+	lastCharging                      bool
+	lastPaused                        bool
+	lastThermalPaused                 bool
+	hasBatteryStatus                  bool
 
 	// Power Flow
 	powerFlowSubMenuItem appkit.MenuItem
@@ -59,17 +59,17 @@ type menuController struct {
 	controlMagSafeEnableItem    appkit.MenuItem
 	controlMagSafeDisableItem   appkit.MenuItem
 	controlMagSafeAlwaysOffItem appkit.MenuItem
-	trayIconStyleSubMenuItem    appkit.MenuItem
-	trayIconFixedItem           appkit.MenuItem
-	trayIconFixedPercentItem    appkit.MenuItem
-	trayIconBatteryItem         appkit.MenuItem
-	trayIconPercentageItem      appkit.MenuItem
+	menuBarIconStyleSubMenuItem appkit.MenuItem
+	menuBarIconFixedItem        appkit.MenuItem
+	menuBarIconFixedPercentItem appkit.MenuItem
+	menuBarIconBatteryItem      appkit.MenuItem
+	menuBarIconPercentageItem   appkit.MenuItem
 
-	preventIdleSleepItem             appkit.MenuItem
-	disableChargingPreSleepItem      appkit.MenuItem
-	preventSystemSleepItem           appkit.MenuItem
-	forceDischargeItem               appkit.MenuItem
-	uninstallItem                    appkit.MenuItem
+	preventIdleSleepItem        appkit.MenuItem
+	disableChargingPreSleepItem appkit.MenuItem
+	preventSystemSleepItem      appkit.MenuItem
+	forceDischargeItem          appkit.MenuItem
+	uninstallItem               appkit.MenuItem
 
 	// Auto Calibration
 	autoCalSubMenuItem appkit.MenuItem
@@ -130,7 +130,7 @@ func (c *menuController) toggleMenusRequiringInstall(battInstalled, capable, nee
 
 	c.advancedSubMenuItem.SetHidden(!battInstalled)
 	c.controlMagSafeLEDItem.SetHidden(!battInstalled || !capable || needUpgrade)
-	c.trayIconStyleSubMenuItem.SetHidden(!battInstalled || !capable || needUpgrade)
+	c.menuBarIconStyleSubMenuItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.preventIdleSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.disableChargingPreSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
 	c.preventSystemSleepItem.SetHidden(!battInstalled || !capable || needUpgrade)
@@ -197,7 +197,7 @@ func (c *menuController) refreshOnOpen() {
 
 	conf := config.NewFileFromConfig(rawConfig, "")
 	logrus.WithFields(conf.LogrusFields()).Info("Got config")
-	c.applyTrayConfig(conf)
+	c.applyMenuBarConfig(conf)
 	// Cache calibration params for formatting
 	c.calThreshold = conf.CalibrationDischargeThreshold()
 	c.calHoldMinutes = conf.CalibrationHoldDurationMinutes()
@@ -221,7 +221,7 @@ func (c *menuController) refreshOnOpen() {
 	if !isCharging && isPluggedIn && c.upperLimit < 100 && currentCharge < c.lowerLimit {
 		c.stateItem.SetTitle("State: Will Charge Soon")
 	}
-	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, c.chargeLimitPauseActive(currentCharge, isCharging, isPluggedIn), c.lastThermalPaused)
+	c.setMenuBarBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, c.chargeLimitPauseActive(currentCharge, isCharging, isPluggedIn), c.lastThermalPaused)
 
 	magSafeMode := conf.ControlMagSafeLED()
 	switch magSafeMode {
@@ -250,39 +250,39 @@ func (c *menuController) refreshOnOpen() {
 	}
 }
 
-func (c *menuController) updateTrayIconStyleItems() {
-	setCheckboxItem(c.trayIconFixedItem, c.trayIconStyle == config.TrayIconStyleFixed)
-	setCheckboxItem(c.trayIconFixedPercentItem, c.trayIconStyle == config.TrayIconStyleFixedPercent)
-	setCheckboxItem(c.trayIconBatteryItem, c.trayIconStyle == config.TrayIconStyleBattery)
-	setCheckboxItem(c.trayIconPercentageItem, c.trayIconStyle == config.TrayIconStylePercentage)
+func (c *menuController) updateMenuBarIconStyleItems() {
+	setCheckboxItem(c.menuBarIconFixedItem, c.menuBarIconStyle == menuBarIconStyleFixed)
+	setCheckboxItem(c.menuBarIconFixedPercentItem, c.menuBarIconStyle == menuBarIconStyleFixedPercent)
+	setCheckboxItem(c.menuBarIconBatteryItem, c.menuBarIconStyle == menuBarIconStyleBattery)
+	setCheckboxItem(c.menuBarIconPercentageItem, c.menuBarIconStyle == menuBarIconStylePercentage)
 }
 
-func (c *menuController) applyTrayConfig(conf *config.File) {
+func (c *menuController) applyMenuBarConfig(conf *config.File) {
 	c.upperLimit = conf.UpperLimit()
 	c.lowerLimit = conf.LowerLimit()
 	prefs := loadGUIPreferences()
-	c.trayIconStyle = prefs.MenuBarIconStyle
-	c.updateTrayIconRefreshInterval(prefs.MenuBarIconRefreshSeconds)
-	c.updateTrayIconStyleItems()
+	c.menuBarIconStyle = prefs.MenuBarIconStyle
+	c.updateMenuBarIconRefreshInterval(prefs.MenuBarIconRefreshSeconds)
+	c.updateMenuBarIconStyleItems()
 }
 
-func (c *menuController) updateTrayIconRefreshInterval(seconds int) {
+func (c *menuController) updateMenuBarIconRefreshInterval(seconds int) {
 	if seconds <= 0 {
-		seconds = defaultTrayIconRefreshIntervalSeconds
+		seconds = defaultMenuBarIconRefreshIntervalSeconds
 	}
-	if c.trayIconRefreshIntervalSeconds == seconds {
+	if c.menuBarIconRefreshIntervalSeconds == seconds {
 		return
 	}
 
-	c.trayIconRefreshIntervalSeconds = seconds
-	if c.trayIconTimerPtr != nil {
-		SetTrayIconTimerInterval(c.trayIconTimerPtr, float64(seconds))
+	c.menuBarIconRefreshIntervalSeconds = seconds
+	if c.menuBarIconTimerPtr != nil {
+		SetMenuBarIconTimerInterval(c.menuBarIconTimerPtr, float64(seconds))
 	}
 }
 
-func (c *menuController) setTrayIconStyle(style config.TrayIconStyle) {
-	if !style.IsValid() {
-		style = config.TrayIconStylePercentage
+func (c *menuController) setMenuBarIconStyle(style menuBarIconStyle) {
+	if !style.isValid() {
+		style = menuBarIconStylePercentage
 	}
 
 	prefs := loadGUIPreferences()
@@ -290,25 +290,25 @@ func (c *menuController) setTrayIconStyle(style config.TrayIconStyle) {
 	if err := saveGUIPreferences(prefs); err != nil {
 		logrus.WithError(err).Error("Failed to save menu bar icon style")
 		showAlert("Failed to save menu bar icon style", err.Error())
-		c.updateTrayIconStyleItems()
+		c.updateMenuBarIconStyleItems()
 		return
 	}
 
-	c.trayIconStyle = style
-	c.updateTrayIconStyleItems()
+	c.menuBarIconStyle = style
+	c.updateMenuBarIconStyleItems()
 	c.applyMenubarImage()
 }
 
-func (c *menuController) refreshTrayIcon() {
+func (c *menuController) refreshMenuBarIcon() {
 	if !c.daemonInstalled || !c.capable || c.needUpgrade {
 		c.applyMenubarImage()
 		return
 	}
 
 	prefs := loadGUIPreferences()
-	c.trayIconStyle = prefs.MenuBarIconStyle
-	c.updateTrayIconRefreshInterval(prefs.MenuBarIconRefreshSeconds)
-	c.updateTrayIconStyleItems()
+	c.menuBarIconStyle = prefs.MenuBarIconStyle
+	c.updateMenuBarIconRefreshInterval(prefs.MenuBarIconRefreshSeconds)
+	c.updateMenuBarIconStyleItems()
 
 	thermalPaused := c.lastThermalPaused
 	if status, err := c.api.GetTemperatureStatus(); err == nil {
@@ -316,36 +316,36 @@ func (c *menuController) refreshTrayIcon() {
 		c.lastThermalPaused = thermalPaused
 		c.applyMenubarImage()
 	} else {
-		logrus.WithError(err).Debug("Failed to get temperature status for tray icon")
+		logrus.WithError(err).Debug("Failed to get temperature status for menu bar icon")
 	}
 
 	currentCharge, err := c.api.GetCurrentCharge()
 	if err != nil {
-		logrus.WithError(err).Debug("Failed to get current charge for tray icon")
+		logrus.WithError(err).Debug("Failed to get current charge for menu bar icon")
 		return
 	}
 	isCharging, err := c.api.GetCharging()
 	if err != nil {
-		logrus.WithError(err).Debug("Failed to get charging state for tray icon")
+		logrus.WithError(err).Debug("Failed to get charging state for menu bar icon")
 		isCharging = c.lastCharging
 	}
 	isPluggedIn, err := c.api.GetPluggedIn()
 	if err != nil {
-		logrus.WithError(err).Debug("Failed to get plugged in state for tray icon")
+		logrus.WithError(err).Debug("Failed to get plugged in state for menu bar icon")
 		isPluggedIn = false
 	}
 	paused := c.chargeLimitPauseActive(currentCharge, isCharging, isPluggedIn)
 	batteryInfo, err := c.api.GetBatteryInfo()
 	if err != nil {
-		logrus.WithError(err).Debug("Failed to get battery info for tray icon")
-		c.setTrayBatteryStatus(currentCharge, false, paused, c.lastThermalPaused)
+		logrus.WithError(err).Debug("Failed to get battery info for menu bar icon")
+		c.setMenuBarBatteryStatus(currentCharge, false, paused, c.lastThermalPaused)
 		return
 	}
 
-	c.setTrayBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, paused, thermalPaused)
+	c.setMenuBarBatteryStatus(currentCharge, batteryInfo.State == powerinfo.Charging, paused, thermalPaused)
 }
 
-func (c *menuController) setTrayBatteryStatus(charge int, charging, paused, thermalPaused bool) {
+func (c *menuController) setMenuBarBatteryStatus(charge int, charging, paused, thermalPaused bool) {
 	if charge < 0 {
 		charge = 0
 	}
@@ -367,11 +367,11 @@ func (c *menuController) applyMenubarImage() {
 		return
 	}
 
-	style := c.trayIconStyle
-	if !style.IsValid() {
-		style = config.TrayIconStylePercentage
+	style := c.menuBarIconStyle
+	if !style.isValid() {
+		style = menuBarIconStylePercentage
 	}
-	if style == config.TrayIconStyleFixed {
+	if style == menuBarIconStyleFixed {
 		setMenubarImage(c.menubarIcon, true, true, false)
 		return
 	}

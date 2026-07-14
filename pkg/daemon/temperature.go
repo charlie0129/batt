@@ -12,8 +12,6 @@ import (
 	"github.com/charlie0129/batt/pkg/temperature"
 )
 
-const temperatureActiveWindow = 5 * time.Minute
-
 type temperatureLoopResult struct {
 	protected bool
 	recovered bool
@@ -90,17 +88,10 @@ func handleTemperatureMonitoringAndProtection(isChargingEnabled, isPluggedIn boo
 		return temperatureLoopResult{}
 	}
 
-	userActive, activityErr := userIsActive(temperatureActiveWindow)
-	if activityErr != nil {
-		status.ActivityUnavailableReason = activityErr.Error()
-		userActive = true
-	}
-
 	charging := isChargingEnabled && isPluggedIn
 
 	current := tempC
 	status.CurrentCelsius = &current
-	status.UserActive = userActive
 	status.Charging = charging
 	status.LastUpdatedUnix = now.Unix()
 

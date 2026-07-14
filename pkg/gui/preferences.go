@@ -1,27 +1,60 @@
 package gui
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 
-	"github.com/charlie0129/batt/pkg/config"
+	"howett.net/plist"
 )
 
 const (
-	defaultTrayIconRefreshIntervalSeconds = 60
-	preferencesFileName                   = "cc.chlc.batt.gui.json"
+	defaultMenuBarIconRefreshIntervalSeconds = 60
+	preferencesFileName                      = "cc.chlc.batt.gui.plist"
+
+	menuBarIconStyleFixedStr        = "fixed"
+	menuBarIconStyleFixedPercentStr = "fixed-percentage"
+	menuBarIconStyleBatteryStr      = "battery"
+	menuBarIconStylePercentageStr   = "percentage"
 )
 
+type menuBarIconStyle string
+
+const (
+	menuBarIconStyleFixed        menuBarIconStyle = menuBarIconStyleFixedStr
+	menuBarIconStyleFixedPercent menuBarIconStyle = menuBarIconStyleFixedPercentStr
+	menuBarIconStyleBattery      menuBarIconStyle = menuBarIconStyleBatteryStr
+	menuBarIconStylePercentage   menuBarIconStyle = menuBarIconStylePercentageStr
+)
+
+func parseMenuBarIconStyle(value string) (menuBarIconStyle, bool) {
+	switch value {
+	case menuBarIconStyleFixedStr:
+		return menuBarIconStyleFixed, true
+	case menuBarIconStyleFixedPercentStr:
+		return menuBarIconStyleFixedPercent, true
+	case menuBarIconStyleBatteryStr:
+		return menuBarIconStyleBattery, true
+	case menuBarIconStylePercentageStr:
+		return menuBarIconStylePercentage, true
+	default:
+		return menuBarIconStylePercentage, false
+	}
+}
+
+func (style menuBarIconStyle) isValid() bool {
+	_, ok := parseMenuBarIconStyle(string(style))
+	return ok
+}
+
 type guiPreferences struct {
-	MenuBarIconStyle          config.TrayIconStyle `json:"menuBarIconStyle,omitempty"`
-	MenuBarIconRefreshSeconds int                  `json:"menuBarIconRefreshSeconds,omitempty"`
+	MenuBarIconStyle          menuBarIconStyle `plist:"MenuBarIconStyle"`
+	MenuBarIconRefreshSeconds int              `plist:"MenuBarIconRefreshSeconds"`
 }
 
 func defaultGUIPreferences() guiPreferences {
 	return guiPreferences{
-		MenuBarIconStyle:          config.TrayIconStylePercentage,
-		MenuBarIconRefreshSeconds: defaultTrayIconRefreshIntervalSeconds,
+		MenuBarIconStyle:          menuBarIconStylePercentage,
+		MenuBarIconRefreshSeconds: defaultMenuBarIconRefreshIntervalSeconds,
 	}
 }
 
@@ -33,36 +66,36 @@ func preferencesPath() (string, error) {
 	return filepath.Join(home, "Library", "Preferences", preferencesFileName), nil
 }
 
-func loadGUIPreferences() guiPreferences {
-	prefs := defaultGUIPreferences()
-	path, err := preferencesPath()
-	if err != nil {
-		return prefs
-	}
-
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return prefs
-	}
-	if err := json.Unmarshal(b, &prefs); err != nil {
-		return defaultGUIPreferences()
-	}
-	if !prefs.MenuBarIconStyle.IsValid() {
-		prefs.MenuBarIconStyle = config.TrayIconStylePercentage
+func normalizeGUIPreferences(prefs guiPreferences) guiPreferences {
+	if !prefs.MenuBarIconStyle.isValid() {
+		prefs.MenuBarIconStyle = menuBarIconStylePercentage
 	}
 	if prefs.MenuBarIconRefreshSeconds <= 0 {
-		prefs.MenuBarIconRefreshSeconds = defaultTrayIconRefreshIntervalSeconds
+		prefs.MenuBarIconRefreshSeconds = defaultMenuBarIconRefreshIntervalSeconds
 	}
 	return prefs
 }
 
+func loadGUIPreferences() guiPreferences {
+	path, err := preferencesPath()
+	if err != nil {
+		return defaultGUIPreferences()
+	}
+
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return defaultGUIPreferences()
+	}
+
+	prefs := defaultGUIPreferences()
+	if _, err := plist.Unmarshal(contents, &prefs); err != nil {
+		return defaultGUIPreferences()
+	}
+	return normalizeGUIPreferences(prefs)
+}
+
 func saveGUIPreferences(prefs guiPreferences) error {
-	if !prefs.MenuBarIconStyle.IsValid() {
-		prefs.MenuBarIconStyle = config.TrayIconStylePercentage
-	}
-	if prefs.MenuBarIconRefreshSeconds <= 0 {
-		prefs.MenuBarIconRefreshSeconds = defaultTrayIconRefreshIntervalSeconds
-	}
+	prefs = normalizeGUIPreferences(prefs)
 
 	path, err := preferencesPath()
 	if err != nil {
@@ -72,10 +105,9 @@ func saveGUIPreferences(prefs guiPreferences) error {
 		return err
 	}
 
-	b, err := json.MarshalIndent(prefs, "", "  ")
+	contents, err := plist.MarshalIndent(prefs, plist.XMLFormat, "\t")
 	if err != nil {
 		return err
 	}
-	b = append(b, '\n')
-	return os.WriteFile(path, b, 0644)
+	return os.WriteFile(path, contents, 0644)
 }

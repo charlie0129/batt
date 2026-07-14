@@ -28,9 +28,9 @@ import (
 // void batt_setTemperatureSliderEnabled(void *itemPtr, bool enabled);
 // void batt_releaseObject(void *objPtr);
 // void batt_setMenubarBatteryIcon(uintptr_t statusItemPtr, const char* style, int percent, bool charging, bool paused, bool thermalPaused);
-// void *batt_attachTrayIconTimer(uintptr_t handle, double intervalSeconds);
-// void batt_setTrayIconTimerInterval(void *timerPtr, double intervalSeconds);
-// void batt_releaseTrayIconTimer(void *timerPtr);
+// void *batt_attachMenuBarIconTimer(uintptr_t handle, double intervalSeconds);
+// void batt_setMenuBarIconTimerInterval(void *timerPtr, double intervalSeconds);
+// void batt_releaseMenuBarIconTimer(void *timerPtr);
 // bool registerAppWithSMAppService(void);
 // bool unregisterAppWithSMAppService(void);
 // bool isRegisteredWithSMAppService(void);
@@ -128,17 +128,17 @@ func ReleaseObject(ptr unsafe.Pointer) {
 	C.batt_releaseObject(ptr)
 }
 
-//export battTrayIconTimerFired
-func battTrayIconTimerFired(h C.uintptr_t) {
+//export battMenuBarIconTimerFired
+func battMenuBarIconTimerFired(h C.uintptr_t) {
 	defer func() {
 		if r := recover(); r != nil {
-			logrus.Errorf("panic in battTrayIconTimerFired: %v", r)
+			logrus.Errorf("panic in battMenuBarIconTimerFired: %v", r)
 		}
 	}()
 	handle := cgo.Handle(h)
 	if v := handle.Value(); v != nil {
 		if c, ok := v.(*menuController); ok {
-			c.refreshTrayIcon()
+			c.refreshMenuBarIcon()
 		}
 	}
 }
@@ -149,16 +149,16 @@ func SetMenubarBatteryIcon(item appkit.StatusItem, style string, percent int, ch
 	C.batt_setMenubarBatteryIcon(C.uintptr_t(uintptr(item.Ptr())), cstyle, C.int(percent), C.bool(charging), C.bool(paused), C.bool(thermalPaused))
 }
 
-func AttachTrayIconTimer(h cgo.Handle, intervalSeconds float64) unsafe.Pointer {
-	return C.batt_attachTrayIconTimer(C.uintptr_t(h), C.double(intervalSeconds))
+func AttachMenuBarIconTimer(h cgo.Handle, intervalSeconds float64) unsafe.Pointer {
+	return C.batt_attachMenuBarIconTimer(C.uintptr_t(h), C.double(intervalSeconds))
 }
 
-func SetTrayIconTimerInterval(ptr unsafe.Pointer, intervalSeconds float64) {
-	C.batt_setTrayIconTimerInterval(ptr, C.double(intervalSeconds))
+func SetMenuBarIconTimerInterval(ptr unsafe.Pointer, intervalSeconds float64) {
+	C.batt_setMenuBarIconTimerInterval(ptr, C.double(intervalSeconds))
 }
 
-func ReleaseTrayIconTimer(ptr unsafe.Pointer) {
-	C.batt_releaseTrayIconTimer(ptr)
+func ReleaseMenuBarIconTimer(ptr unsafe.Pointer) {
+	C.batt_releaseMenuBarIconTimer(ptr)
 }
 
 // RegisterLoginItem registers the application to start at login using SMAppService
