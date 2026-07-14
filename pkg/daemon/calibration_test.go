@@ -22,7 +22,6 @@ type mockConf struct {
 	lower           int
 	disableUntil    time.Time
 	preDisableLimit int
-	saves           int
 }
 
 func (m *mockConf) UpperLimit() int               { return m.upper }
@@ -47,7 +46,7 @@ func (m *mockConf) SetAllowNonRootAccess(bool)                     {}
 func (m *mockConf) SetControlMagSafeLED(config.ControlMagSafeMode) {}
 func (m *mockConf) LogrusFields() logrus.Fields                    { return logrus.Fields{} }
 func (m *mockConf) Load() error                                    { return nil }
-func (m *mockConf) Save() error                                    { m.saves++; return nil }
+func (m *mockConf) Save() error                                    { return nil }
 func (m *mockConf) Cron() string                                   { return "" }
 func (m *mockConf) SetCron(string)                                 {}
 func (m *mockConf) DisableUntil() time.Time                        { return m.disableUntil }
