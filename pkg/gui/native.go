@@ -54,12 +54,39 @@ const (
 	itemQuit                    menuItem = C.BattItemQuit
 )
 
+const (
+	itemDisableLimitCountdown    menuItem = C.BattItemDisableLimitCountdown
+	itemDisableLimitIndefinitely menuItem = C.BattItemDisableLimitIndefinitely
+	itemDisableLimit1Hour        menuItem = C.BattItemDisableLimit1Hour
+	itemDisableLimit2Hours       menuItem = C.BattItemDisableLimit2Hours
+	itemDisableLimit4Hours       menuItem = C.BattItemDisableLimit4Hours
+	itemDisableLimit8Hours       menuItem = C.BattItemDisableLimit8Hours
+	itemDisableLimit12Hours      menuItem = C.BattItemDisableLimit12Hours
+	itemDisableLimit24Hours      menuItem = C.BattItemDisableLimit24Hours
+	itemDisableLimit2Days        menuItem = C.BattItemDisableLimit2Days
+	itemDisableLimit3Days        menuItem = C.BattItemDisableLimit3Days
+	itemDisableLimit7Days        menuItem = C.BattItemDisableLimit7Days
+)
+
 var quickLimitItems = []menuItem{
 	itemLimit50,
 	itemLimit60,
 	itemLimit70,
 	itemLimit80,
 	itemLimit90,
+}
+
+var disableLimitActionItems = []menuItem{
+	itemDisableLimitIndefinitely,
+	itemDisableLimit1Hour,
+	itemDisableLimit2Hours,
+	itemDisableLimit4Hours,
+	itemDisableLimit8Hours,
+	itemDisableLimit12Hours,
+	itemDisableLimit24Hours,
+	itemDisableLimit2Days,
+	itemDisableLimit3Days,
+	itemDisableLimit7Days,
 }
 
 type confirmation int

@@ -39,6 +39,17 @@ typedef enum {
     BattItemVersion,
     BattItemUninstall,
     BattItemDisableLimit,
+    BattItemDisableLimitCountdown,
+    BattItemDisableLimitIndefinitely,
+    BattItemDisableLimit1Hour,
+    BattItemDisableLimit2Hours,
+    BattItemDisableLimit4Hours,
+    BattItemDisableLimit8Hours,
+    BattItemDisableLimit12Hours,
+    BattItemDisableLimit24Hours,
+    BattItemDisableLimit2Days,
+    BattItemDisableLimit3Days,
+    BattItemDisableLimit7Days,
     BattItemQuit,
 } BattMenuItem;
 

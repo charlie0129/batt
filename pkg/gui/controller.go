@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -22,6 +23,7 @@ type menuController struct {
 	calibrationThreshold int
 	capabilities         compatibility.Capabilities
 	compatibilityKnown   bool
+	disableScheduled     bool
 	eventCancel          context.CancelFunc
 }
 
@@ -31,6 +33,7 @@ func (c *menuController) onWillOpen() {
 }
 
 func (c *menuController) onTimerTick() {
+	c.refreshDisableSchedule()
 	c.updateTelemetry()
 }
 
@@ -76,6 +79,10 @@ func (c *menuController) refreshOnOpen() {
 		c.setCompatibility(false, compatibility.Permissive(), false)
 		return
 	}
+	conf := config.NewFileFromConfig(rawConfig, "")
+	logrus.WithFields(conf.LogrusFields()).Info("Got config")
+	c.updateDisableSchedule(conf)
+
 	capabilities, err := c.api.GetCompatibility()
 	c.compatibilityKnown = err == nil
 	if err != nil {
@@ -119,8 +126,6 @@ func (c *menuController) refreshOnOpen() {
 		}
 	}
 
-	conf := config.NewFileFromConfig(rawConfig, "")
-	logrus.WithFields(conf.LogrusFields()).Info("Got config")
 	c.calibrationThreshold = conf.CalibrationDischargeThreshold()
 	c.menu.setTitle(itemCurrentLimit, fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
 	for _, item := range quickLimitItems {
@@ -157,6 +162,38 @@ func (c *menuController) refreshOnOpen() {
 			}
 		}
 	}
+}
+
+func (c *menuController) refreshDisableSchedule() {
+	rawConfig, err := c.api.GetConfig()
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to refresh temporary disable schedule")
+		return
+	}
+	c.updateDisableSchedule(config.NewFileFromConfig(rawConfig, ""))
+}
+
+func (c *menuController) updateDisableSchedule(conf config.Config) {
+	until := conf.DisableUntil()
+	scheduled := !until.IsZero()
+	c.disableScheduled = scheduled
+	for _, item := range disableLimitActionItems {
+		c.menu.setEnabled(item, !scheduled)
+	}
+	c.menu.setHidden(itemDisableLimitCountdown, !scheduled)
+
+	if !scheduled {
+		c.menu.setTooltip(itemDisableLimit, disableLimitTooltip)
+		return
+	}
+
+	c.menu.setEnabled(itemDisableLimit, true)
+	c.menu.setTitle(
+		itemDisableLimitCountdown,
+		temporaryDisableCountdownTitle(conf.PreDisableLimit(), time.Until(until)),
+	)
+	c.menu.setTooltip(itemDisableLimit, disableLimitScheduledTooltip)
+	c.menu.setTooltip(itemDisableLimitCountdown, disableLimitScheduledTooltip)
 }
 
 func (c *menuController) setStateError(message string, err error) {
@@ -240,10 +277,10 @@ func (c *menuController) updateCalibration(status *calibration.Status) {
 	for _, item := range append([]menuItem{
 		itemForceDischarge,
 		itemUninstall,
-		itemDisableLimit,
 	}, quickLimitItems...) {
 		c.menu.setEnabled(item, settingsEnabled)
 	}
+	c.menu.setEnabled(itemDisableLimit, settingsEnabled || c.disableScheduled)
 }
 
 func (c *menuController) calibrationStatusTitle(status *calibration.Status) (string, bool) {
