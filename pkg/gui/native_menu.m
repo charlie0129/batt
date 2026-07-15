@@ -248,6 +248,32 @@ void BattBuildMenu(BattMenuController *controller, NSString *version) {
     [advanced addItem:ActionItem(controller, @"Uninstall Daemon...", @"", BattItemUninstall)];
 
     [root addItem:[NSMenuItem separatorItem]];
-    [root addItem:ActionItem(controller, @"Disable Charging Limit", @"d", BattItemDisableLimit)];
+    NSMenu *disableLimit = AddSubmenu(controller, root, @"Disable Charge Limit",
+                                      BattItemDisableLimit);
+    NSMenuItem *disableCountdown = DisplayItem(controller, @"",
+                                                BattItemDisableLimitCountdown, NO);
+    disableCountdown.hidden = YES;
+    [disableLimit addItem:disableCountdown];
+    [disableLimit addItem:ActionItem(controller, @"Indefinitely", @"d",
+                                      BattItemDisableLimitIndefinitely)];
+    [disableLimit addItem:[NSMenuItem separatorItem]];
+    [disableLimit addItem:ActionItem(controller, @"1 Hour", @"",
+                                      BattItemDisableLimit1Hour)];
+    [disableLimit addItem:ActionItem(controller, @"2 Hours", @"",
+                                      BattItemDisableLimit2Hours)];
+    [disableLimit addItem:ActionItem(controller, @"4 Hours", @"",
+                                      BattItemDisableLimit4Hours)];
+    [disableLimit addItem:ActionItem(controller, @"8 Hours", @"",
+                                      BattItemDisableLimit8Hours)];
+    [disableLimit addItem:ActionItem(controller, @"12 Hours", @"",
+                                      BattItemDisableLimit12Hours)];
+    [disableLimit addItem:ActionItem(controller, @"24 Hours", @"",
+                                      BattItemDisableLimit24Hours)];
+    [disableLimit addItem:ActionItem(controller, @"2 Days", @"",
+                                      BattItemDisableLimit2Days)];
+    [disableLimit addItem:ActionItem(controller, @"3 Days", @"",
+                                      BattItemDisableLimit3Days)];
+    [disableLimit addItem:ActionItem(controller, @"7 Days", @"",
+                                      BattItemDisableLimit7Days)];
     [root addItem:ActionItem(controller, @"Quit Menubar App", @"q", BattItemQuit)];
 }

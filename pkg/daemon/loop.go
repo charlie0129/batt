@@ -38,13 +38,18 @@ func infiniteLoop() {
 // restoreDisabledLimit restores the upper limit saved by a "batt disable --for"
 // once its deadline has passed. It reports whether the limit was restored.
 func restoreDisabledLimit(conf config.Config, now time.Time) bool {
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+
 	until := conf.DisableUntil()
 	if until.IsZero() || now.Before(until) {
 		return false
 	}
 
 	// Calibration force-writes the upper limit it snapshotted when it finishes,
-	// which would silently undo the restore. Keep the timer pending until then.
+	// which would silently undo the restore. This also resolves persisted
+	// conflicts after a daemon restart: calibration keeps ownership and the
+	// timer remains pending until calibration finishes or is cancelled.
 	if calibrationOwnsChargeLimit() {
 		return false
 	}
@@ -214,10 +219,20 @@ func handleNoMaintain(isChargingEnabled bool) bool {
 		logrus.Errorf("AllowSleepOnAC failed: %v", err)
 	}
 
-	cancelCalibrationNoRestoreNoError()
+	cancelCalibrationForPermanentDisable()
 
 	maintainedChargingInProgress = false
 	return true
+}
+
+func cancelCalibrationForPermanentDisable() {
+	// A persisted temporary-disable/calibration conflict can be loaded after a
+	// restart. Calibration is restored paused for safety, so keep it intact and
+	// let the disable timer wait for the user to resume or cancel calibration.
+	if !conf.DisableUntil().IsZero() {
+		return
+	}
+	cancelCalibrationNoRestoreNoError()
 }
 
 func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool, batteryCharge, lower, upper int) bool {

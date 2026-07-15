@@ -105,6 +105,33 @@ func stubCalibrationSleep(t *testing.T) *calibrationSleepCalls {
 	return calls
 }
 
+func TestStartCalibrationRejectsTemporaryDisable(t *testing.T) {
+	previousConf, previousState, previousStatePath := conf, calibrationState, calibrationStatePath
+	t.Cleanup(func() {
+		conf, calibrationState, calibrationStatePath = previousConf, previousState, previousStatePath
+	})
+
+	sleepCalls := stubCalibrationSleep(t)
+	conf = &mockConf{
+		upper:           100,
+		lower:           78,
+		disableUntil:    time.Now().Add(time.Hour),
+		preDisableLimit: 80,
+	}
+	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
+	calibrationStatePath = ""
+
+	if err := startCalibration(15, 10); err != ErrTemporaryDisableInProgress {
+		t.Fatalf("startCalibration() error = %v, want %v", err, ErrTemporaryDisableInProgress)
+	}
+	if calibrationState.Phase != calibration.PhaseIdle {
+		t.Fatalf("phase = %s, want idle", calibrationState.Phase)
+	}
+	if sleepCalls.prevent != 0 {
+		t.Fatal("rejected calibration acquired a sleep assertion")
+	}
+}
+
 // TestCalibrationFlow simulates the main phase transitions.
 func TestCalibrationFlow(t *testing.T) {
 	sleepCalls := stubCalibrationSleep(t)

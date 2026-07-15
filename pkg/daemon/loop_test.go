@@ -201,6 +201,53 @@ func TestRestoreDisabledLimit(t *testing.T) {
 	}
 }
 
+func TestRestoreDisabledLimitWaitsForPersistedCalibration(t *testing.T) {
+	previousState := calibrationState
+	t.Cleanup(func() { calibrationState = previousState })
+
+	now := time.Now()
+	configured := &mockConf{
+		upper:           100,
+		lower:           78,
+		disableUntil:    now.Add(-time.Hour),
+		preDisableLimit: 80,
+	}
+	calibrationState = &calibration.State{Phase: calibration.PhaseCharge}
+
+	if restoreDisabledLimit(configured, now) {
+		t.Fatal("temporary disable restored while calibration owned the charge limit")
+	}
+	if configured.disableUntil.IsZero() {
+		t.Fatal("temporary disable timer was cleared while calibration was active")
+	}
+
+	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
+	if !restoreDisabledLimit(configured, now) {
+		t.Fatal("temporary disable was not restored after calibration finished")
+	}
+	if configured.upper != 80 || !configured.disableUntil.IsZero() {
+		t.Fatalf("restored config = %+v, want upper 80 with no timer", configured)
+	}
+}
+
+func TestTemporaryDisableDoesNotCancelRestartedCalibration(t *testing.T) {
+	previousConf, previousState := conf, calibrationState
+	t.Cleanup(func() { conf, calibrationState = previousConf, previousState })
+
+	conf = &mockConf{
+		upper:           100,
+		lower:           78,
+		disableUntil:    time.Now().Add(time.Hour),
+		preDisableLimit: 80,
+	}
+	calibrationState = &calibration.State{Phase: calibration.PhaseCharge, Paused: true}
+
+	cancelCalibrationForPermanentDisable()
+	if calibrationState.Phase != calibration.PhaseCharge || !calibrationState.Paused {
+		t.Fatalf("persisted calibration was unexpectedly cancelled: %+v", calibrationState)
+	}
+}
+
 func TestMaintainFirmwareChargeLimitWithoutLegacyPolling(t *testing.T) {
 	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
 		v, err := gosmc.NewValue(key, dataType, data)

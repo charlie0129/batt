@@ -97,9 +97,13 @@ func restoreChargeControlAfterCalibration(st *calibration.State) {
 }
 
 var (
-	calibrationMu        = &sync.Mutex{}
-	calibrationState     = &calibration.State{Phase: calibration.PhaseIdle}
-	calibrationStatePath = "" // set during daemon Run? Could derive from config path + suffix.
+	// chargeControlTransitionMu serializes admission of calibration and temporary
+	// disable operations so concurrent requests cannot both pass their conflict
+	// checks before either operation persists its state.
+	chargeControlTransitionMu = &sync.Mutex{}
+	calibrationMu             = &sync.Mutex{}
+	calibrationState          = &calibration.State{Phase: calibration.PhaseIdle}
+	calibrationStatePath      = "" // set during daemon Run? Could derive from config path + suffix.
 )
 
 func initCalibrationState(path string) {
@@ -140,11 +144,17 @@ func persistCalibrationState() {
 }
 
 func startCalibration(threshold, holdMinutes int) error {
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
 
 	if calibrationState.Phase != calibration.PhaseIdle && calibrationState.Phase != calibration.PhaseError {
 		return ErrCalibrationInProgress
+	}
+	if !conf.DisableUntil().IsZero() {
+		return ErrTemporaryDisableInProgress
 	}
 	if err := preventCalibrationSleep(); err != nil {
 		return fmt.Errorf("prevent sleep during calibration: %w", err)
@@ -199,6 +209,8 @@ func startCalibration(threshold, holdMinutes int) error {
 var ErrCalibrationInProgress = &calibrationError{"calibration already in progress"}
 var ErrCalibrationNotRunning = &calibrationError{"calibration not running"}
 var ErrCalibrationPaused = &calibrationError{"calibration paused"}
+var ErrCalibrationControlsChargeLimit = &calibrationError{"a calibration is in progress or awaiting cancellation, which controls the charge limit itself. Cancel it first with 'batt calibration cancel'"}
+var ErrTemporaryDisableInProgress = &calibrationError{"a temporary charge-limit disable is in progress; wait for it to finish or set a charge limit to cancel it"}
 
 type calibrationError struct{ msg string }
 

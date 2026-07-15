@@ -1,7 +1,10 @@
 package gui
 
 import (
+	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -40,8 +43,18 @@ func (c *menuController) handleAction(item menuItem, checked bool) {
 		c.cancelCalibration()
 	case itemUninstall:
 		c.uninstall()
-	case itemDisableLimit:
+	case itemDisableLimitIndefinitely:
 		c.disableLimit()
+	case itemDisableLimit1Hour,
+		itemDisableLimit2Hours,
+		itemDisableLimit4Hours,
+		itemDisableLimit8Hours,
+		itemDisableLimit12Hours,
+		itemDisableLimit24Hours,
+		itemDisableLimit2Days,
+		itemDisableLimit3Days,
+		itemDisableLimit7Days:
+		c.disableLimitFor(temporaryDisableDuration(item))
 	case itemQuit:
 		c.quit()
 	}
@@ -167,8 +180,67 @@ func (c *menuController) uninstall() {
 func (c *menuController) disableLimit() {
 	response, err := c.api.SetLimit(100)
 	if err != nil && !pkgerrors.Is(err, client.ErrDaemonNotRunning) {
-		showAlert("Failed to set limit", response+err.Error())
+		showAlert("Failed to disable charge limit", response+err.Error())
 	}
+}
+
+func (c *menuController) disableLimitFor(duration time.Duration) {
+	response, err := c.api.DisableFor(duration)
+	if err != nil && !pkgerrors.Is(err, client.ErrDaemonNotRunning) {
+		showAlert("Failed to disable charge limit", response+err.Error())
+	}
+}
+
+func temporaryDisableDuration(item menuItem) time.Duration {
+	switch item {
+	case itemDisableLimit1Hour:
+		return time.Hour
+	case itemDisableLimit2Hours:
+		return 2 * time.Hour
+	case itemDisableLimit4Hours:
+		return 4 * time.Hour
+	case itemDisableLimit8Hours:
+		return 8 * time.Hour
+	case itemDisableLimit12Hours:
+		return 12 * time.Hour
+	case itemDisableLimit24Hours:
+		return 24 * time.Hour
+	case itemDisableLimit2Days:
+		return 2 * 24 * time.Hour
+	case itemDisableLimit3Days:
+		return 3 * 24 * time.Hour
+	case itemDisableLimit7Days:
+		return 7 * 24 * time.Hour
+	default:
+		panic("not a temporary disable menu item")
+	}
+}
+
+func temporaryDisableCountdownTitle(limit int, remaining time.Duration) string {
+	if remaining <= 0 {
+		return fmt.Sprintf("Restoring %d%% limit…", limit)
+	}
+
+	totalMinutes := int64(remaining / time.Minute)
+	if remaining%time.Minute != 0 {
+		totalMinutes++
+	}
+
+	days := totalMinutes / (24 * 60)
+	hours := totalMinutes % (24 * 60) / 60
+	minutes := totalMinutes % 60
+	parts := make([]string, 0, 3)
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", days))
+	}
+	if hours > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", hours))
+	}
+	if minutes > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", minutes))
+	}
+
+	return fmt.Sprintf("Restores to %d%% in %s", limit, strings.Join(parts, " "))
 }
 
 func (c *menuController) quit() {
