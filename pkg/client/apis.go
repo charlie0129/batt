@@ -24,6 +24,10 @@ func (c *Client) SetLimit(l int) (string, error) {
 	return c.Put("/limit", strconv.Itoa(l))
 }
 
+func (c *Client) DisableFor(d time.Duration) (string, error) {
+	return c.Put("/disable", strconv.Quote(d.String()))
+}
+
 func (c *Client) SetAdapter(enabled bool) (string, error) {
 	return c.Put("/adapter", strconv.FormatBool(enabled))
 }

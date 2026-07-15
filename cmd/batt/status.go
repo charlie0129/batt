@@ -235,6 +235,9 @@ func NewStatusCommand() *cobra.Command {
 				cmd.Printf("  Lower limit: %s\n", bold("%d%%", cfg.LowerLimit()))
 			} else {
 				cmd.Printf("  Charge limit: %s\n", bold("100%% (batt disabled)"))
+				if until := cfg.DisableUntil(); !until.IsZero() {
+					cmd.Printf("  Restoring %d%% limit: %s\n", cfg.PreDisableLimit(), bold("in %s (%s)", formatRestoreDelay(time.Until(until)), until.Local().Format(time.DateTime)))
+				}
 			}
 			if data.capabilities.SleepHooks {
 				cmd.Printf("  Prevent idle-sleep when charging: %s\n", bool2Text(cfg.PreventIdleSleep()))

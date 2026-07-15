@@ -58,6 +58,8 @@ func setLimit(c *gin.Context) {
 	}
 
 	conf.SetUpperLimit(l)
+	// An explicit limit change overrides any pending scheduled re-enabling.
+	conf.ClearDisableTimer()
 	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -90,6 +92,86 @@ func setLimit(c *gin.Context) {
 	maintainLoopForced()
 
 	c.IndentedJSON(http.StatusCreated, msg)
+}
+
+// resolveDisableLimit returns the limit to restore once a temporary disable
+// elapses. A pending timer is rescheduled with the limit it already saved. It
+// reports false when batt is disabled with no limit left to restore.
+func resolveDisableLimit(conf config.Config) (int, bool) {
+	if limit := conf.UpperLimit(); limit < 100 {
+		return limit, true
+	}
+
+	if conf.DisableUntil().IsZero() {
+		return 0, false
+	}
+
+	limit := conf.PreDisableLimit()
+	if limit < 10 || limit > 100 {
+		return 0, false
+	}
+
+	return limit, true
+}
+
+func setDisableFor(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureChargingControl) {
+		return
+	}
+	var raw string
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if d <= 0 {
+		err := fmt.Errorf("duration must be positive, got %s", d)
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if calibrationOwnsChargeLimit() {
+		err := fmt.Errorf("a calibration is in progress or awaiting cancellation, which controls the charge limit itself. Cancel it first with 'batt calibration cancel'")
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	prevLimit, ok := resolveDisableLimit(conf)
+	if !ok {
+		err := fmt.Errorf("batt is already disabled and no previous charge limit is recorded, nothing to restore. Set a limit first with 'batt limit <percentage>'")
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	until := time.Now().Add(d).Truncate(time.Second)
+	conf.SetUpperLimit(100)
+	conf.SetDisableTimer(until, prevLimit)
+	if err := conf.Save(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"until":     until.Format(time.DateTime),
+		"prevLimit": prevLimit,
+	}).Infof("disabled batt temporarily")
+
+	maintainLoopForced()
+
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("batt disabled, charge limit will be restored to %d%% at %s", prevLimit, until.Format(time.DateTime)))
 }
 
 func setPreventIdleSleep(c *gin.Context) {

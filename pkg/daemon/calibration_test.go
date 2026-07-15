@@ -18,8 +18,10 @@ import (
 
 // mockConf implements the subset of Config used in calibration for test.
 type mockConf struct {
-	upper int
-	lower int
+	upper           int
+	lower           int
+	disableUntil    time.Time
+	preDisableLimit int
 }
 
 func (m *mockConf) UpperLimit() int               { return m.upper }
@@ -47,6 +49,16 @@ func (m *mockConf) Load() error                                    { return nil 
 func (m *mockConf) Save() error                                    { return nil }
 func (m *mockConf) Cron() string                                   { return "" }
 func (m *mockConf) SetCron(string)                                 {}
+func (m *mockConf) DisableUntil() time.Time                        { return m.disableUntil }
+func (m *mockConf) PreDisableLimit() int                           { return m.preDisableLimit }
+func (m *mockConf) SetDisableTimer(until time.Time, prevLimit int) {
+	m.disableUntil = until
+	m.preDisableLimit = prevLimit
+}
+func (m *mockConf) ClearDisableTimer() {
+	m.disableUntil = time.Time{}
+	m.preDisableLimit = 0
+}
 
 // Fake smcConn implementation.
 type fakeSMC struct {

@@ -42,6 +42,7 @@ func setupRoutes() *gin.Engine {
 	router.GET("/config", getConfig)
 	router.GET("/limit", getLimit)
 	router.PUT("/limit", setLimit)
+	router.PUT("/disable", setDisableFor)
 	router.PUT("/lower-limit-delta", setLowerLimitDelta)
 	router.PUT("/prevent-idle-sleep", setPreventIdleSleep)
 	router.PUT("/disable-charging-pre-sleep", setDisableChargingPreSleep)

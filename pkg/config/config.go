@@ -1,6 +1,8 @@
 package config
 
 import (
+	"time"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -15,6 +17,8 @@ type Config interface {
 	CalibrationDischargeThreshold() int
 	CalibrationHoldDurationMinutes() int
 	Cron() string
+	DisableUntil() time.Time
+	PreDisableLimit() int
 
 	SetUpperLimit(int)
 	SetLowerLimit(int)
@@ -26,6 +30,8 @@ type Config interface {
 	SetCron(string)
 	SetCalibrationDischargeThreshold(int)
 	SetCalibrationHoldDurationMinutes(int)
+	SetDisableTimer(time.Time, int)
+	ClearDisableTimer()
 
 	LogrusFields() logrus.Fields
 

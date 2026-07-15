@@ -7,6 +7,7 @@ import (
 
 	"github.com/charlie0129/gosmc"
 
+	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/smc"
 )
@@ -91,6 +92,110 @@ func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
 			}
 			if got := r.GetRecordsIn(tt.args.last); got != tt.want {
 				t.Errorf("GetRecordsIn() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRestoreDisabledLimit(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name             string
+		disableUntil     time.Time
+		preDisableLimit  int
+		calibrationPhase calibration.Phase
+		want             bool
+		wantUpper        int
+		wantTimer        bool
+	}{
+		{
+			name:      "no timer set",
+			want:      false,
+			wantUpper: 100,
+			wantTimer: false,
+		},
+		{
+			name:            "deadline not reached",
+			disableUntil:    now.Add(time.Hour),
+			preDisableLimit: 80,
+			want:            false,
+			wantUpper:       100,
+			wantTimer:       true,
+		},
+		{
+			name:            "deadline reached",
+			disableUntil:    now.Add(-time.Second),
+			preDisableLimit: 80,
+			want:            true,
+			wantUpper:       80,
+			wantTimer:       false,
+		},
+		{
+			name:            "deadline elapsed while daemon was down",
+			disableUntil:    now.Add(-48 * time.Hour),
+			preDisableLimit: 75,
+			want:            true,
+			wantUpper:       75,
+			wantTimer:       false,
+		},
+		{
+			name:            "invalid saved limit",
+			disableUntil:    now.Add(-time.Second),
+			preDisableLimit: 0,
+			want:            false,
+			wantUpper:       100,
+			wantTimer:       false,
+		},
+		{
+			// Calibration force-writes the upper limit it snapshotted, so
+			// restoring now would be silently undone. Wait for it to finish.
+			name:             "deadline reached during calibration",
+			disableUntil:     now.Add(-time.Second),
+			preDisableLimit:  80,
+			calibrationPhase: calibration.PhaseCharge,
+			want:             false,
+			wantUpper:        100,
+			wantTimer:        true,
+		},
+		{
+			// A failed calibration still holds its snapshot until it is
+			// cancelled, and cancelling force-writes the limit.
+			name:             "deadline reached after a failed calibration",
+			disableUntil:     now.Add(-time.Second),
+			preDisableLimit:  80,
+			calibrationPhase: calibration.PhaseError,
+			want:             false,
+			wantUpper:        100,
+			wantTimer:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			phase := tt.calibrationPhase
+			if phase == "" {
+				phase = calibration.PhaseIdle
+			}
+			calibrationState = &calibration.State{Phase: phase}
+			t.Cleanup(func() {
+				calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
+			})
+
+			c := &mockConf{
+				upper:           100,
+				lower:           98,
+				disableUntil:    tt.disableUntil,
+				preDisableLimit: tt.preDisableLimit,
+			}
+
+			if got := restoreDisabledLimit(c, now); got != tt.want {
+				t.Errorf("restoreDisabledLimit() = %v, want %v", got, tt.want)
+			}
+			if c.upper != tt.wantUpper {
+				t.Errorf("upper limit = %d, want %d", c.upper, tt.wantUpper)
+			}
+			if gotTimer := !c.disableUntil.IsZero(); gotTimer != tt.wantTimer {
+				t.Errorf("timer set = %v, want %v", gotTimer, tt.wantTimer)
 			}
 		})
 	}
