@@ -50,6 +50,16 @@ func setLimit(c *gin.Context) {
 		return
 	}
 
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+
+	if calibrationOwnsChargeLimit() {
+		err := ErrCalibrationControlsChargeLimit
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	if delta := conf.UpperLimit() - conf.LowerLimit(); l-delta <= 10 {
 		err := fmt.Errorf("upper limit must be greater than lower limit + 10, got %d", l-delta)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -139,8 +149,11 @@ func setDisableFor(c *gin.Context) {
 		return
 	}
 
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+
 	if calibrationOwnsChargeLimit() {
-		err := fmt.Errorf("a calibration is in progress or awaiting cancellation, which controls the charge limit itself. Cancel it first with 'batt calibration cancel'")
+		err := ErrCalibrationControlsChargeLimit
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return

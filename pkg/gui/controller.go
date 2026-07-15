@@ -187,6 +187,7 @@ func (c *menuController) updateDisableSchedule(conf config.Config) {
 		return
 	}
 
+	c.menu.setEnabled(itemCalibrationStart, false)
 	c.menu.setEnabled(itemDisableLimit, true)
 	c.menu.setTitle(
 		itemDisableLimitCountdown,
@@ -265,7 +266,7 @@ func (c *menuController) updateCalibration(status *calibration.Status) {
 		c.menu.setTitle(itemAutoCalibration, "Auto Calibration (Experimental) In Progress...")
 	}
 
-	c.menu.setEnabled(itemCalibrationStart, isIdle)
+	c.menu.setEnabled(itemCalibrationStart, canStartCalibration(status.Phase, c.disableScheduled))
 	c.menu.setEnabled(itemCalibrationCancel, !isIdle)
 	c.menu.setEnabled(itemCalibrationPause, !isIdle && !status.Paused)
 	c.menu.setEnabled(itemCalibrationResume, status.Paused)
@@ -274,13 +275,30 @@ func (c *menuController) updateCalibration(status *calibration.Status) {
 	}
 
 	settingsEnabled := isIdle || status.Phase == calibration.PhaseError || status.Paused
-	for _, item := range append([]menuItem{
+	for _, item := range []menuItem{
 		itemForceDischarge,
 		itemUninstall,
-	}, quickLimitItems...) {
+	} {
 		c.menu.setEnabled(item, settingsEnabled)
 	}
-	c.menu.setEnabled(itemDisableLimit, settingsEnabled || c.disableScheduled)
+	for _, item := range quickLimitItems {
+		c.menu.setEnabled(item, canSetChargeLimit(status.Phase))
+	}
+	// A persisted conflict may contain both states after a restart. Keep the
+	// submenu openable only to show its countdown; its actions remain disabled.
+	c.menu.setEnabled(itemDisableLimit, canOpenDisableLimitMenu(status.Phase, c.disableScheduled))
+}
+
+func canStartCalibration(phase calibration.Phase, disableScheduled bool) bool {
+	return phase == calibration.PhaseIdle && !disableScheduled
+}
+
+func canOpenDisableLimitMenu(phase calibration.Phase, disableScheduled bool) bool {
+	return phase == calibration.PhaseIdle || disableScheduled
+}
+
+func canSetChargeLimit(phase calibration.Phase) bool {
+	return phase == calibration.PhaseIdle
 }
 
 func (c *menuController) calibrationStatusTitle(status *calibration.Status) (string, bool) {
