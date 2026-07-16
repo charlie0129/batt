@@ -117,14 +117,12 @@ GUI version is a native macOS menubar app. It's not as feature-complete as the c
 
 You have two choices to install the CLI version of `batt`:
 
-1. Homebrew (known to have issues due to breaking changes from Homebrew) [Docs](#homebrew)
+1. Homebrew [Docs](#homebrew)
 2. Installation Script (Recommended) [Docs](#installation-script)
 
 You can choose either one. Please do not use both at the same time to avoid conflicts.
 
 ### Homebrew
-
-> Homebrew installation is known to have issues due to breaking changes from Homebrew [#141](https://github.com/charlie0129/batt/issues/141). Use GUI or installation script if you encounter problems.
 
 > [!IMPORTANT]
 > If you previously ran `batt` v0.7.3 or earlier with `sudo brew services`, follow the [one-time service-label migration](#homebrew-service-label-migration) before starting the service. When the Homebrew formula moved from v0.7.3 to v0.7.5, its service label changed from `cc.chlc.batt` to `homebrew.mxcl.batt`.
