@@ -126,6 +126,9 @@ You can choose either one. Please do not use both at the same time to avoid conf
 
 > Homebrew installation is known to have issues due to breaking changes from Homebrew [#141](https://github.com/charlie0129/batt/issues/141). Use GUI or installation script if you encounter problems.
 
+> [!IMPORTANT]
+> If you previously ran `batt` v0.7.3 or earlier with `sudo brew services`, follow the [one-time service-label migration](#homebrew-service-label-migration) before starting the service. When the Homebrew formula moved from v0.7.3 to v0.7.5, its service label changed from `cc.chlc.batt` to `homebrew.mxcl.batt`.
+
 1. `brew install batt`
 2. `sudo brew services start batt`
 3. Please read [Notes](#notes).
@@ -435,13 +438,29 @@ Note that you should choose the same method as you used to install `batt` to upg
 
 If you don't remember how you installed it, you can check the binary location by running `which batt`. If it is in `/usr/local/bin`, you probably used the installation script. If it is in `/opt/homebrew/bin`, you probably used Homebrew.
 
-Script-installed:
+**Script-installed:**
 
 ```bash
 bash <(curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh)
 ```
 
-Homebrew-installed:
+**Homebrew-installed:**
+
+##### Homebrew service-label migration
+
+If you previously ran `batt` v0.7.3 or earlier with `sudo brew services`, use the following commands once. When the Homebrew formula moved from v0.7.3 to v0.7.5, its service label changed from `cc.chlc.batt` to `homebrew.mxcl.batt`, and `brew services stop batt` may not stop the job registered under the old label. The old job must be booted out before its plist is removed; deleting the plist alone does not unregister a running job from `launchd`.
+
+```bash
+sudo brew services stop batt
+if sudo launchctl print system/cc.chlc.batt >/dev/null 2>&1; then
+  sudo launchctl bootout system/cc.chlc.batt
+fi
+sudo rm -f /Library/LaunchDaemons/cc.chlc.batt.plist
+brew upgrade batt
+sudo brew services start batt
+```
+
+No uninstall or reinstall is needed. For later Homebrew upgrades, use the normal procedure:
 
 ```bash
 sudo brew services stop batt
@@ -449,7 +468,7 @@ brew upgrade batt
 sudo brew services start batt
 ```
 
-Manual:
+**Manual:**
 
 1. Run `sudo batt uninstall` to remove the old daemon.
 2. Download the new binary. For _stable_ and _beta_ releases, you can find the download link in the [release page](https://github.com/charlie0129/batt/releases). If you want development versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months and you need to `chmod +x batt` after extracting the archive) or [build it yourself](#building) .
