@@ -76,7 +76,7 @@ Check your firmware version by running `system_profiler SPHardwareDataType | gre
 
 If you want to know which MacBooks I personally developed it on, I am using it on all my personal MacBooks every single day, including MacBook Air M1 2020 (A2337), MacBook Air M2 2022 (A2681), MacBook Pro 14' M1 Pro 2021 (A2442), MacBook Pro 16' M1 Max 2021 (A2485).
 
-If you encounter any incompatibility, please raise an issue with your MacBook model, firmware version, batt version, macOS version, and batt logs (`/tmp/batt.log`).
+If you encounter any incompatibility, please raise an issue with your MacBook model, firmware version, batt version, macOS version, and batt logs (`/tmp/batt.log`, or `/var/log/batt.log` if installed v0.7.5+ using Homebrew).
 
 ### macOS 27 / 20xxx firmware behavior
 
@@ -352,7 +352,7 @@ To force the MagSafe LED to stay off, run `sudo batt magsafe-led always-off`.
 
 ### Check logs
 
-Logs are directed to `/tmp/batt.log`. If something goes wrong, you can check the logs to see what happened. Raise an issue with the logs attached.
+Logs are directed to `/tmp/batt.log`, or `/var/log/batt.log` if installed v0.7.5+ using Homebrew. If something goes wrong, you can check the logs to see what happened. Raise an issue with the logs attached.
 
 ## Building
 
