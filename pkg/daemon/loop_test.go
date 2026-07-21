@@ -97,6 +97,56 @@ func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
 	}
 }
 
+func TestMaintainLoopHonorsDisabledPreSleepChargingProtection(t *testing.T) {
+	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
+		v, err := gosmc.NewValue(key, dataType, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+
+	mock := smc.NewMockValues(
+		value(smc.ChargingKey1, gosmc.TypeUInt8, 0),
+		value(smc.ChargingKey2, gosmc.TypeUInt8, 0),
+		value(smc.BatteryChargeKey, gosmc.TypeUInt8, 71),
+		value(smc.ACPowerKey, gosmc.TypeUInt8, 1),
+	)
+	if err := mock.Open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mock.Close() })
+
+	previousSMC, previousConf, previousCapabilities := smcConn, conf, capabilities
+	previousRecorder := loopRecorder
+	t.Cleanup(func() {
+		smcConn, conf, capabilities = previousSMC, previousConf, previousCapabilities
+		loopRecorder = previousRecorder
+	})
+	smcConn = mock
+	conf = &mockConf{
+		upper: 80,
+		lower: 75,
+	}
+	capabilities = compatibility.Capabilities{
+		ChargingControl:   true,
+		ChargeControlMode: compatibility.ChargeControlLegacy,
+	}
+	// No records represents the first maintain loop after a sleep interruption.
+	loopRecorder = NewTimeSeriesRecorder(60)
+
+	if !maintainLoop() {
+		t.Fatal("legacy maintain loop failed")
+	}
+	charging, err := mock.IsChargingEnabled()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !charging {
+		t.Fatal("charging was disabled after missed loops despite disable-charging-pre-sleep being disabled")
+	}
+}
+
 func TestRestoreDisabledLimit(t *testing.T) {
 	now := time.Now()
 	tests := []struct {

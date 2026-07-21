@@ -144,7 +144,11 @@ func maintainLoop() bool {
 	// just log status, not doing anything, yet
 	_ = checkMissedMaintainLoops(true)
 
-	return maintainLoopInner(false)
+	// Missed-loop protection is the fallback for sleep transitions where macOS
+	// did not deliver a sleep notification. Disabling charging in that case is
+	// part of DisableChargingPreSleep's behavior, so honor the user's choice to
+	// let charging continue while the system is asleep.
+	return maintainLoopInner(!conf.DisableChargingPreSleep())
 }
 
 // maintainLoopForced maintains the battery charge. It runs without waiting
@@ -236,7 +240,7 @@ func cancelCalibrationForPermanentDisable() {
 }
 
 func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool, batteryCharge, lower, upper int) bool {
-	maintainLoopsMissed := checkMissedMaintainLoops(false)
+	maintainLoopsMissed := !ignoreMissedLoops && checkMissedMaintainLoops(false)
 
 	// Fix for #123.
 	// Consider this case:
