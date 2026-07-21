@@ -7,6 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/version"
 )
@@ -38,8 +39,9 @@ func Run(unixSocketPath string) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	controller := &menuController{
-		api:         client.NewClient(unixSocketPath),
-		eventCancel: cancel,
+		api:              client.NewClient(unixSocketPath),
+		calibrationPhase: calibration.PhaseIdle,
+		eventCancel:      cancel,
 	}
 	handle := cgo.NewHandle(controller)
 	controller.menu = newNativeMenu(handle, version.Version)

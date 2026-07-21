@@ -138,6 +138,109 @@ func TestSetLimitRejectsCalibration(t *testing.T) {
 	}
 }
 
+func TestSetAdapterDisableFor(t *testing.T) {
+	previousConf, previousCapabilities := conf, capabilities
+	previousState := calibrationState
+	previousDisable := smcDisableAdapter
+	t.Cleanup(func() {
+		conf, capabilities = previousConf, previousCapabilities
+		calibrationState = previousState
+		smcDisableAdapter = previousDisable
+	})
+
+	configured := &mockConf{upper: 80, lower: 78}
+	conf = configured
+	capabilities = compatibility.Capabilities{AdapterControl: true}
+	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
+	disabled := false
+	smcDisableAdapter = func() error {
+		disabled = true
+		return nil
+	}
+
+	request := httptest.NewRequest(http.MethodPut, "/adapter/disable", strings.NewReader(`"1h0m0s"`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	if !disabled {
+		t.Fatal("power adapter was not disabled")
+	}
+	remaining := time.Until(configured.adapterDisableUntil)
+	if remaining < 59*time.Minute || remaining > time.Hour {
+		t.Fatalf("adapter disable deadline has unexpected remaining duration: %s", remaining)
+	}
+}
+
+func TestSetAdapterClearsScheduledEnable(t *testing.T) {
+	previousConf, previousCapabilities := conf, capabilities
+	previousState := calibrationState
+	previousEnable := smcEnableAdapter
+	t.Cleanup(func() {
+		conf, capabilities = previousConf, previousCapabilities
+		calibrationState = previousState
+		smcEnableAdapter = previousEnable
+	})
+
+	configured := &mockConf{
+		upper:               80,
+		lower:               78,
+		adapterDisableUntil: time.Now().Add(time.Hour),
+	}
+	conf = configured
+	capabilities = compatibility.Capabilities{AdapterControl: true}
+	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
+	smcEnableAdapter = func() error { return nil }
+
+	request := httptest.NewRequest(http.MethodPut, "/adapter", strings.NewReader("true"))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	if !configured.adapterDisableUntil.IsZero() {
+		t.Fatalf("adapter disable timer was not cleared: %s", configured.adapterDisableUntil)
+	}
+}
+
+func TestSetAdapterDisableForRejectsCalibration(t *testing.T) {
+	previousConf, previousCapabilities := conf, capabilities
+	previousState := calibrationState
+	previousDisable := smcDisableAdapter
+	t.Cleanup(func() {
+		conf, capabilities = previousConf, previousCapabilities
+		calibrationState = previousState
+		smcDisableAdapter = previousDisable
+	})
+
+	configured := &mockConf{upper: 80, lower: 78}
+	conf = configured
+	capabilities = compatibility.Capabilities{AdapterControl: true}
+	calibrationState = &calibration.State{Phase: calibration.PhaseDischarge}
+	called := false
+	smcDisableAdapter = func() error {
+		called = true
+		return nil
+	}
+
+	request := httptest.NewRequest(http.MethodPut, "/adapter/disable", strings.NewReader(`"1h0m0s"`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusBadRequest, response.Body.String())
+	}
+	if called || !configured.adapterDisableUntil.IsZero() {
+		t.Fatal("rejected temporary adapter disable changed state")
+	}
+}
+
 func TestStartCalibrationRequestRejectsTemporaryDisable(t *testing.T) {
 	previousConf, previousCapabilities := conf, capabilities
 	previousState, previousStatePath := calibrationState, calibrationStatePath

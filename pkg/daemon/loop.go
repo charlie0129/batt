@@ -27,12 +27,62 @@ var (
 // which is called by the daemon.
 func infiniteLoop() {
 	for {
-		if restoreDisabledLimit(conf, time.Now()) {
+		now := time.Now()
+		if restoreDisabledLimit(conf, now) {
 			maintainLoopForced()
+		}
+		if capabilities.AdapterControl {
+			maintainAdapterDisable(conf, now)
 		}
 		maintainLoop()
 		time.Sleep(loopInterval)
 	}
+}
+
+// maintainAdapterDisable keeps a temporary adapter disable active across
+// daemon restarts and enables the adapter once its deadline has passed. It
+// reports whether an expired schedule was completed.
+func maintainAdapterDisable(conf config.Config, now time.Time) bool {
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+
+	until := conf.AdapterDisableUntil()
+	if until.IsZero() {
+		return false
+	}
+	// Calibration owns the adapter throughout its workflow and restores its
+	// snapshot on completion or cancellation. Keep the timer pending until then.
+	if calibrationOwnsChargeLimit() {
+		return false
+	}
+
+	enabled, err := smcIsAdapterEnabled()
+	if err != nil {
+		logrus.WithError(err).Error("failed to check power adapter for temporary disable")
+		return false
+	}
+
+	if now.Before(until) {
+		if enabled {
+			if err := smcDisableAdapter(); err != nil {
+				logrus.WithError(err).Error("failed to maintain temporary power adapter disable")
+			}
+		}
+		return false
+	}
+
+	if !enabled {
+		if err := smcEnableAdapter(); err != nil {
+			logrus.WithError(err).Error("failed to enable power adapter after temporary disable")
+			return false
+		}
+	}
+	conf.ClearAdapterDisableTimer()
+	if err := conf.Save(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+	}
+	logrus.Info("adapter disable duration elapsed, power adapter enabled")
+	return true
 }
 
 // restoreDisabledLimit restores the upper limit saved by a "batt disable --for"

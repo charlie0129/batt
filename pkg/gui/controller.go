@@ -20,11 +20,15 @@ type menuController struct {
 	api  *client.Client
 	menu *nativeMenu
 
-	calibrationThreshold int
-	capabilities         compatibility.Capabilities
-	compatibilityKnown   bool
-	disableScheduled     bool
-	eventCancel          context.CancelFunc
+	calibrationThreshold    int
+	calibrationPhase        calibration.Phase
+	capabilities            compatibility.Capabilities
+	compatibilityKnown      bool
+	disableScheduled        bool
+	adapterDisableScheduled bool
+	adapterEnabled          bool
+	adapterKnown            bool
+	eventCancel             context.CancelFunc
 }
 
 func (c *menuController) onWillOpen() {
@@ -33,7 +37,7 @@ func (c *menuController) onWillOpen() {
 }
 
 func (c *menuController) onTimerTick() {
-	c.refreshDisableSchedule()
+	c.refreshDisableSchedules()
 	c.updateTelemetry()
 }
 
@@ -81,7 +85,7 @@ func (c *menuController) refreshOnOpen() {
 	}
 	conf := config.NewFileFromConfig(rawConfig, "")
 	logrus.WithFields(conf.LogrusFields()).Info("Got config")
-	c.updateDisableSchedule(conf)
+	c.updateDisableSchedules(conf)
 
 	capabilities, err := c.api.GetCompatibility()
 	c.compatibilityKnown = err == nil
@@ -154,7 +158,7 @@ func (c *menuController) refreshOnOpen() {
 	c.menu.setChecked(itemPreventSystemSleep, conf.PreventSystemSleep())
 	if capabilities.AdapterControl {
 		if adapter, err := c.api.GetAdapter(); err == nil {
-			c.menu.setChecked(itemForceDischarge, !adapter)
+			c.updateAdapterState(adapter)
 		} else {
 			logrus.WithError(err).Error("Failed to get adapter")
 			if c.compatibilityKnown {
@@ -164,13 +168,23 @@ func (c *menuController) refreshOnOpen() {
 	}
 }
 
-func (c *menuController) refreshDisableSchedule() {
+func (c *menuController) refreshDisableSchedules() {
 	rawConfig, err := c.api.GetConfig()
 	if err != nil {
 		logrus.WithError(err).Debug("Failed to refresh temporary disable schedule")
 		return
 	}
-	c.updateDisableSchedule(config.NewFileFromConfig(rawConfig, ""))
+	c.updateDisableSchedules(config.NewFileFromConfig(rawConfig, ""))
+	if c.capabilities.AdapterControl {
+		if adapter, err := c.api.GetAdapter(); err == nil {
+			c.updateAdapterState(adapter)
+		}
+	}
+}
+
+func (c *menuController) updateDisableSchedules(conf config.Config) {
+	c.updateDisableSchedule(conf)
+	c.updateAdapterDisableSchedule(conf)
 }
 
 func (c *menuController) updateDisableSchedule(conf config.Config) {
@@ -195,6 +209,39 @@ func (c *menuController) updateDisableSchedule(conf config.Config) {
 	)
 	c.menu.setTooltip(itemDisableLimit, disableLimitScheduledTooltip)
 	c.menu.setTooltip(itemDisableLimitCountdown, disableLimitScheduledTooltip)
+}
+
+func (c *menuController) updateAdapterDisableSchedule(conf config.Config) {
+	until := conf.AdapterDisableUntil()
+	c.adapterDisableScheduled = !until.IsZero()
+	c.menu.setHidden(itemForceDischargeCountdown, !c.adapterDisableScheduled)
+
+	if !c.adapterDisableScheduled {
+		c.menu.setTooltip(itemForceDischarge, forceDischargeTooltip)
+		c.updateForceDischargeControls()
+		return
+	}
+
+	c.menu.setEnabled(itemCalibrationStart, false)
+	c.menu.setTitle(itemForceDischargeCountdown, temporaryAdapterDisableCountdownTitle(time.Until(until)))
+	c.menu.setTooltip(itemForceDischarge, forceDischargeScheduledTooltip)
+	c.menu.setTooltip(itemForceDischargeCountdown, forceDischargeScheduledTooltip)
+	c.updateForceDischargeControls()
+}
+
+func (c *menuController) updateAdapterState(enabled bool) {
+	c.adapterEnabled = enabled
+	c.adapterKnown = true
+	c.updateForceDischargeControls()
+}
+
+func (c *menuController) updateForceDischargeControls() {
+	canControl := c.adapterKnown && c.calibrationPhase == calibration.PhaseIdle
+	for _, item := range forceDischargeActionItems {
+		c.menu.setEnabled(item, canControl && c.adapterEnabled && !c.adapterDisableScheduled)
+	}
+	c.menu.setEnabled(itemForceDischargeStop, canControl && (!c.adapterEnabled || c.adapterDisableScheduled))
+	c.menu.setEnabled(itemForceDischarge, c.adapterKnown && canOpenForceDischargeMenu(c.calibrationPhase, c.adapterDisableScheduled))
 }
 
 func (c *menuController) setStateError(message string, err error) {
@@ -256,6 +303,7 @@ func (c *menuController) updateTelemetry() {
 }
 
 func (c *menuController) updateCalibration(status *calibration.Status) {
+	c.calibrationPhase = status.Phase
 	isIdle := status.Phase == calibration.PhaseIdle
 	switch {
 	case isIdle:
@@ -266,7 +314,7 @@ func (c *menuController) updateCalibration(status *calibration.Status) {
 		c.menu.setTitle(itemAutoCalibration, "Auto Calibration (Experimental) In Progress...")
 	}
 
-	c.menu.setEnabled(itemCalibrationStart, canStartCalibration(status.Phase, c.disableScheduled))
+	c.menu.setEnabled(itemCalibrationStart, canStartCalibration(status.Phase, c.disableScheduled, c.adapterDisableScheduled))
 	c.menu.setEnabled(itemCalibrationCancel, !isIdle)
 	c.menu.setEnabled(itemCalibrationPause, !isIdle && !status.Paused)
 	c.menu.setEnabled(itemCalibrationResume, status.Paused)
@@ -276,7 +324,6 @@ func (c *menuController) updateCalibration(status *calibration.Status) {
 
 	settingsEnabled := isIdle || status.Phase == calibration.PhaseError || status.Paused
 	for _, item := range []menuItem{
-		itemForceDischarge,
 		itemUninstall,
 	} {
 		c.menu.setEnabled(item, settingsEnabled)
@@ -287,10 +334,11 @@ func (c *menuController) updateCalibration(status *calibration.Status) {
 	// A persisted conflict may contain both states after a restart. Keep the
 	// submenu openable only to show its countdown; its actions remain disabled.
 	c.menu.setEnabled(itemDisableLimit, canOpenDisableLimitMenu(status.Phase, c.disableScheduled))
+	c.updateForceDischargeControls()
 }
 
-func canStartCalibration(phase calibration.Phase, disableScheduled bool) bool {
-	return phase == calibration.PhaseIdle && !disableScheduled
+func canStartCalibration(phase calibration.Phase, disableScheduled, adapterDisableScheduled bool) bool {
+	return phase == calibration.PhaseIdle && !disableScheduled && !adapterDisableScheduled
 }
 
 func canOpenDisableLimitMenu(phase calibration.Phase, disableScheduled bool) bool {
@@ -299,6 +347,10 @@ func canOpenDisableLimitMenu(phase calibration.Phase, disableScheduled bool) boo
 
 func canSetChargeLimit(phase calibration.Phase) bool {
 	return phase == calibration.PhaseIdle
+}
+
+func canOpenForceDischargeMenu(phase calibration.Phase, adapterDisableScheduled bool) bool {
+	return phase == calibration.PhaseIdle || adapterDisableScheduled
 }
 
 func (c *menuController) calibrationStatusTitle(status *calibration.Status) (string, bool) {

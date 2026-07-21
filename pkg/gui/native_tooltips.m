@@ -41,8 +41,7 @@ void BattApplyTooltips(BattMenuController *controller) {
          "Does similar thing to prevent-idle-sleep, but works for manual sleep too.\n\n"
          "Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while this feature is in use");
     SetTooltip(controller, BattItemForceDischarge,
-        @"Cut power from the wall. This has the same effect as unplugging the power adapter, even if the adapter is physically plugged in.\n\n"
-         "This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.\n\n"
+        @"Cut power from the wall and run from the battery, either indefinitely or for a selected duration. After a temporary force discharge, batt automatically restores the power adapter.\n\n"
          "NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.");
     SetTooltip(controller, BattItemAutoCalibration,
         @"Calibration helps you calibrate your battery by automatically discharging and charging it according to best practices.\n\n"

@@ -19,6 +19,7 @@ type Config interface {
 	Cron() string
 	DisableUntil() time.Time
 	PreDisableLimit() int
+	AdapterDisableUntil() time.Time
 
 	SetUpperLimit(int)
 	SetLowerLimit(int)
@@ -32,6 +33,8 @@ type Config interface {
 	SetCalibrationHoldDurationMinutes(int)
 	SetDisableTimer(time.Time, int)
 	ClearDisableTimer()
+	SetAdapterDisableTimer(time.Time)
+	ClearAdapterDisableTimer()
 
 	LogrusFields() logrus.Fields
 

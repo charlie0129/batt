@@ -31,8 +31,15 @@ func (c *menuController) handleAction(item menuItem, checked bool) {
 		c.setDisableChargingPreSleep(checked)
 	case itemPreventSystemSleep:
 		c.setPreventSystemSleep(checked)
-	case itemForceDischarge:
-		c.setForceDischarge(checked)
+	case itemForceDischargeStop:
+		c.stopForceDischarge()
+	case itemForceDischargeIndefinitely:
+		c.startForceDischarge(0)
+	case itemForceDischarge1Hour,
+		itemForceDischarge2Hours,
+		itemForceDischarge4Hours,
+		itemForceDischarge8Hours:
+		c.startForceDischarge(temporaryDisableDuration(item))
 	case itemCalibrationStart:
 		c.startCalibration()
 	case itemCalibrationPause:
@@ -115,13 +122,29 @@ func (c *menuController) setPreventSystemSleep(checked bool) {
 	}
 }
 
-func (c *menuController) setForceDischarge(checked bool) {
-	if checked && !showConfirmation(confirmForceDischarge) {
+func (c *menuController) startForceDischarge(duration time.Duration) {
+	confirmation := confirmForceDischarge
+	if duration == 0 {
+		confirmation = confirmForceDischargeIndefinitely
+	}
+	if !showConfirmation(confirmation) {
 		logrus.Info("User cancelled force discharge")
 		return
 	}
-	if _, err := c.api.SetAdapter(!checked); err != nil {
+	var err error
+	if duration == 0 {
+		_, err = c.api.SetAdapter(false)
+	} else {
+		_, err = c.api.DisableAdapterFor(duration)
+	}
+	if err != nil {
 		showAlert("Failed to set force discharge", err.Error())
+	}
+}
+
+func (c *menuController) stopForceDischarge() {
+	if _, err := c.api.SetAdapter(true); err != nil {
+		showAlert("Failed to stop force discharge", err.Error())
 	}
 }
 
@@ -193,6 +216,14 @@ func (c *menuController) disableLimitFor(duration time.Duration) {
 
 func temporaryDisableDuration(item menuItem) time.Duration {
 	switch item {
+	case itemForceDischarge1Hour:
+		return time.Hour
+	case itemForceDischarge2Hours:
+		return 2 * time.Hour
+	case itemForceDischarge4Hours:
+		return 4 * time.Hour
+	case itemForceDischarge8Hours:
+		return 8 * time.Hour
 	case itemDisableLimit1Hour:
 		return time.Hour
 	case itemDisableLimit2Hours:
@@ -216,11 +247,22 @@ func temporaryDisableDuration(item menuItem) time.Duration {
 	}
 }
 
+func temporaryAdapterDisableCountdownTitle(remaining time.Duration) string {
+	if remaining <= 0 {
+		return "Restoring power adapter…"
+	}
+	return "Restores power adapter in " + formatTemporaryDisableRemaining(remaining)
+}
+
 func temporaryDisableCountdownTitle(limit int, remaining time.Duration) string {
 	if remaining <= 0 {
 		return fmt.Sprintf("Restoring %d%% limit…", limit)
 	}
 
+	return fmt.Sprintf("Restores to %d%% in %s", limit, formatTemporaryDisableRemaining(remaining))
+}
+
+func formatTemporaryDisableRemaining(remaining time.Duration) string {
 	totalMinutes := int64(remaining / time.Minute)
 	if remaining%time.Minute != 0 {
 		totalMinutes++
@@ -240,7 +282,7 @@ func temporaryDisableCountdownTitle(limit int, remaining time.Duration) string {
 		parts = append(parts, fmt.Sprintf("%dm", minutes))
 	}
 
-	return fmt.Sprintf("Restores to %d%% in %s", limit, strings.Join(parts, " "))
+	return strings.Join(parts, " ")
 }
 
 func (c *menuController) quit() {

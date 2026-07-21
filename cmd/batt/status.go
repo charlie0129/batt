@@ -174,6 +174,9 @@ func NewStatusCommand() *cobra.Command {
 
 			if data.capabilities.AdapterControl {
 				cmd.Println("  Use power adapter: " + bool2Text(data.adapter))
+				if until := cfg.AdapterDisableUntil(); !until.IsZero() {
+					cmd.Printf("  Re-enabling power adapter: %s\n", bold("in %s (%s)", formatRestoreDelay(time.Until(until)), until.Local().Format(time.DateTime)))
+				}
 			}
 
 			cmd.Println()

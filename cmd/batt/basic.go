@@ -142,25 +142,56 @@ This is useful when you want to use your battery to lower the battery charge, bu
 NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.`,
 	}
 
-	cmd.AddCommand(
-		&cobra.Command{
-			Use:   "disable",
-			Short: "Disable power adapter",
-			RunE: func(_ *cobra.Command, _ []string) error {
-				ret, err := apiClient.SetAdapter(false)
+	var forDuration string
+	disableCmd := &cobra.Command{
+		Use:   "disable",
+		Short: "Disable power adapter",
+		Long: `Disable power input and run from the battery.
+
+Use --for to disable the power adapter temporarily. The adapter is enabled automatically once the given duration has elapsed. An explicit "batt adapter enable" or "batt adapter disable" in the meantime cancels the scheduled enable.`,
+		Example: `  batt adapter disable
+  batt adapter disable --for=2h
+  batt adapter disable --for=1d`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if forDuration != "" {
+				d, err := parseDuration(forDuration)
+				if err != nil {
+					return err
+				}
+				if d <= 0 {
+					return fmt.Errorf("duration must be positive, got %s", d)
+				}
+
+				ret, err := apiClient.DisableAdapterFor(d)
 				if err != nil {
 					return fmt.Errorf("failed to disable power adapter: %v", err)
 				}
-
 				if ret != "" {
 					logrus.Infof("daemon responded: %s", ret)
 				}
-
-				logrus.Infof("successfully disabled power adapter")
-
+				logrus.Infof("successfully disabled power adapter for %s. The power adapter will be enabled automatically.", d)
 				return nil
-			},
+			}
+
+			ret, err := apiClient.SetAdapter(false)
+			if err != nil {
+				return fmt.Errorf("failed to disable power adapter: %v", err)
+			}
+
+			if ret != "" {
+				logrus.Infof("daemon responded: %s", ret)
+			}
+
+			logrus.Infof("successfully disabled power adapter")
+
+			return nil
 		},
+	}
+	disableCmd.Flags().StringVar(&forDuration, "for", "", "disable power adapter temporarily, e.g. 30m, 2h, 1d, 1w")
+
+	cmd.AddCommand(
+		disableCmd,
 		&cobra.Command{
 			Use:   "enable",
 			Short: "Enable power adapter",

@@ -174,16 +174,17 @@ To disable the limit only temporarily, use `batt disable --for=1d`. Your current
 
 ### Enable/disable power adapter
 
-> [!NOTE]
-> This feature is CLI-only and is not available in the GUI version.
-
 Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in.
 
 This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.
 
 NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.
 
-To enable/disable power adapter, see `batt adapter`. For example, to disable the power adapter, run `sudo batt adapter disable`. To enable the power adapter, run `sudo batt adapter enable`.
+To enable/disable the power adapter, see `batt adapter`. For example, to disable the power adapter, run `sudo batt adapter disable`. To enable the power adapter, run `sudo batt adapter enable`.
+
+To run from the battery only temporarily, use `sudo batt adapter disable --for=2h`. The adapter is enabled automatically after the duration elapses, and the deadline survives daemon restarts and reboots. Durations accept minutes, hours, days and weeks, e.g. `30m`, `2h`, `1d`, `1w`. Running `batt adapter enable` or `batt adapter disable` before the duration elapses cancels the scheduled enable. `batt status` shows when the adapter will be enabled.
+
+The GUI exposes the same behavior under **Advanced → Force Discharge...**, with regular-user presets of 1, 2, 4, or 8 hours and a separate indefinite option.
 
 ### Check status
 

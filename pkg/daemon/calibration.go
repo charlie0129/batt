@@ -98,8 +98,8 @@ func restoreChargeControlAfterCalibration(st *calibration.State) {
 
 var (
 	// chargeControlTransitionMu serializes admission of calibration and temporary
-	// disable operations so concurrent requests cannot both pass their conflict
-	// checks before either operation persists its state.
+	// charge/adapter disable operations so concurrent requests cannot both pass
+	// their conflict checks before either operation persists its state.
 	chargeControlTransitionMu = &sync.Mutex{}
 	calibrationMu             = &sync.Mutex{}
 	calibrationState          = &calibration.State{Phase: calibration.PhaseIdle}
@@ -156,6 +156,9 @@ func startCalibration(threshold, holdMinutes int) error {
 	if !conf.DisableUntil().IsZero() {
 		return ErrTemporaryDisableInProgress
 	}
+	if !conf.AdapterDisableUntil().IsZero() {
+		return ErrTemporaryAdapterDisableInProgress
+	}
 	if err := preventCalibrationSleep(); err != nil {
 		return fmt.Errorf("prevent sleep during calibration: %w", err)
 	}
@@ -211,6 +214,8 @@ var ErrCalibrationNotRunning = &calibrationError{"calibration not running"}
 var ErrCalibrationPaused = &calibrationError{"calibration paused"}
 var ErrCalibrationControlsChargeLimit = &calibrationError{"a calibration is in progress or awaiting cancellation, which controls the charge limit itself. Cancel it first with 'batt calibration cancel'"}
 var ErrTemporaryDisableInProgress = &calibrationError{"a temporary charge-limit disable is in progress; wait for it to finish or set a charge limit to cancel it"}
+var ErrCalibrationControlsAdapter = &calibrationError{"a calibration is in progress or awaiting cancellation, which controls the power adapter itself. Cancel it first with 'batt calibration cancel'"}
+var ErrTemporaryAdapterDisableInProgress = &calibrationError{"a temporary power-adapter disable is in progress; wait for it to finish or run 'batt adapter enable' to cancel it"}
 
 type calibrationError struct{ msg string }
 

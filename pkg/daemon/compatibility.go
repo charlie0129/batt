@@ -94,6 +94,10 @@ func disableUnsupportedConfiguredFeatures() {
 		conf.SetCron("")
 		changed = true
 	}
+	if !capabilities.AdapterControl && !conf.AdapterDisableUntil().IsZero() {
+		conf.ClearAdapterDisableTimer()
+		changed = true
+	}
 	if !changed {
 		return
 	}

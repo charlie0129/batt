@@ -30,6 +30,13 @@ typedef enum {
     BattItemDisableChargingPreSleep,
     BattItemPreventSystemSleep,
     BattItemForceDischarge,
+    BattItemForceDischargeCountdown,
+    BattItemForceDischargeStop,
+    BattItemForceDischargeIndefinitely,
+    BattItemForceDischarge1Hour,
+    BattItemForceDischarge2Hours,
+    BattItemForceDischarge4Hours,
+    BattItemForceDischarge8Hours,
     BattItemAutoCalibration,
     BattItemCalibrationStatus,
     BattItemCalibrationStart,
@@ -55,6 +62,7 @@ typedef enum {
 
 typedef enum {
     BattConfirmationForceDischarge = 1,
+    BattConfirmationForceDischargeIndefinitely,
     BattConfirmationStartCalibration,
 } BattConfirmation;
 

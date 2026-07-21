@@ -32,6 +32,10 @@ func (c *Client) SetAdapter(enabled bool) (string, error) {
 	return c.Put("/adapter", strconv.FormatBool(enabled))
 }
 
+func (c *Client) DisableAdapterFor(d time.Duration) (string, error) {
+	return c.Put("/adapter/disable", strconv.Quote(d.String()))
+}
+
 func (c *Client) GetAdapter() (bool, error) {
 	ret, err := c.Get("/adapter")
 	if err != nil {

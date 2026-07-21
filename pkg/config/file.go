@@ -125,6 +125,8 @@ type RawFileConfig struct {
 
 	DisableUntil    *time.Time `json:"disableUntil,omitempty"`
 	PreDisableLimit *int       `json:"preDisableLimit,omitempty"`
+
+	AdapterDisableUntil *time.Time `json:"adapterDisableUntil,omitempty"`
 }
 
 func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
@@ -146,6 +148,9 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 	if until := c.DisableUntil(); !until.IsZero() {
 		rawConfig.DisableUntil = ptr.To(until)
 		rawConfig.PreDisableLimit = ptr.To(c.PreDisableLimit())
+	}
+	if until := c.AdapterDisableUntil(); !until.IsZero() {
+		rawConfig.AdapterDisableUntil = ptr.To(until)
 	}
 
 	return rawConfig, nil
@@ -522,6 +527,46 @@ func (f *File) ClearDisableTimer() {
 
 	f.c.DisableUntil = nil
 	f.c.PreDisableLimit = nil
+}
+
+func (f *File) AdapterDisableUntil() time.Time {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.AdapterDisableUntil == nil {
+		return time.Time{}
+	}
+
+	return *f.c.AdapterDisableUntil
+}
+
+// SetAdapterDisableTimer records when a temporarily disabled power adapter
+// must be enabled again. Use ClearAdapterDisableTimer to drop it.
+func (f *File) SetAdapterDisableTimer(until time.Time) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+	if until.IsZero() {
+		panic("adapter disable deadline must not be zero")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.c.AdapterDisableUntil = ptr.To(until)
+}
+
+func (f *File) ClearAdapterDisableTimer() {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.c.AdapterDisableUntil = nil
 }
 
 func (f *File) Load() error {

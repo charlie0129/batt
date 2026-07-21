@@ -270,8 +270,18 @@ func setAdapter(c *gin.Context) {
 		return
 	}
 
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+
+	if calibrationOwnsChargeLimit() {
+		err := ErrCalibrationControlsAdapter
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	if d {
-		if err := smcConn.EnableAdapter(); err != nil {
+		if err := smcEnableAdapter(); err != nil {
 			logrus.Errorf("enablePowerAdapter failed: %v", err)
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())
 			_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -279,7 +289,7 @@ func setAdapter(c *gin.Context) {
 		}
 		logrus.Infof("enabled power adapter")
 	} else {
-		if err := smcConn.DisableAdapter(); err != nil {
+		if err := smcDisableAdapter(); err != nil {
 			logrus.Errorf("disablePowerAdapter failed: %v", err)
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())
 			_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -288,14 +298,83 @@ func setAdapter(c *gin.Context) {
 		logrus.Infof("disabled power adapter")
 	}
 
+	// An explicit adapter change overrides any pending scheduled enable.
+	conf.ClearAdapterDisableTimer()
+	if err := conf.Save(); err != nil {
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
 	c.IndentedJSON(http.StatusCreated, "ok")
+}
+
+func setAdapterDisableFor(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureAdapterControl) {
+		return
+	}
+	var raw string
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	if d <= 0 {
+		err := fmt.Errorf("duration must be positive, got %s", d)
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+
+	if calibrationOwnsChargeLimit() {
+		err := ErrCalibrationControlsAdapter
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	until := time.Now().Add(d).Truncate(time.Second)
+	// Persist the recovery deadline before cutting power so a daemon crash
+	// cannot leave the adapter disabled without a scheduled enable.
+	conf.SetAdapterDisableTimer(until)
+	if err := conf.Save(); err != nil {
+		conf.ClearAdapterDisableTimer()
+		logrus.Errorf("saveConfig failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	if err := smcDisableAdapter(); err != nil {
+		conf.ClearAdapterDisableTimer()
+		if saveErr := conf.Save(); saveErr != nil {
+			logrus.Errorf("failed to clear adapter disable timer after SMC error: %v", saveErr)
+		}
+		logrus.Errorf("disablePowerAdapter failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	logrus.WithField("until", until.Format(time.DateTime)).Info("disabled power adapter temporarily")
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("power adapter disabled, it will be enabled at %s", until.Format(time.DateTime)))
 }
 
 func getAdapter(c *gin.Context) {
 	if !requireCapability(c, compatibility.FeatureAdapterControl) {
 		return
 	}
-	enabled, err := smcConn.IsAdapterEnabled()
+	enabled, err := smcIsAdapterEnabled()
 	if err != nil {
 		logrus.Errorf("getAdapter failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())

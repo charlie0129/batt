@@ -55,6 +55,16 @@ const (
 )
 
 const (
+	itemForceDischargeCountdown    menuItem = C.BattItemForceDischargeCountdown
+	itemForceDischargeStop         menuItem = C.BattItemForceDischargeStop
+	itemForceDischargeIndefinitely menuItem = C.BattItemForceDischargeIndefinitely
+	itemForceDischarge1Hour        menuItem = C.BattItemForceDischarge1Hour
+	itemForceDischarge2Hours       menuItem = C.BattItemForceDischarge2Hours
+	itemForceDischarge4Hours       menuItem = C.BattItemForceDischarge4Hours
+	itemForceDischarge8Hours       menuItem = C.BattItemForceDischarge8Hours
+)
+
+const (
 	itemDisableLimitCountdown    menuItem = C.BattItemDisableLimitCountdown
 	itemDisableLimitIndefinitely menuItem = C.BattItemDisableLimitIndefinitely
 	itemDisableLimit1Hour        menuItem = C.BattItemDisableLimit1Hour
@@ -89,11 +99,20 @@ var disableLimitActionItems = []menuItem{
 	itemDisableLimit7Days,
 }
 
+var forceDischargeActionItems = []menuItem{
+	itemForceDischargeIndefinitely,
+	itemForceDischarge1Hour,
+	itemForceDischarge2Hours,
+	itemForceDischarge4Hours,
+	itemForceDischarge8Hours,
+}
+
 type confirmation int
 
 const (
-	confirmForceDischarge   confirmation = C.BattConfirmationForceDischarge
-	confirmStartCalibration confirmation = C.BattConfirmationStartCalibration
+	confirmForceDischarge             confirmation = C.BattConfirmationForceDischarge
+	confirmForceDischargeIndefinitely confirmation = C.BattConfirmationForceDischargeIndefinitely
+	confirmStartCalibration           confirmation = C.BattConfirmationStartCalibration
 )
 
 type nativeMenu struct {

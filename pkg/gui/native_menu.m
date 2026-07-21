@@ -100,7 +100,6 @@ static NSMenu *AddSubmenu(BattMenuController *controller,
         case BattItemPreventIdleSleep:
         case BattItemDisableChargingPreSleep:
         case BattItemPreventSystemSleep:
-        case BattItemForceDischarge:
             sender.state = sender.state == NSControlStateValueOff
                 ? NSControlStateValueOn : NSControlStateValueOff;
             break;
@@ -229,8 +228,25 @@ void BattBuildMenu(BattMenuController *controller, NSString *version) {
     [advanced addItem:ActionItem(controller,
                                   @"Prevent System Sleep when Charging (Experimental)", @"",
                                   BattItemPreventSystemSleep)];
-    [advanced addItem:ActionItem(controller, @"Force Discharge...", @"",
-                                  BattItemForceDischarge)];
+    NSMenu *forceDischarge = AddSubmenu(controller, advanced, @"Force Discharge...",
+                                        BattItemForceDischarge);
+    NSMenuItem *forceDischargeCountdown = DisplayItem(controller, @"",
+                                                       BattItemForceDischargeCountdown, NO);
+    forceDischargeCountdown.hidden = YES;
+    [forceDischarge addItem:forceDischargeCountdown];
+    [forceDischarge addItem:ActionItem(controller, @"Stop Force Discharge", @"",
+                                        BattItemForceDischargeStop)];
+    [forceDischarge addItem:ActionItem(controller, @"Indefinitely", @"",
+                                        BattItemForceDischargeIndefinitely)];
+    [forceDischarge addItem:[NSMenuItem separatorItem]];
+    [forceDischarge addItem:ActionItem(controller, @"1 Hour", @"",
+                                        BattItemForceDischarge1Hour)];
+    [forceDischarge addItem:ActionItem(controller, @"2 Hours", @"",
+                                        BattItemForceDischarge2Hours)];
+    [forceDischarge addItem:ActionItem(controller, @"4 Hours", @"",
+                                        BattItemForceDischarge4Hours)];
+    [forceDischarge addItem:ActionItem(controller, @"8 Hours", @"",
+                                        BattItemForceDischarge8Hours)];
 
     NSMenu *calibration = AddSubmenu(controller, advanced,
                                      @"Auto Calibration (Experimental)...",

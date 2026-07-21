@@ -22,13 +22,19 @@ bool batt_show_confirmation(int confirmation) {
     @autoreleasepool {
         NSAlert *alert = [[[NSAlert alloc] init] autorelease];
         alert.alertStyle = NSAlertStyleInformational;
-        if (confirmation == BattConfirmationForceDischarge) {
+        if (confirmation == BattConfirmationForceDischarge ||
+            confirmation == BattConfirmationForceDischargeIndefinitely) {
             alert.icon = [NSImage imageWithSystemSymbolName:@"note.text"
                                   accessibilityDescription:@"notes"];
             alert.messageText = @"Precautions";
-            alert.informativeText =
+            NSString *text =
                 @"1. The lid of your MacBook MUST be open, otherwise your Mac will go to sleep immediately.\n"
-                 "2. Be sure to come back and disable \"Force Discharge\" when you are done, otherwise the battery of your Mac will drain completely.";
+                 "2. Force Discharge cuts wall power, making your Mac run on battery power just as if it were unplugged. If the battery charge is exhausted, your Mac will shut down.";
+            if (confirmation == BattConfirmationForceDischargeIndefinitely) {
+                text = [text stringByAppendingString:
+                    @"\n3. An indefinite force discharge will continue until you stop it. Prefer a timed duration unless you specifically need indefinite discharge."];
+            }
+            alert.informativeText = text;
         } else if (confirmation == BattConfirmationStartCalibration) {
             alert.icon = [NSImage imageWithSystemSymbolName:@"battery.100"
                                   accessibilityDescription:@"calibration"];

@@ -18,10 +18,11 @@ import (
 
 // mockConf implements the subset of Config used in calibration for test.
 type mockConf struct {
-	upper           int
-	lower           int
-	disableUntil    time.Time
-	preDisableLimit int
+	upper               int
+	lower               int
+	disableUntil        time.Time
+	preDisableLimit     int
+	adapterDisableUntil time.Time
 }
 
 func (m *mockConf) UpperLimit() int               { return m.upper }
@@ -59,6 +60,11 @@ func (m *mockConf) ClearDisableTimer() {
 	m.disableUntil = time.Time{}
 	m.preDisableLimit = 0
 }
+func (m *mockConf) AdapterDisableUntil() time.Time { return m.adapterDisableUntil }
+func (m *mockConf) SetAdapterDisableTimer(until time.Time) {
+	m.adapterDisableUntil = until
+}
+func (m *mockConf) ClearAdapterDisableTimer() { m.adapterDisableUntil = time.Time{} }
 
 // Fake smcConn implementation.
 type fakeSMC struct {
@@ -126,6 +132,29 @@ func TestStartCalibrationRejectsTemporaryDisable(t *testing.T) {
 	}
 	if calibrationState.Phase != calibration.PhaseIdle {
 		t.Fatalf("phase = %s, want idle", calibrationState.Phase)
+	}
+	if sleepCalls.prevent != 0 {
+		t.Fatal("rejected calibration acquired a sleep assertion")
+	}
+}
+
+func TestStartCalibrationRejectsTemporaryAdapterDisable(t *testing.T) {
+	previousConf, previousState, previousStatePath := conf, calibrationState, calibrationStatePath
+	t.Cleanup(func() {
+		conf, calibrationState, calibrationStatePath = previousConf, previousState, previousStatePath
+	})
+
+	sleepCalls := stubCalibrationSleep(t)
+	conf = &mockConf{
+		upper:               80,
+		lower:               78,
+		adapterDisableUntil: time.Now().Add(time.Hour),
+	}
+	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
+	calibrationStatePath = ""
+
+	if err := startCalibration(15, 10); err != ErrTemporaryAdapterDisableInProgress {
+		t.Fatalf("startCalibration() error = %v, want %v", err, ErrTemporaryAdapterDisableInProgress)
 	}
 	if sleepCalls.prevent != 0 {
 		t.Fatal("rejected calibration acquired a sleep assertion")

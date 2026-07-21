@@ -280,6 +280,90 @@ func TestRestoreDisabledLimitWaitsForPersistedCalibration(t *testing.T) {
 	}
 }
 
+func TestMaintainAdapterDisable(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name             string
+		until            time.Time
+		adapterEnabled   bool
+		calibrationPhase calibration.Phase
+		wantRestored     bool
+		wantEnabled      bool
+		wantTimer        bool
+	}{
+		{name: "no schedule", adapterEnabled: true, wantEnabled: true},
+		{
+			name:           "future schedule is enforced after restart",
+			until:          now.Add(time.Hour),
+			adapterEnabled: true,
+			wantEnabled:    false,
+			wantTimer:      true,
+		},
+		{
+			name:           "future schedule already enforced",
+			until:          now.Add(time.Hour),
+			adapterEnabled: false,
+			wantEnabled:    false,
+			wantTimer:      true,
+		},
+		{
+			name:           "expired schedule enables adapter",
+			until:          now.Add(-time.Second),
+			adapterEnabled: false,
+			wantRestored:   true,
+			wantEnabled:    true,
+		},
+		{
+			name:             "calibration keeps expired schedule pending",
+			until:            now.Add(-time.Second),
+			adapterEnabled:   false,
+			calibrationPhase: calibration.PhaseCharge,
+			wantEnabled:      false,
+			wantTimer:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			previousState := calibrationState
+			previousIsEnabled := smcIsAdapterEnabled
+			previousEnable := smcEnableAdapter
+			previousDisable := smcDisableAdapter
+			t.Cleanup(func() {
+				calibrationState = previousState
+				smcIsAdapterEnabled = previousIsEnabled
+				smcEnableAdapter = previousEnable
+				smcDisableAdapter = previousDisable
+			})
+
+			phase := tt.calibrationPhase
+			if phase == "" {
+				phase = calibration.PhaseIdle
+			}
+			calibrationState = &calibration.State{Phase: phase}
+			enabled := tt.adapterEnabled
+			smcIsAdapterEnabled = func() (bool, error) { return enabled, nil }
+			smcEnableAdapter = func() error { enabled = true; return nil }
+			smcDisableAdapter = func() error { enabled = false; return nil }
+			configured := &mockConf{
+				upper:               80,
+				lower:               78,
+				adapterDisableUntil: tt.until,
+			}
+
+			if got := maintainAdapterDisable(configured, now); got != tt.wantRestored {
+				t.Errorf("maintainAdapterDisable() = %v, want %v", got, tt.wantRestored)
+			}
+			if enabled != tt.wantEnabled {
+				t.Errorf("adapter enabled = %v, want %v", enabled, tt.wantEnabled)
+			}
+			if gotTimer := !configured.adapterDisableUntil.IsZero(); gotTimer != tt.wantTimer {
+				t.Errorf("timer set = %v, want %v", gotTimer, tt.wantTimer)
+			}
+		})
+	}
+}
+
 func TestTemporaryDisableDoesNotCancelRestartedCalibration(t *testing.T) {
 	previousConf, previousState := conf, calibrationState
 	t.Cleanup(func() { conf, calibrationState = previousConf, previousState })
