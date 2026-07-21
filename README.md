@@ -61,7 +61,8 @@ Check your firmware version by running `system_profiler SPHardwareDataType | gre
 | `101xx.x.x`               | macOS 14 Sonoma      | ⚠️   | ⚠️              | ✅                       |                                    |
 | `118xx.x.x`               | macOS 15 Sequoia     | ✅   | ✅              | ✅                       |                                    |
 | `138xx.x.x` / `18xxx.x.x` | macOS 26 Tahoe       | ✅   | ✅              | ✅                       |                                    |
-| `20xxx.x.x`               | macOS 27 Golden Gate | ✅   | ✅              | ✅                       | Firmware-managed limits; see below |
+| `20356.0.0.0.15` ~ `20457.0.77.0.2`               | macOS 27 Golden Gate Developer Beta 1~3 | ✅   | ✅              | ✅                       | Firmware-managed limits; see below |
+| `20457.0.125.0.2`+ | macOS 27 Golden Gate Developer Beta 4 | ❌   | ❌     | ❌       |  |
 | Other                     | Unknown              | ❓   | ❓              | ❓                       |                                    |
 
 - ❌: Unsupported
