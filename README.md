@@ -575,4 +575,4 @@ No. batt only works when macOS is running. After shutdown, there is no way to co
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=charlie0129/batt&type=Date)](https://www.star-history.com/#charlie0129/batt&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=charlie0129/batt&type=Date)](https://star-history.dera.page/#charlie0129/batt&Date)
