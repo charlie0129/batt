@@ -196,7 +196,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		}
 	}()
 
-	listeningForSleep := capabilities.SleepHooks
+	listeningForSleep := capabilities.SleepHooks || capabilities.MagSafeLED
 	if listeningForSleep {
 		go func() {
 			if err := listenNotifications(); err != nil {
@@ -205,7 +205,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 			}
 		}()
 	} else {
-		logrus.Info("system sleep notifications are not needed for this charge-control mode")
+		logrus.Info("system power notifications are not needed for this charge-control mode")
 	}
 
 	go func() {

@@ -16,6 +16,7 @@ import (
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
+	"github.com/charlie0129/batt/pkg/smc"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
@@ -501,6 +502,13 @@ func setControlMagSafeLED(c *gin.Context) {
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
+	legacy := capabilities.ChargeControlMode == compatibility.ChargeControlLegacy
+	if mode == config.ControlMagSafeModeEnabled && !legacy {
+		err := fmt.Errorf("MagSafe LED can follow batt's charging state only with legacy charge control (this Mac: %s); use always-off or disabled", capabilities.ChargeControlMode)
+		c.IndentedJSON(http.StatusConflict, err.Error())
+		_ = c.AbortWithError(http.StatusConflict, err)
+		return
+	}
 
 	conf.SetControlMagSafeLED(mode)
 	if err := conf.Save(); err != nil {
@@ -511,6 +519,13 @@ func setControlMagSafeLED(c *gin.Context) {
 	}
 
 	logrus.Infof("set control MagSafe LED to %s", mode)
+	if !legacy {
+		if mode == config.ControlMagSafeModeAlwaysOff {
+			enforceMagSafeLEDOff()
+		} else if err := smcConn.SetMagSafeLedState(smc.LEDSystem); err != nil {
+			logrus.Errorf("SetMagSafeLedState(LEDSystem) failed: %v", err)
+		}
+	}
 
 	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("ControlMagSafeLED set to %s. You should be able to see the effect in a few minutes.", mode))
 }
