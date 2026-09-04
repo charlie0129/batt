@@ -57,7 +57,7 @@ func TestDetectCapabilitiesForFirmwareControl(t *testing.T) {
 	if !got.ChargingControl || got.ChargeControlMode != compatibility.ChargeControlFirmware {
 		t.Fatalf("unexpected charge control capability: %+v", got)
 	}
-	if got.SleepHooks || got.MagSafeLED || !got.AdapterControl || !got.Calibration {
+	if got.SleepHooks || !got.MagSafeLED || !got.AdapterControl || !got.Calibration {
 		t.Fatalf("unexpected firmware-only capabilities: %+v", got)
 	}
 }

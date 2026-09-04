@@ -398,12 +398,34 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 
 	switch capabilities.ChargeControlMode {
 	case compatibility.ChargeControlFirmware:
+		enforceMagSafeLEDOff()
 		return maintainFirmwareChargeLimit()
 	case compatibility.ChargeControlLegacy:
 		return maintainLegacyCharging(ignoreMissedLoops)
 	default:
+		enforceMagSafeLEDOff()
 		maintainedChargingInProgress = false
 		return false
+	}
+}
+
+// enforceMagSafeLEDOff keeps the LED off when batt does not own charge
+// control. Firmware resets ACLC whenever the adapter is connected and reads
+// it back honestly, so the key is only written after such a reset.
+func enforceMagSafeLEDOff() {
+	if !capabilities.MagSafeLED || conf.ControlMagSafeLED() != config.ControlMagSafeModeAlwaysOff {
+		return
+	}
+	state, err := smcConn.GetMagSafeLedState()
+	if err != nil {
+		logrus.Errorf("GetMagSafeLedState failed: %v", err)
+		return
+	}
+	if state == smc.LEDOff {
+		return
+	}
+	if err := smcConn.DisableMagSafeLed(); err != nil {
+		logrus.Errorf("DisableMagSafeLed failed: %v", err)
 	}
 }
 

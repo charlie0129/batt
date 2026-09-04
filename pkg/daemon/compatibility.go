@@ -20,9 +20,9 @@ func detectCapabilities() compatibility.Capabilities {
 		ChargingControl:   mode != compatibility.ChargeControlUnsupported,
 		ChargeControlMode: mode,
 		SleepHooks:        legacy,
-		// LED state follows batt's direct charging state, which is not
-		// available when the firmware owns charge control.
-		MagSafeLED:     legacy && smcConn.CheckMagSafeExistence(),
+		// The LED can always be forced off. Following batt's charging state
+		// needs legacy control; the handler rejects that mode elsewhere.
+		MagSafeLED:     smcConn.CheckMagSafeExistence(),
 		AdapterControl: adapter,
 		// Adapter control performs the discharge phases. Both the legacy and
 		// firmware backends can temporarily allow charging to 100%.
@@ -86,7 +86,10 @@ func disableUnsupportedConfiguredFeatures() {
 			changed = true
 		}
 	}
-	if !capabilities.MagSafeLED && conf.ControlMagSafeLED() != config.ControlMagSafeModeDisabled {
+	ledMode := conf.ControlMagSafeLED()
+	ledFollowsCharging := ledMode == config.ControlMagSafeModeEnabled &&
+		capabilities.ChargeControlMode != compatibility.ChargeControlLegacy
+	if (!capabilities.MagSafeLED && ledMode != config.ControlMagSafeModeDisabled) || ledFollowsCharging {
 		conf.SetControlMagSafeLED(config.ControlMagSafeModeDisabled)
 		changed = true
 	}

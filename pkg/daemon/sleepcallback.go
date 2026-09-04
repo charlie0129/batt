@@ -148,6 +148,7 @@ func systemHasPoweredOnCallback() {
 	// System has finished waking up...
 	logrus.Debugln("received kIOMessageSystemHasPoweredOn notification, system has finished waking up")
 	if capabilities.ChargeControlMode != compatibility.ChargeControlLegacy {
+		enforceMagSafeLEDOff()
 		return
 	}
 	lastWakeTime = time.Now()
