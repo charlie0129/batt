@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/charlie0129/gosmc"
+	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/smc"
@@ -244,4 +246,94 @@ func TestAdapterLoopRespectsWiderUserBand(t *testing.T) {
 	if fake.enables != 0 {
 		t.Fatalf("40%% is within the user's wide band; must not recharge: %+v", fake)
 	}
+}
+
+// TestChargeControlRace exercises runtime adapter-mode changes concurrently with
+// the readers used by the sleep callbacks and maintain loop. It must stay clean
+// under `go test -race`.
+func TestChargeControlRace(t *testing.T) {
+	origCaps, origCharger := loadChargeControl()
+	t.Cleanup(func() {
+		capabilities = origCaps
+		charger = origCharger
+	})
+
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_ = usesActiveChargeControl()
+					caps, ch := loadChargeControl()
+					_ = caps.ChargeControlMode
+					_ = ch
+				}
+			}
+		}()
+	}
+
+	modes := []compatibility.ChargeControlMode{
+		compatibility.ChargeControlAdapter,
+		compatibility.ChargeControlNative,
+		compatibility.ChargeControlLegacy,
+	}
+	for i := 0; i < 3000; i++ {
+		setChargeControl(compatibility.Capabilities{ChargeControlMode: modes[i%len(modes)]})
+	}
+	close(stop)
+	readers.Wait()
+}
+
+// TestReapplyChargeControlModeRace drives the real runtime toggle path
+// (reapplyChargeControlMode, as the adapter-mode subcommand does) against the
+// readers the sleep callbacks use. This is the scenario reported in #158 and
+// must stay clean under `go test -race`.
+func TestReapplyChargeControlModeRace(t *testing.T) {
+	logrus.SetLevel(logrus.PanicLevel)
+	t.Cleanup(func() { logrus.SetLevel(logrus.InfoLevel) })
+
+	gatedSMC(t) // macOS 27 firmware: adapter works, charge keys gated
+	file, _ := useTempConfig(t)
+	file.SetUpperLimit(80)
+	file.SetLowerLimit(75)
+	useFakeNativeLimit(t, &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}})
+
+	origCaps, origCharger := loadChargeControl()
+	t.Cleanup(func() {
+		capabilities = origCaps
+		charger = origCharger
+	})
+
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_ = usesActiveChargeControl()
+					caps, ch := loadChargeControl()
+					_ = caps.ChargeControlMode
+					_ = ch
+				}
+			}
+		}()
+	}
+
+	for i := 0; i < 300; i++ {
+		file.SetAdapterMode(i%2 == 0) // flip between adapter and native
+		reapplyChargeControlMode()
+	}
+	close(stop)
+	readers.Wait()
 }

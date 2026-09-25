@@ -83,7 +83,8 @@ func systemWillSleepCallback() {
 	   kIOReturnSuccess, however the system WILL still go to sleep.
 	*/
 	logrus.Debugln("received kIOMessageSystemWillSleep notification, system will go to sleep")
-	if !usesActiveChargeControl() {
+	caps, ch := loadChargeControl()
+	if !modeUsesActiveChargeControl(caps.ChargeControlMode) {
 		C.AllowPowerChange()
 		return
 	}
@@ -119,7 +120,7 @@ func systemWillSleepCallback() {
 			sleep(preSleepLoopDelaySeconds)
 			wg.Done()
 		}()
-		err := charger.Disable()
+		err := ch.Disable()
 		if err != nil {
 			logrus.Errorf("pre-sleep charger.Disable failed: %v", err)
 			return

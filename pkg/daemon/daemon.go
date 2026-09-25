@@ -119,9 +119,9 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	if err := smcConn.Open(); err != nil {
 		return fmt.Errorf("open Apple SMC: %w", err)
 	}
-	capabilities = detectCapabilities()
-	charger = selectCharger(capabilities.ChargeControlMode)
-	logrus.WithFields(capabilityLogFields(capabilities)).Info("detected hardware capabilities")
+	caps := detectCapabilities()
+	setChargeControl(caps)
+	logrus.WithFields(capabilityLogFields(caps)).Info("detected hardware capabilities")
 	disableUnsupportedConfiguredFeatures()
 
 	// Initialize calibration state before the scheduler and main loop can use it.
@@ -188,7 +188,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	defer scheduler.Stop()
 
 	// Load persisted schedule from config
-	if cronExpr := conf.Cron(); capabilities.Calibration && cronExpr != "" {
+	if cronExpr := conf.Cron(); getCapabilities().Calibration && cronExpr != "" {
 		if err := scheduler.Schedule(cronExpr); err != nil {
 			logrus.WithError(err).Warn("failed to restore schedule from config")
 		} else {
@@ -276,13 +276,14 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		logrus.Errorf("failed to remove calibration sleep assertion before exiting: %v", err)
 	}
 
-	if capabilities.ChargingControl {
+	exitCaps := getCapabilities()
+	if exitCaps.ChargingControl {
 		if err := resetChargeControl(); err != nil {
 			logrus.Errorf("failed to reset charge control before exiting: %v", err)
 		}
 	}
 
-	if capabilities.AdapterControl {
+	if exitCaps.AdapterControl {
 		if err := smcConn.EnableAdapter(); err != nil {
 			logrus.Errorf("failed to re-enable adapter before exiting: %v", err)
 		}
