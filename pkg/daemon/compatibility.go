@@ -51,16 +51,14 @@ func detectCapabilities() compatibility.Capabilities {
 // setting changed, restores wall power when leaving adapter mode, and enforces
 // the new mode immediately.
 func reapplyChargeControlMode() {
-	maintainLoopInnerLock.Lock()
-	prev := capabilities.ChargeControlMode
-	capabilities = detectCapabilities()
-	charger = selectCharger(capabilities.ChargeControlMode)
-	maintainLoopInnerLock.Unlock()
+	prev := getCapabilities().ChargeControlMode
+	caps := detectCapabilities()
+	setChargeControl(caps)
 
-	if prev == compatibility.ChargeControlAdapter && capabilities.ChargeControlMode != compatibility.ChargeControlAdapter {
+	if prev == compatibility.ChargeControlAdapter && caps.ChargeControlMode != compatibility.ChargeControlAdapter {
 		_ = smcConn.EnableAdapter()
 	}
-	logrus.WithFields(capabilityLogFields(capabilities)).Info("reapplied charge control mode")
+	logrus.WithFields(capabilityLogFields(caps)).Info("reapplied charge control mode")
 	disableUnsupportedConfiguredFeatures()
 	maintainLoopForced()
 }
@@ -97,7 +95,7 @@ func capabilityLogFields(capabilities compatibility.Capabilities) logrus.Fields 
 }
 
 func disableUnsupportedCalibrationState() {
-	if capabilities.Calibration {
+	if getCapabilities().Calibration {
 		return
 	}
 	calibrationMu.Lock()
@@ -126,8 +124,9 @@ func disableUnsupportedCalibrationState() {
 // OS/firmware upgrade from activating features that are unsafe on the current
 // hardware. It intentionally persists the disabled values.
 func disableUnsupportedConfiguredFeatures() {
+	caps := getCapabilities()
 	changed := false
-	if !capabilities.SleepHooks {
+	if !caps.SleepHooks {
 		if conf.PreventIdleSleep() {
 			conf.SetPreventIdleSleep(false)
 			changed = true
@@ -141,26 +140,26 @@ func disableUnsupportedConfiguredFeatures() {
 			changed = true
 		}
 	}
-	if !capabilities.MagSafeLED && conf.ControlMagSafeLED() != config.ControlMagSafeModeDisabled {
+	if !caps.MagSafeLED && conf.ControlMagSafeLED() != config.ControlMagSafeModeDisabled {
 		conf.SetControlMagSafeLED(config.ControlMagSafeModeDisabled)
 		changed = true
 	}
-	if !capabilities.Calibration && conf.Cron() != "" {
+	if !caps.Calibration && conf.Cron() != "" {
 		conf.SetCron("")
 		changed = true
 	}
-	if !capabilities.AdapterControl && !conf.AdapterDisableUntil().IsZero() {
+	if !caps.AdapterControl && !conf.AdapterDisableUntil().IsZero() {
 		conf.ClearAdapterDisableTimer()
 		changed = true
 	}
 	// A limit configured before an upgrade may not be one macOS offers. Raise
 	// it to the next supported value rather than charging past it.
-	if upper := conf.UpperLimit(); !capabilities.SupportsLimit(upper) {
-		snapped := capabilities.NearestSupportedLimit(upper)
+	if upper := conf.UpperLimit(); !caps.SupportsLimit(upper) {
+		snapped := caps.NearestSupportedLimit(upper)
 		logrus.WithFields(logrus.Fields{
 			"configured":      upper,
 			"limit":           snapped,
-			"supportedLimits": capabilities.SupportedLimits,
+			"supportedLimits": caps.SupportedLimits,
 		}).Warn("configured charge limit is not offered by this Mac, raising it to the next supported limit")
 		conf.SetUpperLimit(snapped)
 		changed = true
@@ -172,11 +171,11 @@ func disableUnsupportedConfiguredFeatures() {
 		logrus.WithError(err).Error("failed to persist disabled unsupported features")
 		return
 	}
-	logrus.WithFields(capabilityLogFields(capabilities)).Info("disabled unsupported configured features")
+	logrus.WithFields(capabilityLogFields(caps)).Info("disabled unsupported configured features")
 }
 
 func requireCapability(c *gin.Context, feature compatibility.Feature) bool {
-	if capabilities.Supports(feature) {
+	if getCapabilities().Supports(feature) {
 		return true
 	}
 	err := fmt.Errorf("%s is not supported on this Mac", feature)
@@ -186,5 +185,5 @@ func requireCapability(c *gin.Context, feature compatibility.Feature) bool {
 }
 
 func getCompatibility(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, capabilities)
+	c.IndentedJSON(http.StatusOK, getCapabilities())
 }
