@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"sync"
+
 	"github.com/charlie0129/batt/pkg/compatibility"
 )
 
@@ -40,6 +42,47 @@ func (adapterSwitch) Disable() error           { return smcConn.DisableAdapter()
 // existing behavior and tests are unchanged until adapter mode is selected.
 var charger chargeSwitch = chargeKeySwitch{}
 
+// capabilitiesMu guards capabilities and charger, which are set as a pair at
+// startup and whenever adapter mode is toggled at runtime. It is a leaf lock.
+var capabilitiesMu sync.RWMutex
+
+func getCapabilities() compatibility.Capabilities {
+	capabilitiesMu.RLock()
+	defer capabilitiesMu.RUnlock()
+	return capabilities
+}
+
+func getCharger() chargeSwitch {
+	capabilitiesMu.RLock()
+	defer capabilitiesMu.RUnlock()
+	return charger
+}
+
+// loadChargeControl returns the capabilities and charger as one consistent pair.
+func loadChargeControl() (compatibility.Capabilities, chargeSwitch) {
+	capabilitiesMu.RLock()
+	defer capabilitiesMu.RUnlock()
+	return capabilities, charger
+}
+
+// setChargeControl swaps capabilities and its matching charge switch together.
+// It also holds maintainLoopInnerLock so a running maintain loop never sees a
+// half-updated pair.
+func setChargeControl(caps compatibility.Capabilities) {
+	maintainLoopInnerLock.Lock()
+	defer maintainLoopInnerLock.Unlock()
+	storeChargeControl(caps, selectCharger(caps.ChargeControlMode))
+}
+
+// storeChargeControl swaps capabilities and charger together. The caller must
+// hold maintainLoopInnerLock.
+func storeChargeControl(caps compatibility.Capabilities, ch chargeSwitch) {
+	capabilitiesMu.Lock()
+	defer capabilitiesMu.Unlock()
+	capabilities = caps
+	charger = ch
+}
+
 // selectCharger picks the charge switch for the detected mode.
 func selectCharger(mode compatibility.ChargeControlMode) chargeSwitch {
 	if mode == compatibility.ChargeControlAdapter {
@@ -52,7 +95,11 @@ func selectCharger(mode compatibility.ChargeControlMode) chargeSwitch {
 // (reading the charge and toggling the switch), as opposed to delegating the
 // limit to Apple's firmware or the built-in macOS limit.
 func usesActiveChargeControl() bool {
-	switch capabilities.ChargeControlMode {
+	return modeUsesActiveChargeControl(getCapabilities().ChargeControlMode)
+}
+
+func modeUsesActiveChargeControl(mode compatibility.ChargeControlMode) bool {
+	switch mode {
 	case compatibility.ChargeControlLegacy, compatibility.ChargeControlAdapter:
 		return true
 	default:

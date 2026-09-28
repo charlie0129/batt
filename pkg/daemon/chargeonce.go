@@ -73,7 +73,7 @@ func chargeOnceConflict(conf config.Config) error {
 	// "batt adapter disable" cuts the same power and writes no deadline, so the
 	// config holds no trace of it. Only the hardware knows, and asking it comes
 	// last because every check above answers from the config alone.
-	if capabilities.AdapterControl {
+	if getCapabilities().AdapterControl {
 		enabled, err := smcIsAdapterEnabled()
 		if err != nil {
 			return &chargeOnceCheckError{fmt.Errorf("failed to read the power adapter state: %w", err)}
@@ -114,7 +114,7 @@ func activeChargeOnceTarget() int {
 // calibration. The price is that a firmware one-time charge can end one percent
 // short of its target.
 func chargeOnceReachedTarget(target, charge int) bool {
-	if target < 100 && capabilities.ChargeControlMode == compatibility.ChargeControlFirmware {
+	if target < 100 && getCapabilities().ChargeControlMode == compatibility.ChargeControlFirmware {
 		return charge >= target-1
 	}
 	return charge >= target

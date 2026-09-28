@@ -83,7 +83,7 @@ func restoreChargeControlAfterCalibration(st *calibration.State) {
 			_, err = ensureManagedChargeLimitDisabled()
 		}
 		if err != nil {
-			logrus.WithError(err).Errorf("failed to restore %s charge limit after calibration", capabilities.ChargeControlMode)
+			logrus.WithError(err).Errorf("failed to restore %s charge limit after calibration", getCapabilities().ChargeControlMode)
 		}
 		return
 	}

@@ -49,8 +49,9 @@ func setLimit(c *gin.Context) {
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-	if !capabilities.SupportsLimit(l) {
-		err := fmt.Errorf("this Mac only offers charge limits of %s, got %d", compatibility.FormatLimits(capabilities.SupportedLimits), l)
+	caps := getCapabilities()
+	if !caps.SupportsLimit(l) {
+		err := fmt.Errorf("this Mac only offers charge limits of %s, got %d", compatibility.FormatLimits(caps.SupportedLimits), l)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -108,7 +109,7 @@ func setLimit(c *gin.Context) {
 			switch {
 			case isManagedChargeControl():
 				msg += ". Current charge is above the limit; macOS may use battery power until it falls within the configured range."
-			case capabilities.ChargeControlMode == compatibility.ChargeControlAdapter:
+			case caps.ChargeControlMode == compatibility.ChargeControlAdapter:
 				msg += ". Current charge is above the limit, so batt will cut wall power and run from the battery until it drops to the lower limit."
 			default:
 				msg += ". Current charge is above the limit, so your computer will use power from the wall only. Battery charge will remain the same."
@@ -438,8 +439,9 @@ func getAdapter(c *gin.Context) {
 }
 
 func getCharging(c *gin.Context) {
-	if capabilities.ChargeControlMode != compatibility.ChargeControlLegacy {
-		err := fmt.Errorf("direct charging state is not available in %s charge-control mode", capabilities.ChargeControlMode)
+	caps := getCapabilities()
+	if caps.ChargeControlMode != compatibility.ChargeControlLegacy {
+		err := fmt.Errorf("direct charging state is not available in %s charge-control mode", caps.ChargeControlMode)
 		c.IndentedJSON(http.StatusConflict, err.Error())
 		_ = c.AbortWithError(http.StatusConflict, err)
 		return
@@ -592,7 +594,7 @@ func getPluggedIn(c *gin.Context) {
 }
 
 func getChargingControlCapable(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, capabilities.ChargingControl)
+	c.IndentedJSON(http.StatusOK, getCapabilities().ChargingControl)
 }
 
 func setAdapterMode(c *gin.Context) {
@@ -611,7 +613,7 @@ func setAdapterMode(c *gin.Context) {
 	// Native macOS cannot force a one-time target below 100%. Cancel such an
 	// adapter-mode target in the same config update as the mode change.
 	clearTarget := previousTarget > 0 && previousTarget < 100 &&
-		capabilities.ChargeControlMode == compatibility.ChargeControlAdapter &&
+		getCapabilities().ChargeControlMode == compatibility.ChargeControlAdapter &&
 		detectCapabilities().ChargeControlMode == compatibility.ChargeControlNative
 	if clearTarget {
 		conf.ClearChargeOnceTarget()
@@ -638,7 +640,7 @@ func setAdapterMode(c *gin.Context) {
 	if clearTarget {
 		reportSupersededChargeOnce(previousTarget, "adapter mode disabled")
 	}
-	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("adapter mode set to %t, charge control is now %s", enabled, capabilities.ChargeControlMode))
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("adapter mode set to %t, charge control is now %s", enabled, getCapabilities().ChargeControlMode))
 }
 
 func getVersion(c *gin.Context) {
@@ -701,7 +703,7 @@ func getUnifiedTelemetry(c *gin.Context) {
 		}
 	}
 
-	if wantCal && capabilities.Calibration {
+	if wantCal && getCapabilities().Calibration {
 		resp["calibration"] = getCalibrationStatus()
 	}
 
@@ -801,7 +803,8 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-	if !full && capabilities.ChargeControlMode == compatibility.ChargeControlNative {
+	mode := getCapabilities().ChargeControlMode
+	if !full && mode == compatibility.ChargeControlNative {
 		c.IndentedJSON(http.StatusConflict, ErrNativeChargeNow.Error())
 		_ = c.AbortWithError(http.StatusConflict, ErrNativeChargeNow)
 		return
@@ -828,7 +831,7 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 	// or reboot. Remember the previous value in case admission fails.
 	var nativePreviousLimit int
 	var nativePreviouslyEnabled bool
-	if capabilities.ChargeControlMode == compatibility.ChargeControlAdapter && nativeLimit.Supported() {
+	if mode == compatibility.ChargeControlAdapter && nativeLimit.Supported() {
 		var err error
 		nativePreviousLimit, nativePreviouslyEnabled, err = nativeLimit.Limit()
 		if err == nil {
