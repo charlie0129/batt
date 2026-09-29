@@ -33,6 +33,13 @@ func (c *menuController) subscribeEvents(ctx context.Context) {
 			if calibrationPhaseNotifies(calibration.Phase(payload.To)) {
 				showNotification("Calibration", payload.Message)
 			}
+		case events.ChargeOnceAction:
+			payload, err := events.DecodeAs[events.ChargeOnceActionEvent](event)
+			if err != nil {
+				logrus.WithError(err).Error("failed to decode charge-once.action event")
+				continue
+			}
+			showNotification("One-Time Charge", payload.Message)
 		}
 	}
 }

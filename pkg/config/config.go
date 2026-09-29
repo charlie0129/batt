@@ -22,6 +22,7 @@ type Config interface {
 	DisableUntil() time.Time
 	PreDisableLimit() int
 	AdapterDisableUntil() time.Time
+	ChargeOnceTarget() int
 
 	SetUpperLimit(int)
 	SetLowerLimit(int)
@@ -39,6 +40,8 @@ type Config interface {
 	ClearDisableTimer()
 	SetAdapterDisableTimer(time.Time)
 	ClearAdapterDisableTimer()
+	SetChargeOnceTarget(int)
+	ClearChargeOnceTarget()
 
 	LogrusFields() logrus.Fields
 

@@ -27,6 +27,7 @@ Quick link to [installation guide](#installation).
 `batt` tried to keep as simple as possible. Charging limiting is the only thing to care about for most users:
 
 - Limit battery charge, with a lower and upper bound, like ThinkPads. [Docs](#limit-battery-charge)
+- Charge to the limit or to 100% once, without changing the limit. [Docs](#charge-once)
 
 However, if you are nerdy and want to dive into the details, it does have some advanced features for power users. These are shown only when the current Mac's SMC keys support them.
 
@@ -195,6 +196,24 @@ By default, `batt` will set a 60% charge limit.
 To customize charge limit, see `batt limit`. For example,to set the limit to 80%, run `batt limit 80`. To disable the limit, run `batt disable` or `batt limit 100`.
 
 To disable the limit only temporarily, use `batt disable --for=1d`. Your current limit is restored automatically once the duration has elapsed, even if your Mac reboots in the meantime. Durations accept minutes, hours, days and weeks, e.g. `30m`, `2h`, `1d`, `1w`. Setting a limit with `batt limit` before the duration elapses cancels the scheduled restore. `batt status` shows when the limit will be restored.
+
+### Charge once
+
+Charge the battery once without changing your charge limit.
+
+- `batt charge now` starts charging right away and stops at your upper limit. Normally `batt` waits until the charge drops below the lower limit, so this is how you top up from inside that gap.
+- `batt charge full` charges to 100% once. Your limit applies again as soon as the battery is full.
+- `batt charge cancel` stops a running one-time charge.
+
+Your charge limit and lower-limit delta stay as they are, so normal behavior resumes by itself. A one-time charge survives a daemon restart and a reboot. Setting a limit with `batt limit` cancels it too. `batt status` shows a running one-time charge.
+
+A one-time charge and a disabled power adapter exclude each other, because cutting power stops the charge. `batt` refuses to start one while the other is active and names the conflict.
+
+On `20xxx` firmware, `batt charge now` hands the firmware the narrowest range that ends at your limit, and the firmware does not start charging from the top of that range. A one-time charge to the limit can therefore finish one percent short of it. `batt charge full` is exact, because it deactivates the limit instead of narrowing it.
+
+When macOS controls the charge limit natively, it decides when charging starts. `batt charge now` is unavailable in that mode; `batt charge full` temporarily disables the native limit, then restores it at 100%. In adapter mode, both one-time actions use the adapter to control charging.
+
+The GUI exposes the same actions in the menubar as **Charge to 70% Now** and **Charge to Full Once**, with the current progress and a **Cancel One-Time Charge** item while one is running.
 
 ### Enable/disable power adapter
 

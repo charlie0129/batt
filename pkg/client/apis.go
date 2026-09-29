@@ -28,6 +28,21 @@ func (c *Client) DisableFor(d time.Duration) (string, error) {
 	return c.Put("/disable", strconv.Quote(d.String()))
 }
 
+// ChargeOnceToLimit starts a one-time charge to the configured upper limit.
+func (c *Client) ChargeOnceToLimit() (string, error) {
+	return c.Send("POST", "/charge-once/limit", "")
+}
+
+// ChargeOnceToFull starts a one-time charge to 100%.
+func (c *Client) ChargeOnceToFull() (string, error) {
+	return c.Send("POST", "/charge-once/full", "")
+}
+
+// CancelChargeOnce stops a running one-time charge.
+func (c *Client) CancelChargeOnce() (string, error) {
+	return c.Send("POST", "/charge-once/cancel", "")
+}
+
 func (c *Client) SetAdapter(enabled bool) (string, error) {
 	return c.Put("/adapter", strconv.FormatBool(enabled))
 }

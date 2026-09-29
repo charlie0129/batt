@@ -24,6 +24,9 @@ type menuController struct {
 	calibrationPhase        calibration.Phase
 	capabilities            compatibility.Capabilities
 	compatibilityKnown      bool
+	upperLimit              int
+	currentCharge           int
+	chargeOnceTarget        int
 	disableScheduled        bool
 	adapterDisableScheduled bool
 	adapterEnabled          bool
@@ -132,6 +135,7 @@ func (c *menuController) refreshOnOpen() {
 	}
 
 	c.calibrationThreshold = conf.CalibrationDischargeThreshold()
+	c.updateChargeOnce(conf, currentCharge)
 	c.menu.setTitle(itemCurrentLimit, fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
 	for _, item := range quickLimitItems {
 		c.menu.setChecked(item, quickLimitForItem(item) == conf.UpperLimit())
@@ -163,9 +167,11 @@ func (c *menuController) refreshOnOpen() {
 			c.updateAdapterState(adapter)
 		} else {
 			logrus.WithError(err).Error("Failed to get adapter")
+			c.adapterKnown = false
 			if c.compatibilityKnown {
 				c.menu.setEnabled(itemForceDischarge, false)
 			}
+			c.updateChargeOnceControls()
 		}
 	}
 }
@@ -179,6 +185,14 @@ func (c *menuController) refreshDisableSchedules() {
 	conf := config.NewFileFromConfig(rawConfig, "")
 	c.updateDisableSchedules(conf)
 	c.menu.setChecked(itemPreventSleepOnAdapterDisable, conf.PreventSleepOnAdapterDisable())
+
+	currentCharge, err := c.api.GetCurrentCharge()
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to refresh current charge")
+		currentCharge = c.currentCharge
+	}
+	c.updateChargeOnce(conf, currentCharge)
+
 	if c.capabilities.AdapterControl {
 		if adapter, err := c.api.GetAdapter(); err == nil {
 			c.updateAdapterState(adapter)
@@ -202,6 +216,7 @@ func (c *menuController) updateDisableSchedule(conf config.Config) {
 
 	if !scheduled {
 		c.menu.setTooltip(itemDisableLimit, disableLimitTooltip)
+		c.updateChargeOnceControls()
 		return
 	}
 
@@ -213,6 +228,7 @@ func (c *menuController) updateDisableSchedule(conf config.Config) {
 	)
 	c.menu.setTooltip(itemDisableLimit, disableLimitScheduledTooltip)
 	c.menu.setTooltip(itemDisableLimitCountdown, disableLimitScheduledTooltip)
+	c.updateChargeOnceControls()
 }
 
 func (c *menuController) updateAdapterDisableSchedule(conf config.Config) {
@@ -223,6 +239,7 @@ func (c *menuController) updateAdapterDisableSchedule(conf config.Config) {
 	if !c.adapterDisableScheduled {
 		c.menu.setTooltip(itemForceDischarge, forceDischargeTooltip)
 		c.updateForceDischargeControls()
+		c.updateChargeOnceControls()
 		return
 	}
 
@@ -231,18 +248,52 @@ func (c *menuController) updateAdapterDisableSchedule(conf config.Config) {
 	c.menu.setTooltip(itemForceDischarge, forceDischargeScheduledTooltip)
 	c.menu.setTooltip(itemForceDischargeCountdown, forceDischargeScheduledTooltip)
 	c.updateForceDischargeControls()
+	c.updateChargeOnceControls()
+}
+
+// updateChargeOnce refreshes the one-time charge items from the latest config
+// and charge reading.
+func (c *menuController) updateChargeOnce(conf config.Config, currentCharge int) {
+	c.upperLimit = conf.UpperLimit()
+	c.currentCharge = currentCharge
+	c.chargeOnceTarget = conf.ChargeOnceTarget()
+	c.updateChargeOnceControls()
+	c.updateForceDischargeControls()
+}
+
+func (c *menuController) updateChargeOnceControls() {
+	active := c.chargeOnceTarget > 0
+
+	c.menu.setTitle(itemChargeOnceLimit, chargeOnceLimitTitle(c.upperLimit))
+	c.menu.setHidden(itemChargeOnceStatus, !active)
+	c.menu.setHidden(itemChargeOnceCancel, !active)
+	if active {
+		c.menu.setTitle(itemChargeOnceStatus, chargeOnceStatusTitle(c.chargeOnceTarget, c.currentCharge))
+	}
+
+	c.menu.setEnabled(itemChargeOnceLimit, canChargeOnceToLimit(
+		c.calibrationPhase, c.disableScheduled, c.adapterDisableScheduled, c.chargeOnceTarget,
+		c.upperLimit, c.currentCharge, c.capabilities.ChargeControlMode,
+		c.capabilities.AdapterControl, c.adapterKnown, c.adapterEnabled))
+	c.menu.setEnabled(itemChargeOnceFull, canChargeOnceToFull(
+		c.calibrationPhase, c.disableScheduled, c.adapterDisableScheduled, c.chargeOnceTarget,
+		c.upperLimit, c.currentCharge, c.capabilities.AdapterControl, c.adapterKnown, c.adapterEnabled))
+	c.menu.setEnabled(itemChargeOnceCancel, active)
 }
 
 func (c *menuController) updateAdapterState(enabled bool) {
 	c.adapterEnabled = enabled
 	c.adapterKnown = true
 	c.updateForceDischargeControls()
+	c.updateChargeOnceControls()
 }
 
 func (c *menuController) updateForceDischargeControls() {
 	canControl := c.adapterKnown && c.calibrationPhase == calibration.PhaseIdle
+	canStart := c.adapterKnown && c.adapterEnabled &&
+		canStartForceDischarge(c.calibrationPhase, c.adapterDisableScheduled, c.chargeOnceTarget)
 	for _, item := range forceDischargeActionItems {
-		c.menu.setEnabled(item, canControl && c.adapterEnabled && !c.adapterDisableScheduled)
+		c.menu.setEnabled(item, canStart)
 	}
 	c.menu.setEnabled(itemForceDischargeStop, canControl && (!c.adapterEnabled || c.adapterDisableScheduled))
 	c.menu.setEnabled(itemForceDischarge, c.adapterKnown && canOpenForceDischargeMenu(c.calibrationPhase, c.adapterDisableScheduled))
@@ -274,6 +325,14 @@ func (c *menuController) setCompatibility(installed bool, capabilities compatibi
 	for _, item := range quickLimitItems {
 		// macOS only offers a fixed set of limits on some firmware.
 		c.menu.setHidden(item, !usable || !capabilities.SupportsLimit(quickLimitForItem(item)))
+	}
+	for _, item := range chargeOnceItems {
+		c.menu.setHidden(item, !usable)
+	}
+	if usable {
+		// The status and cancel items only belong on screen while a one-time
+		// charge is running.
+		c.updateChargeOnceControls()
 	}
 
 	c.menu.setHidden(itemAdvanced, !installed)
@@ -345,6 +404,7 @@ func (c *menuController) updateCalibration(status *calibration.Status) {
 	// submenu openable only to show its countdown; its actions remain disabled.
 	c.menu.setEnabled(itemDisableLimit, canOpenDisableLimitMenu(status.Phase, c.disableScheduled))
 	c.updateForceDischargeControls()
+	c.updateChargeOnceControls()
 }
 
 func canStartCalibration(phase calibration.Phase, disableScheduled, adapterDisableScheduled bool) bool {
@@ -359,8 +419,66 @@ func canSetChargeLimit(phase calibration.Phase) bool {
 	return phase == calibration.PhaseIdle
 }
 
+// canStartChargeOnce reports whether a new one-time charge may be started.
+// Calibration and a temporary disable both drive the charge limit themselves,
+// and a temporarily disabled power adapter cuts the power the charge needs.
+func canStartChargeOnce(
+	phase calibration.Phase,
+	disableScheduled, adapterDisableScheduled bool,
+	chargeOnceTarget int,
+	adapterControl, adapterKnown, adapterEnabled bool,
+) bool {
+	adapterAvailable := !adapterControl || (adapterKnown && adapterEnabled)
+	return phase == calibration.PhaseIdle && !disableScheduled && !adapterDisableScheduled &&
+		chargeOnceTarget == 0 && adapterAvailable
+}
+
+// canChargeOnceToLimit reports whether charging to the configured limit right
+// now would do anything. Firmware considers target-1 the top of its narrowest
+// legal one-time band, matching daemon admission and completion.
+func canChargeOnceToLimit(
+	phase calibration.Phase,
+	disableScheduled, adapterDisableScheduled bool,
+	chargeOnceTarget, upperLimit, currentCharge int,
+	chargeControlMode compatibility.ChargeControlMode,
+	adapterControl, adapterKnown, adapterEnabled bool,
+) bool {
+	targetReached := currentCharge >= upperLimit
+	if upperLimit < 100 && chargeControlMode == compatibility.ChargeControlFirmware {
+		targetReached = currentCharge >= upperLimit-1
+	}
+	return chargeControlMode != compatibility.ChargeControlNative &&
+		canStartChargeOnce(phase, disableScheduled, adapterDisableScheduled, chargeOnceTarget,
+			adapterControl, adapterKnown, adapterEnabled) && chargeLimitActive(upperLimit) && !targetReached
+}
+
+// canChargeOnceToFull reports whether a one-time charge to 100% would do
+// anything.
+func canChargeOnceToFull(
+	phase calibration.Phase,
+	disableScheduled, adapterDisableScheduled bool,
+	chargeOnceTarget, upperLimit, currentCharge int,
+	adapterControl, adapterKnown, adapterEnabled bool,
+) bool {
+	return canStartChargeOnce(phase, disableScheduled, adapterDisableScheduled, chargeOnceTarget,
+		adapterControl, adapterKnown, adapterEnabled) && chargeLimitActive(upperLimit) && currentCharge < 100
+}
+
+// chargeLimitActive reports whether the daemon reported a limit that batt
+// actually enforces. Zero means the menu has not heard from the daemon yet.
+func chargeLimitActive(upperLimit int) bool {
+	return upperLimit >= 10 && upperLimit < 100
+}
+
 func canOpenForceDischargeMenu(phase calibration.Phase, adapterDisableScheduled bool) bool {
 	return phase == calibration.PhaseIdle || adapterDisableScheduled
+}
+
+// canStartForceDischarge reports whether force discharge may be started. The
+// daemon rejects cutting power while a one-time charge runs, because the charge
+// would never finish.
+func canStartForceDischarge(phase calibration.Phase, adapterDisableScheduled bool, chargeOnceTarget int) bool {
+	return phase == calibration.PhaseIdle && !adapterDisableScheduled && chargeOnceTarget == 0
 }
 
 func (c *menuController) calibrationStatusTitle(status *calibration.Status) (string, bool) {

@@ -49,8 +49,9 @@ func setLimit(c *gin.Context) {
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-	if !capabilities.SupportsLimit(l) {
-		err := fmt.Errorf("this Mac only offers charge limits of %s, got %d", compatibility.FormatLimits(capabilities.SupportedLimits), l)
+	caps := getCapabilities()
+	if !caps.SupportsLimit(l) {
+		err := fmt.Errorf("this Mac only offers charge limits of %s, got %d", compatibility.FormatLimits(caps.SupportedLimits), l)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -73,15 +74,28 @@ func setLimit(c *gin.Context) {
 		return
 	}
 
+	previousLimit := conf.UpperLimit()
+	previousUntil, previousPreLimit := conf.DisableUntil(), conf.PreDisableLimit()
 	conf.SetUpperLimit(l)
 	// An explicit limit change overrides any pending scheduled re-enabling.
 	conf.ClearDisableTimer()
+	superseded := supersedeChargeOnce()
 	if err := conf.Save(); err != nil {
+		conf.SetUpperLimit(previousLimit)
+		if previousUntil.IsZero() {
+			conf.ClearDisableTimer()
+		} else {
+			conf.SetDisableTimer(previousUntil, previousPreLimit)
+		}
+		if superseded != 0 {
+			conf.SetChargeOnceTarget(superseded)
+		}
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
+	reportSupersededChargeOnce(superseded, fmt.Sprintf("charge limit set to %d%%", l))
 
 	logrus.Infof("set charging limit to %d", l)
 
@@ -95,7 +109,7 @@ func setLimit(c *gin.Context) {
 			switch {
 			case isManagedChargeControl():
 				msg += ". Current charge is above the limit; macOS may use battery power until it falls within the configured range."
-			case capabilities.ChargeControlMode == compatibility.ChargeControlAdapter:
+			case caps.ChargeControlMode == compatibility.ChargeControlAdapter:
 				msg += ". Current charge is above the limit, so batt will cut wall power and run from the battery until it drops to the lower limit."
 			default:
 				msg += ". Current charge is above the limit, so your computer will use power from the wall only. Battery charge will remain the same."
@@ -177,14 +191,27 @@ func setDisableFor(c *gin.Context) {
 	}
 
 	until := time.Now().Add(d).Truncate(time.Second)
+	previousLimit := conf.UpperLimit()
+	previousUntil, previousPreLimit := conf.DisableUntil(), conf.PreDisableLimit()
+	superseded := supersedeChargeOnce()
 	conf.SetUpperLimit(100)
 	conf.SetDisableTimer(until, prevLimit)
 	if err := conf.Save(); err != nil {
+		conf.SetUpperLimit(previousLimit)
+		if previousUntil.IsZero() {
+			conf.ClearDisableTimer()
+		} else {
+			conf.SetDisableTimer(previousUntil, previousPreLimit)
+		}
+		if superseded != 0 {
+			conf.SetChargeOnceTarget(superseded)
+		}
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
+	reportSupersededChargeOnce(superseded, "charge limit temporarily disabled")
 
 	logrus.WithFields(logrus.Fields{
 		"until":     until.Format(time.DateTime),
@@ -358,6 +385,15 @@ func setAdapter(c *gin.Context) {
 		return
 	}
 
+	// Cutting power stops a one-time charge from making any progress, and an
+	// indefinite adapter disable records no deadline that could resume it.
+	if !d && conf.ChargeOnceTarget() != 0 {
+		err := ErrChargeOnceInProgress
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	if d {
 		if err := smcEnableAdapter(); err != nil {
 			logrus.Errorf("enablePowerAdapter failed: %v", err)
@@ -422,6 +458,14 @@ func setAdapterDisableFor(c *gin.Context) {
 		return
 	}
 
+	// Cutting power stops a one-time charge from making any progress.
+	if conf.ChargeOnceTarget() != 0 {
+		err := ErrChargeOnceInProgress
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	until := time.Now().Add(d).Truncate(time.Second)
 	// Persist the recovery deadline before cutting power so a daemon crash
 	// cannot leave the adapter disabled without a scheduled enable.
@@ -464,8 +508,9 @@ func getAdapter(c *gin.Context) {
 }
 
 func getCharging(c *gin.Context) {
-	if capabilities.ChargeControlMode != compatibility.ChargeControlLegacy {
-		err := fmt.Errorf("direct charging state is not available in %s charge-control mode", capabilities.ChargeControlMode)
+	caps := getCapabilities()
+	if caps.ChargeControlMode != compatibility.ChargeControlLegacy {
+		err := fmt.Errorf("direct charging state is not available in %s charge-control mode", caps.ChargeControlMode)
 		c.IndentedJSON(http.StatusConflict, err.Error())
 		_ = c.AbortWithError(http.StatusConflict, err)
 		return
@@ -618,7 +663,7 @@ func getPluggedIn(c *gin.Context) {
 }
 
 func getChargingControlCapable(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, capabilities.ChargingControl)
+	c.IndentedJSON(http.StatusOK, getCapabilities().ChargingControl)
 }
 
 func setAdapterMode(c *gin.Context) {
@@ -632,21 +677,39 @@ func setAdapterMode(c *gin.Context) {
 	defer chargeControlTransitionMu.Unlock()
 
 	previous := conf.AdapterMode()
+	previousTarget := conf.ChargeOnceTarget()
 	conf.SetAdapterMode(enabled)
+	// Native macOS cannot force a one-time target below 100%. Cancel such an
+	// adapter-mode target in the same config update as the mode change.
+	clearTarget := previousTarget > 0 && previousTarget < 100 &&
+		getCapabilities().ChargeControlMode == compatibility.ChargeControlAdapter &&
+		detectCapabilities().ChargeControlMode == compatibility.ChargeControlNative
+	if clearTarget {
+		conf.ClearChargeOnceTarget()
+	}
 	if err := conf.Save(); err != nil {
 		conf.SetAdapterMode(previous)
+		if clearTarget {
+			conf.SetChargeOnceTarget(previousTarget)
+		}
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := reapplyChargeControlMode(); err != nil {
 		conf.SetAdapterMode(previous)
+		if clearTarget {
+			conf.SetChargeOnceTarget(previousTarget)
+		}
 		if saveErr := conf.Save(); saveErr != nil {
 			err = fmt.Errorf("%w; failed to save adapter mode rollback: %v", err, saveErr)
 		}
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		return
 	}
-	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("adapter mode set to %t, charge control is now %s", enabled, capabilities.ChargeControlMode))
+	if clearTarget {
+		reportSupersededChargeOnce(previousTarget, "adapter mode disabled")
+	}
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("adapter mode set to %t, charge control is now %s", enabled, getCapabilities().ChargeControlMode))
 }
 
 func getVersion(c *gin.Context) {
@@ -709,7 +772,7 @@ func getUnifiedTelemetry(c *gin.Context) {
 		}
 	}
 
-	if wantCal && capabilities.Calibration {
+	if wantCal && getCapabilities().Calibration {
 		resp["calibration"] = getCalibrationStatus()
 	}
 
@@ -771,6 +834,149 @@ func getEventStream(c *gin.Context) {
 			flusher.Flush()
 		}
 	}
+}
+
+// ===== One-Time Charge Handlers =====
+
+func postChargeOnceToLimit(c *gin.Context) { startChargeOnceRequest(c, false) }
+
+func postChargeOnceToFull(c *gin.Context) { startChargeOnceRequest(c, true) }
+
+func startChargeOnceRequest(c *gin.Context, full bool) {
+	if !requireCapability(c, compatibility.FeatureChargingControl) {
+		return
+	}
+
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+
+	// Conflicts come first: a pending temporary disable also reads as a
+	// disabled charge limit, and naming the conflict tells the user what to do.
+	if err := chargeOnceConflict(conf); err != nil {
+		// A conflict is the caller's to resolve. A failed check is ours.
+		var checkErr *chargeOnceCheckError
+		if errors.As(err, &checkErr) {
+			logrus.Errorf("chargeOnceConflict failed: %v", err)
+			c.IndentedJSON(http.StatusInternalServerError, err.Error())
+			_ = c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	target, err := resolveChargeOnceTarget(conf, full)
+	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	mode := getCapabilities().ChargeControlMode
+	if !full && mode == compatibility.ChargeControlNative {
+		c.IndentedJSON(http.StatusConflict, ErrNativeChargeNow.Error())
+		_ = c.AbortWithError(http.StatusConflict, ErrNativeChargeNow)
+		return
+	}
+
+	charge, err := smcGetBatteryCharge()
+	if err != nil {
+		logrus.Errorf("GetBatteryCharge failed: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	// Admission asks the same question completion does, so a charge the next
+	// maintain loop would end right away is refused instead of started.
+	if chargeOnceReachedTarget(target, charge) {
+		err := fmt.Errorf("battery is already at %d%%, so a one-time charge to %d%% would end immediately", charge, target)
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	// Adapter mode must not inherit a native macOS limit from a previous mode
+	// or reboot. Remember the previous value in case admission fails.
+	var nativePreviousLimit int
+	var nativePreviouslyEnabled bool
+	if mode == compatibility.ChargeControlAdapter && nativeLimit.Supported() {
+		var err error
+		nativePreviousLimit, nativePreviouslyEnabled, err = nativeLimit.Limit()
+		if err == nil {
+			_, err = ensureNativeChargeLimitDisabled()
+		}
+		if err != nil {
+			c.IndentedJSON(http.StatusInternalServerError, err.Error())
+			_ = c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+	}
+	restoreNativeLimit := func() error {
+		if nativePreviouslyEnabled {
+			return nativeLimit.SetLimit(nativePreviousLimit)
+		}
+		return nil
+	}
+
+	message := chargeOnceStartedMessage(target, charge, conf.UpperLimit())
+	if err := startChargeOnce(target, charge); err != nil {
+		if restoreErr := restoreNativeLimit(); restoreErr != nil {
+			err = fmt.Errorf("%w; failed to restore native limit: %v", err, restoreErr)
+		}
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	// A successful API response requires the first enforcement pass to work.
+	if !maintainLoopForced() {
+		conf.ClearChargeOnceTarget()
+		if err := conf.Save(); err != nil {
+			conf.SetChargeOnceTarget(target)
+			err = fmt.Errorf("failed to enforce one-time charge and roll back target: %w", err)
+			c.IndentedJSON(http.StatusInternalServerError, err.Error())
+			_ = c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+		err := fmt.Errorf("failed to enforce one-time charge")
+		if restoreErr := restoreNativeLimit(); restoreErr != nil {
+			err = fmt.Errorf("%w; failed to restore native limit: %v", err, restoreErr)
+		}
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	reportChargeOnceStarted(target, charge)
+	c.IndentedJSON(http.StatusCreated, message)
+}
+
+func postCancelChargeOnce(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureChargingControl) {
+		return
+	}
+
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+
+	target, err := cancelChargeOnce()
+	if err != nil {
+		// Only the missing one-time charge is the caller's fault; a failed save
+		// is ours.
+		if !errors.Is(err, ErrChargeOnceNotRunning) {
+			logrus.Errorf("saveConfig failed: %v", err)
+			c.IndentedJSON(http.StatusInternalServerError, err.Error())
+			_ = c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	maintainLoopForced()
+
+	c.IndentedJSON(http.StatusOK, fmt.Sprintf("cancelled the one-time charge to %d%%, the %d%% charge limit applies again", target, conf.UpperLimit()))
 }
 
 // ===== Calibration Handlers =====

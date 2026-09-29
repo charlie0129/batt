@@ -68,3 +68,41 @@ func TestTemporaryDisableCountdownTitle(t *testing.T) {
 		})
 	}
 }
+
+func TestChargeOnceLimitTitle(t *testing.T) {
+	tests := []struct {
+		limit int
+		want  string
+	}{
+		{limit: 70, want: "Charge to 70% Now"},
+		{limit: 50, want: "Charge to 50% Now"},
+		// Without a limit there is nothing to charge to, so the item keeps a
+		// neutral label until the daemon reports one.
+		{limit: 100, want: "Charge to Limit Now"},
+		{limit: 0, want: "Charge to Limit Now"},
+	}
+
+	for _, tt := range tests {
+		if got := chargeOnceLimitTitle(tt.limit); got != tt.want {
+			t.Errorf("chargeOnceLimitTitle(%d) = %q, want %q", tt.limit, got, tt.want)
+		}
+	}
+}
+
+func TestChargeOnceStatusTitle(t *testing.T) {
+	tests := []struct {
+		target        int
+		currentCharge int
+		want          string
+	}{
+		{target: 70, currentCharge: 58, want: "Charging to 70%, now 58%"},
+		{target: 100, currentCharge: 71, want: "Charging to 100%, now 71%"},
+		{target: 100, currentCharge: 0, want: "Charging to 100%…"},
+	}
+
+	for _, tt := range tests {
+		if got := chargeOnceStatusTitle(tt.target, tt.currentCharge); got != tt.want {
+			t.Errorf("chargeOnceStatusTitle(%d, %d) = %q, want %q", tt.target, tt.currentCharge, got, tt.want)
+		}
+	}
+}

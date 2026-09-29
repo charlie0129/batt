@@ -11,6 +11,11 @@ void BattApplyTooltips(BattMenuController *controller) {
         @"Your batt daemon is not compatible with this client version and needs to be upgraded. This is usually caused by a new client version that requires a new daemon version. You can upgrade the batt daemon by running this command.");
     SetTooltip(controller, BattItemInstall,
         @"Install the batt daemon. batt daemon is a component that controls charging. You must enter your password to install it because controlling charging is a privileged action.");
+    SetTooltip(controller, BattItemChargeOnce,
+        @"Charge the battery once without changing your charge limit.\n\n"
+         "\"Charge to <limit>% Now\" starts charging right away, even when the charge sits between the lower and the upper limit, and stops at the limit.\n\n"
+         "\"Charge to Full Once\" charges to 100% and then restores your limit automatically.\n\n"
+         "A one-time charge survives a restart. Cancel it here, or set a charge limit to cancel it.");
     SetTooltip(controller, BattItemMagSafe,
         @"Let batt control MagSafe LED to reflect the charging state of your MacBook (or force it off).\n\n"
          "Note that you must have a MagSafe LED on your MacBook to use this feature.");

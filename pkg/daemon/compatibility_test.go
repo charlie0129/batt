@@ -102,6 +102,24 @@ func TestDisableUnsupportedConfiguredFeatures(t *testing.T) {
 	}
 }
 
+func TestNativeModeDropsUnsupportedOneTimeTarget(t *testing.T) {
+	file, path := useTempConfig(t)
+	file.SetChargeOnceTarget(80)
+	if err := file.Save(); err != nil {
+		t.Fatal(err)
+	}
+	useNativeCapabilities(t, 80, 85, 90, 95, 100)
+
+	disableUnsupportedConfiguredFeatures()
+	if file.ChargeOnceTarget() != 0 {
+		t.Fatal("native mode cannot force a charge to a target below 100%")
+	}
+	reloaded, err := config.NewFile(path)
+	if err != nil || reloaded.ChargeOnceTarget() != 0 {
+		t.Fatalf("unsupported target must be cleared on disk: config=%v, err=%v", reloaded, err)
+	}
+}
+
 func TestDisableUnsupportedCalibrationRestoresLimits(t *testing.T) {
 	path := t.TempDir() + "/batt.json"
 	file, err := config.NewFile(path)

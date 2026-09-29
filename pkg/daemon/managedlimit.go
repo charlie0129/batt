@@ -16,7 +16,7 @@ var nativeLimit powerui.Controller = powerui.New()
 // charge. The firmware and native backends only need the configured limit to
 // be kept in sync; they never toggle charging themselves.
 func isManagedChargeControl() bool {
-	switch capabilities.ChargeControlMode {
+	switch getCapabilities().ChargeControlMode {
 	case compatibility.ChargeControlFirmware, compatibility.ChargeControlNative:
 		return true
 	default:
@@ -27,7 +27,7 @@ func isManagedChargeControl() bool {
 // ensureManagedChargeLimit applies the configured limits to the active
 // Apple-managed backend and reports whether anything had to be written.
 func ensureManagedChargeLimit(lower, upper int) (bool, error) {
-	switch capabilities.ChargeControlMode {
+	switch getCapabilities().ChargeControlMode {
 	case compatibility.ChargeControlFirmware:
 		return smcConn.EnsureFirmwareChargeLimit(lower, upper)
 	case compatibility.ChargeControlNative:
@@ -40,7 +40,7 @@ func ensureManagedChargeLimit(lower, upper int) (bool, error) {
 // ensureManagedChargeLimitDisabled turns the Apple-managed limit off and
 // reports whether it was on.
 func ensureManagedChargeLimitDisabled() (bool, error) {
-	switch capabilities.ChargeControlMode {
+	switch getCapabilities().ChargeControlMode {
 	case compatibility.ChargeControlFirmware:
 		return smcConn.EnsureFirmwareChargeLimitDisabled()
 	case compatibility.ChargeControlNative:
@@ -55,8 +55,9 @@ func ensureManagedChargeLimitDisabled() (bool, error) {
 // supported value at startup, so this is only a safety net that never lowers
 // the limit below what the user configured.
 func ensureNativeChargeLimit(upper int) (bool, error) {
-	if !capabilities.SupportsLimit(upper) {
-		snapped := capabilities.NearestSupportedLimit(upper)
+	caps := getCapabilities()
+	if !caps.SupportsLimit(upper) {
+		snapped := caps.NearestSupportedLimit(upper)
 		logrus.WithFields(logrus.Fields{"configured": upper, "limit": snapped}).Debug("charge limit is not offered by macOS, using the next supported limit")
 		upper = snapped
 	}
@@ -91,7 +92,7 @@ func ensureNativeChargeLimitDisabled() (bool, error) {
 // resetChargeControl restores the platform's default charging behavior. It is
 // used when the daemon exits.
 func resetChargeControl() error {
-	switch capabilities.ChargeControlMode {
+	switch getCapabilities().ChargeControlMode {
 	case compatibility.ChargeControlNative:
 		_, err := ensureNativeChargeLimitDisabled()
 		return err

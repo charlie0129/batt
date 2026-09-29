@@ -440,7 +440,7 @@ func restoreAdapterAfterPolicyError(policyErr error) error {
 // adapterSleepPolicyCapable includes adapter mode, which owns the adapter for
 // charge limiting but deliberately hides manual adapter controls from the API.
 func adapterSleepPolicyCapable() bool {
-	return capabilities.Supports(compatibility.FeatureAdapterSleepPolicy)
+	return getCapabilities().Supports(compatibility.FeatureAdapterSleepPolicy)
 }
 
 // reconcileAdapterSleepPolicy inspects the actual adapter state and ensures that

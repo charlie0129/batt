@@ -43,6 +43,40 @@ func TestDisableAdapterFor(t *testing.T) {
 	}
 }
 
+func TestChargeOnceRequests(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		call func(*Client) (string, error)
+	}{
+		{name: "to limit", path: "/charge-once/limit", call: (*Client).ChargeOnceToLimit},
+		{name: "to full", path: "/charge-once/full", call: (*Client).ChargeOnceToFull},
+		{name: "cancel", path: "/charge-once/cancel", call: (*Client).CancelChargeOnce},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &Client{httpClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				if request.Method != http.MethodPost {
+					t.Fatalf("method = %q, want POST", request.Method)
+				}
+				if request.URL.Path != tt.path {
+					t.Fatalf("path = %q, want %q", request.URL.Path, tt.path)
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("ok")),
+					Header:     make(http.Header),
+				}, nil
+			})}}
+
+			if _, err := tt.call(client); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestGetCompatibility(t *testing.T) {
 	client := &Client{httpClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Path != "/compatibility" {

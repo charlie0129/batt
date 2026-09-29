@@ -23,17 +23,30 @@ type statusData struct {
 	capabilities  compatibility.Capabilities
 }
 
-// computeTimeToLimit calculates the estimated minutes until the charge limit is
-// reached. Returns nil when not applicable (not charging, limit >= 100, charge
-// already at/above limit, or result is zero).
+// chargeTarget returns the percentage batt is charging the battery towards. A
+// running one-time charge overrides the configured limit until it ends. The
+// second result is false when batt steers nothing: no limit and no one-time
+// charge.
+func chargeTarget(cfg *config.File) (int, bool) {
+	if target := cfg.ChargeOnceTarget(); target > 0 {
+		return target, true
+	}
+	limit := cfg.UpperLimit()
+	return limit, limit < 100
+}
+
+// computeTimeToLimit calculates the estimated minutes until the charge target
+// is reached. Returns nil when not applicable (not charging, no target, charge
+// already at/above the target, or result is zero).
 func computeTimeToLimit(data *statusData, cfg *config.File) *int {
-	if data.batteryInfo.State != powerinfo.Charging || cfg.UpperLimit() >= 100 || data.currentCharge >= cfg.UpperLimit() {
+	target, ok := chargeTarget(cfg)
+	if !ok || data.batteryInfo.State != powerinfo.Charging || data.currentCharge >= target {
 		return nil
 	}
 
 	// Work in mAh directly (no Wh conversions)
 	maxCapacitymAh := float64(data.batteryInfo.MaxCapacity)
-	targetCapacitymAh := float64(cfg.UpperLimit()) / 100.0 * maxCapacitymAh
+	targetCapacitymAh := float64(target) / 100.0 * maxCapacitymAh
 	currentCapacitymAh := float64(data.currentCharge) / 100.0 * maxCapacitymAh
 	capacityToChargemAh := targetCapacitymAh - currentCapacitymAh
 
@@ -54,6 +67,43 @@ func computeTimeToLimit(data *statusData, cfg *config.File) *int {
 	}
 
 	return &minutes
+}
+
+// chargingNarration explains the legacy "Allow charging" line. It returns an
+// empty string when there is nothing to add.
+func chargingNarration(data *statusData, cfg *config.File) string {
+	if data.charging {
+		if !data.pluggedIn {
+			return "Your Mac will charge, but you are not plugged in yet."
+		}
+		return "Your Mac will charge."
+	}
+
+	if cfg.UpperLimit() >= 100 {
+		return ""
+	}
+
+	// A one-time charge ignores the lower limit until it reaches its target, so
+	// the hysteresis explanation below would contradict what batt is doing.
+	if target := cfg.ChargeOnceTarget(); target > 0 {
+		if data.capabilities.AdapterControl && data.pluggedIn && !data.adapter {
+			return fmt.Sprintf("Your Mac will not charge to its %d%% one-time target, because adapter is disabled.", target)
+		}
+		return fmt.Sprintf("Your Mac will charge to %d%% once, starting with the next refresh.", target)
+	}
+
+	sentence := "Your Mac will not charge"
+	low := cfg.LowerLimit()
+	switch {
+	case data.currentCharge >= cfg.UpperLimit():
+		sentence += ", because your current charge is above the limit."
+	case data.currentCharge >= low:
+		sentence += ", because your current charge is above the lower limit. Charging will be allowed after current charge drops below the lower limit."
+	}
+	if data.capabilities.AdapterControl && data.pluggedIn && data.currentCharge < low && !data.adapter {
+		sentence += ", because adapter is disabled."
+	}
+	return sentence
 }
 
 // fetchStatusData gathers all data required for the status command from the daemon.
@@ -152,31 +202,9 @@ func NewStatusCommand() *cobra.Command {
 				cmd.Println("  Control mode: " + bold("unsupported"))
 			default:
 				additionalMsg := " (refreshes can take up to 2 minutes)"
-				//nolint:gocritic
-				if data.charging {
-					cmd.Println("  Allow charging: " + bool2Text(true) + additionalMsg)
-					cmd.Print("    Your Mac will charge")
-					if !data.pluggedIn {
-						cmd.Print(", but you are not plugged in yet.")
-					} else {
-						cmd.Print(".")
-					}
-					cmd.Println()
-				} else if cfg.UpperLimit() < 100 {
-					cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
-					cmd.Print("    Your Mac will not charge")
-					low := cfg.LowerLimit()
-					if data.currentCharge >= cfg.UpperLimit() {
-						cmd.Print(", because your current charge is above the limit.")
-					} else if data.currentCharge >= low {
-						cmd.Print(", because your current charge is above the lower limit. Charging will be allowed after current charge drops below the lower limit.")
-					}
-					if data.pluggedIn && data.currentCharge < low && !data.adapter {
-						cmd.Print(", because adapter is disabled.")
-					}
-					cmd.Println()
-				} else {
-					cmd.Println("  Allow charging: " + bool2Text(false) + additionalMsg)
+				cmd.Println("  Allow charging: " + bool2Text(data.charging) + additionalMsg)
+				if narration := chargingNarration(data, cfg); narration != "" {
+					cmd.Println("    " + narration)
 				}
 			}
 
@@ -195,7 +223,12 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Printf("  Current charge: %s\n", bold("%d%%", data.currentCharge))
 
 			if ttl := computeTimeToLimit(data, cfg); ttl != nil {
-				cmd.Printf("  Time to limit (%d%%): %s\n", cfg.UpperLimit(), bold("~%d minutes", *ttl))
+				target, _ := chargeTarget(cfg)
+				label := "Time to limit"
+				if cfg.ChargeOnceTarget() > 0 {
+					label = "Time to one-time target"
+				}
+				cmd.Printf("  %s (%d%%): %s\n", label, target, bold("~%d minutes", *ttl))
 			}
 
 			var displayState string
@@ -251,6 +284,9 @@ func NewStatusCommand() *cobra.Command {
 				if until := cfg.DisableUntil(); !until.IsZero() {
 					cmd.Printf("  Restoring %d%% limit: %s\n", cfg.PreDisableLimit(), bold("in %s (%s)", formatRestoreDelay(time.Until(until)), until.Local().Format(time.DateTime)))
 				}
+			}
+			if target := cfg.ChargeOnceTarget(); target > 0 {
+				cmd.Printf("  One-time charge: %s\n", bold("to %d%% (now %d%%)", target, data.currentCharge))
 			}
 			if data.capabilities.SleepHooks {
 				cmd.Printf("  Prevent idle-sleep when charging: %s\n", bool2Text(cfg.PreventIdleSleep()))

@@ -83,7 +83,7 @@ func restoreChargeControlAfterCalibration(st *calibration.State) {
 			_, err = ensureManagedChargeLimitDisabled()
 		}
 		if err != nil {
-			logrus.WithError(err).Errorf("failed to restore %s charge limit after calibration", capabilities.ChargeControlMode)
+			logrus.WithError(err).Errorf("failed to restore %s charge limit after calibration", getCapabilities().ChargeControlMode)
 		}
 		return
 	}
@@ -158,6 +158,9 @@ func startCalibration(threshold, holdMinutes int) error {
 	if !conf.AdapterDisableUntil().IsZero() {
 		return ErrTemporaryAdapterDisableInProgress
 	}
+	if conf.ChargeOnceTarget() != 0 {
+		return ErrChargeOnceInProgress
+	}
 
 	if threshold < 5 {
 		threshold = 5
@@ -186,7 +189,7 @@ func startCalibration(threshold, holdMinutes int) error {
 		return fmt.Errorf("failed to check adapter state before starting calibration: %w", err)
 	}
 
-	if capabilities.AdapterControl {
+	if getCapabilities().AdapterControl {
 		if err := reconcileAdapterSleepPolicy(); err != nil {
 			return fmt.Errorf("failed to reconcile adapter sleep policy before starting calibration: %w", err)
 		}

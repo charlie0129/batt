@@ -38,6 +38,9 @@ func infiniteLoop() {
 		if restoreDisabledLimit(conf, now) {
 			maintainLoopForced()
 		}
+		if completeChargeOnce(conf) {
+			maintainLoopForced()
+		}
 		if adapterSleepPolicyCapable() {
 			maintainAdapterDisable(conf, now)
 		}
@@ -129,8 +132,9 @@ func restoreDisabledLimit(conf config.Config, now time.Time) bool {
 		}
 		return false
 	}
-	if !capabilities.SupportsLimit(limit) {
-		snapped := capabilities.NearestSupportedLimit(limit)
+	caps := getCapabilities()
+	if !caps.SupportsLimit(limit) {
+		snapped := caps.NearestSupportedLimit(limit)
 		logrus.WithFields(logrus.Fields{"saved": limit, "limit": snapped}).Warn("saved charge limit is not offered by this Mac, restoring the next supported limit")
 		limit = snapped
 	}
@@ -231,7 +235,7 @@ func maintainLoopForced() bool {
 func handleNoMaintain(isChargingEnabled bool) bool {
 	if !isChargingEnabled {
 		logrus.Debug("limit set to 100%, but charging is disabled, enabling")
-		err := charger.Enable()
+		err := getCharger().Enable()
 		if err != nil {
 			logrus.Errorf("EnableCharging failed: %v", err)
 			return false
@@ -327,7 +331,7 @@ func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool,
 			"lower":         lower,
 			"upper":         upper,
 		}).Infof("Too many missed maintain loops detected while charging is enabled. Disabling charging to prevent overcharging.")
-		err := charger.Disable()
+		err := getCharger().Disable()
 		if err != nil {
 			logrus.Errorf("DisableCharging failed: %v", err)
 			return false
@@ -358,7 +362,7 @@ func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool,
 			"lower":         lower,
 			"upper":         upper,
 		}).Infof("Battery charge is below lower limit, enabling charging")
-		err := charger.Enable()
+		err := getCharger().Enable()
 		if err != nil {
 			logrus.Errorf("EnableCharging failed: %v", err)
 			return false
@@ -374,7 +378,7 @@ func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool,
 			"lower":         lower,
 			"upper":         upper,
 		}).Infof("Battery charge is above upper limit, disabling charging")
-		err := charger.Disable()
+		err := getCharger().Disable()
 		if err != nil {
 			logrus.Errorf("DisableCharging failed: %v", err)
 			return false
@@ -416,7 +420,7 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 	maintainLoopInnerLock.Lock()
 	defer maintainLoopInnerLock.Unlock()
 
-	switch capabilities.ChargeControlMode {
+	switch getCapabilities().ChargeControlMode {
 	case compatibility.ChargeControlFirmware, compatibility.ChargeControlNative:
 		return maintainManagedChargeLimit()
 	case compatibility.ChargeControlLegacy, compatibility.ChargeControlAdapter:
@@ -443,15 +447,19 @@ func maintainManagedChargeLimit() bool {
 		}
 	}
 
+	if target := activeChargeOnceTarget(); target > 0 {
+		return maintainManagedChargeOnce(target)
+	}
+
 	upper := conf.UpperLimit()
 	if upper >= 100 {
 		changed, err := ensureManagedChargeLimitDisabled()
 		if err != nil {
-			logrus.Errorf("failed to deactivate %s charge limit: %v", capabilities.ChargeControlMode, err)
+			logrus.Errorf("failed to deactivate %s charge limit: %v", getCapabilities().ChargeControlMode, err)
 			return false
 		}
 		if changed {
-			logrus.Infof("deactivated %s charge limit", capabilities.ChargeControlMode)
+			logrus.Infof("deactivated %s charge limit", getCapabilities().ChargeControlMode)
 		}
 		maintainedChargingInProgress = false
 		return true
@@ -460,15 +468,44 @@ func maintainManagedChargeLimit() bool {
 	lower := conf.LowerLimit()
 	changed, err := ensureManagedChargeLimit(lower, upper)
 	if err != nil {
-		logrus.Errorf("failed to reconcile %s charge limit: %v", capabilities.ChargeControlMode, err)
+		logrus.Errorf("failed to reconcile %s charge limit: %v", getCapabilities().ChargeControlMode, err)
 		return false
 	}
 	if changed {
-		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Infof("reconciled %s charge limit", capabilities.ChargeControlMode)
+		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Infof("reconciled %s charge limit", getCapabilities().ChargeControlMode)
 	} else {
-		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Tracef("%s charge limit is correct", capabilities.ChargeControlMode)
+		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Tracef("%s charge limit is correct", getCapabilities().ChargeControlMode)
 	}
 	maintainedChargingInProgress = false
+	return true
+}
+
+// maintainManagedChargeOnce temporarily overrides the Apple-managed charge
+// limit. Firmware supports a narrow band below the target; native macOS only
+// supports charging to full once by temporarily disabling its limit.
+func maintainManagedChargeOnce(target int) bool {
+	maintainedChargingInProgress = false
+	mode := getCapabilities().ChargeControlMode
+
+	if target < 100 && mode != compatibility.ChargeControlFirmware {
+		logrus.Error("the native macOS backend cannot force a one-time charge below 100%")
+		return false
+	}
+
+	var changed bool
+	var err error
+	if target >= 100 {
+		changed, err = ensureManagedChargeLimitDisabled()
+	} else {
+		changed, err = ensureManagedChargeLimit(target-1, target)
+	}
+	if err != nil {
+		logrus.Errorf("failed to reconcile %s charge limit for a one-time charge: %v", mode, err)
+		return false
+	}
+	if changed {
+		logrus.WithField("target", target).Infof("reconciled %s charge limit for a one-time charge", mode)
+	}
 	return true
 }
 
@@ -481,14 +518,14 @@ func maintainActiveCharging(ignoreMissedLoops bool) bool {
 	lower := conf.LowerLimit()
 	// Adapter mode holds the ceiling by discharging on battery and recharging,
 	// so keep a gentle minimum band to avoid frequent cycling and SMC writes.
-	if capabilities.ChargeControlMode == compatibility.ChargeControlAdapter {
+	if getCapabilities().ChargeControlMode == compatibility.ChargeControlAdapter {
 		if minLower := upper - adapterMinBand; upper < 100 && lower > minLower && minLower >= 0 {
 			lower = minLower
 		}
 	}
 	maintain := upper < 100
 
-	isChargingEnabled, err := charger.IsEnabled()
+	isChargingEnabled, err := getCharger().IsEnabled()
 	if err != nil {
 		logrus.Errorf("charger.IsEnabled failed: %v", err)
 		return false
@@ -507,8 +544,16 @@ func maintainActiveCharging(ignoreMissedLoops bool) bool {
 		return false
 	}
 
+	chargeOnceTarget := activeChargeOnceTarget()
+	if chargeOnceTarget > 0 && getCapabilities().ChargeControlMode == compatibility.ChargeControlAdapter && nativeLimit.Supported() {
+		if _, err := ensureNativeChargeLimitDisabled(); err != nil {
+			logrus.WithError(err).Error("failed to clear native limit for adapter-mode one-time charge")
+			return false
+		}
+	}
+
 	maintainedChargingInProgress = isChargingEnabled && isPluggedIn && calibrationState.Phase == calibration.PhaseIdle
-	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress, calibrationState.Phase != calibration.PhaseIdle)
+	printStatus(batteryCharge, lower, upper, chargeOnceTarget, isChargingEnabled, isPluggedIn, maintainedChargingInProgress, calibrationState.Phase != calibration.PhaseIdle)
 
 	// If calibration is active, advance it and skip normal maintain logic.
 	if applyCalibrationWithinLoop(batteryCharge) {
@@ -523,6 +568,14 @@ func maintainActiveCharging(ignoreMissedLoops bool) bool {
 		return true
 	}
 
+	// A one-time charge overrides the configured band until the battery reaches
+	// its target. Passing the target as both bounds removes the hysteresis gap,
+	// so charging starts right away instead of waiting for the charge to fall
+	// below the lower limit, and stops exactly at the target.
+	if chargeOnceTarget > 0 && batteryCharge < chargeOnceTarget {
+		return handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn, batteryCharge, chargeOnceTarget, chargeOnceTarget)
+	}
+
 	// If maintain is disabled, we don't care about the battery charge, enable charging anyway.
 	if !maintain {
 		return handleNoMaintain(isChargingEnabled)
@@ -532,7 +585,7 @@ func maintainActiveCharging(ignoreMissedLoops bool) bool {
 	// from the battery there is nothing to cut or restore, so leave the adapter
 	// untouched and wait for reconnection instead of writing the SMC pointlessly.
 	// The next loop after reconnection resumes enforcement.
-	if capabilities.ChargeControlMode == compatibility.ChargeControlAdapter && !isPluggedIn {
+	if getCapabilities().ChargeControlMode == compatibility.ChargeControlAdapter && !isPluggedIn {
 		maintainedChargingInProgress = false
 		return true
 	}
@@ -553,6 +606,7 @@ type loopStatus struct {
 	batteryCharge                int
 	lower                        int
 	upper                        int
+	chargeOnceTarget             int
 	isChargingEnabled            bool
 	isPluggedIn                  bool
 	maintainedChargingInProgress bool
@@ -565,6 +619,7 @@ func printStatus(
 	batteryCharge int,
 	lower int,
 	upper int,
+	chargeOnceTarget int,
 	isChargingEnabled bool,
 	isPluggedIn bool,
 	maintainedChargingInProgress bool,
@@ -574,6 +629,7 @@ func printStatus(
 		batteryCharge:                batteryCharge,
 		lower:                        lower,
 		upper:                        upper,
+		chargeOnceTarget:             chargeOnceTarget,
 		isChargingEnabled:            isChargingEnabled,
 		isPluggedIn:                  isPluggedIn,
 		maintainedChargingInProgress: maintainedChargingInProgress,
@@ -584,6 +640,7 @@ func printStatus(
 		"batteryCharge":                batteryCharge,
 		"lower":                        lower,
 		"upper":                        upper,
+		"chargeOnceTarget":             chargeOnceTarget,
 		"chargingEnabled":              isChargingEnabled,
 		"isPluggedIn":                  isPluggedIn,
 		"maintainedChargingInProgress": maintainedChargingInProgress,
