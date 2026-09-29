@@ -149,7 +149,12 @@ func startCalibration(threshold, holdMinutes int) error {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
 
-	if calibrationState.Phase != calibration.PhaseIdle && calibrationState.Phase != calibration.PhaseError {
+	if calibrationState.Phase == calibration.PhaseError {
+		// A failed calibration may have left the charge limit at 100. Its snapshot
+		// is the only record of the original limit, and Cancel restores it.
+		return ErrCalibrationControlsChargeLimit
+	}
+	if calibrationState.Phase != calibration.PhaseIdle {
 		return ErrCalibrationInProgress
 	}
 	if !conf.DisableUntil().IsZero() {

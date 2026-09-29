@@ -569,3 +569,38 @@ func TestCalibrationHoldToPostHold_DisableFailureIsAnError(t *testing.T) {
 		t.Fatal("the failed adapter cut must be reported in LastError")
 	}
 }
+
+func TestStartCalibration_RejectsFailedCalibrationUntilCancelled(t *testing.T) {
+	// A failed calibration may leave the charge limit at 100. Its snapshot is the
+	// only record of the original limit, so a new start must not replace it.
+	stubCalibrationSleep(t)
+	previousConf, previousState, previousStatePath, previousCap := conf, calibrationState, calibrationStatePath, capabilities
+	previousIsAdapter := smcIsAdapterEnabled
+	previousIsCharging := smcIsChargingEnabled
+	t.Cleanup(func() {
+		conf, calibrationState, calibrationStatePath, capabilities = previousConf, previousState, previousStatePath, previousCap
+		smcIsAdapterEnabled = previousIsAdapter
+		smcIsChargingEnabled = previousIsCharging
+	})
+
+	capabilities = compatibility.Capabilities{Calibration: true}
+	smcIsAdapterEnabled = func() (bool, error) { return true, nil }
+	smcIsChargingEnabled = func() (bool, error) { return true, nil }
+	conf = &mockConf{upper: 100, lower: 98}
+	calibrationStatePath = ""
+	calibrationState = &calibration.State{
+		Phase:              calibration.PhaseError,
+		SnapshotUpperLimit: 80,
+		SnapshotLowerLimit: 78,
+		SnapshotMaintain:   true,
+	}
+
+	err := startCalibration(15, 60)
+
+	if err != ErrCalibrationControlsChargeLimit {
+		t.Fatalf("startCalibration() = %v, want %v", err, ErrCalibrationControlsChargeLimit)
+	}
+	if calibrationState.Phase != calibration.PhaseError || calibrationState.SnapshotUpperLimit != 80 {
+		t.Fatalf("the snapshot of the failed calibration must stay: phase=%s snapshotUpper=%d", calibrationState.Phase, calibrationState.SnapshotUpperLimit)
+	}
+}
