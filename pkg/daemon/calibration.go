@@ -319,6 +319,16 @@ func applyCalibrationWithinLoop(charge int) bool {
 			if err := smcDisableAdapter(); err != nil {
 				logrus.WithError(err).Error("failed to disable adapter during hold phase")
 				st.LastError = err.Error()
+				// The limit is still 100 here. Write the snapshot back, as Cancel does, so the
+				// failed run does not leave the battery without a limit while it waits for
+				// Cancel. The maintain loop drops a calibration in the error phase when the
+				// limit is 100, without restoring anything.
+				conf.SetUpperLimit(st.SnapshotUpperLimit)
+				conf.SetLowerLimit(st.SnapshotLowerLimit)
+				if saveErr := conf.Save(); saveErr != nil {
+					logrus.WithError(saveErr).Warn("failed to save config after the calibration failed")
+				}
+				restoreChargeControlAfterCalibration(st)
 				st.Phase = calibration.PhaseError
 				break
 			}

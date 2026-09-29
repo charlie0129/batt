@@ -604,3 +604,45 @@ func TestStartCalibration_RejectsFailedCalibrationUntilCancelled(t *testing.T) {
 		t.Fatalf("the snapshot of the failed calibration must stay: phase=%s snapshotUpper=%d", calibrationState.Phase, calibrationState.SnapshotUpperLimit)
 	}
 }
+
+func TestCalibrationHoldEnd_DisableFailureRestoresTheChargeLimit(t *testing.T) {
+	// The calibration sets the limit to 100 when the charge phase starts. A
+	// failed calibration waits for Cancel, but the maintain loop must not find
+	// the battery without a limit meanwhile: at limit 100 the legacy loop drops
+	// a calibration in the error phase without restoring anything.
+	previousConf, previousState, previousCap := conf, calibrationState, capabilities
+	previousStatePath := calibrationStatePath
+	previousDisable := smcDisableAdapter
+	t.Cleanup(func() {
+		conf, calibrationState, capabilities = previousConf, previousState, previousCap
+		calibrationStatePath = previousStatePath
+		smcDisableAdapter = previousDisable
+	})
+	calibrationStatePath = ""
+	newFakeSMC(100, 1, true).inject(t)
+	stubCalibrationSleep(t)
+	capabilities = compatibility.Capabilities{Calibration: true, AdapterControl: true}
+	smcDisableAdapter = func() error { return errors.New("sleep hold could not be taken") }
+	configured := &mockConf{upper: 100, lower: 98}
+	conf = configured
+	calibrationState = &calibration.State{
+		Phase:              calibration.PhaseHold,
+		HoldEndTime:        time.Now().Add(-time.Minute),
+		SnapshotUpperLimit: 80,
+		SnapshotLowerLimit: 78,
+		SnapshotMaintain:   true,
+		SnapshotAdapterOn:  true,
+	}
+
+	applyCalibrationWithinLoop(100)
+
+	if calibrationState.Phase != calibration.PhaseError {
+		t.Fatalf("phase = %s, want %s", calibrationState.Phase, calibration.PhaseError)
+	}
+	if configured.UpperLimit() != 80 || configured.LowerLimit() != 78 {
+		t.Fatalf("limits = %d/%d, want the snapshot 80/78 back", configured.UpperLimit(), configured.LowerLimit())
+	}
+	if calibrationState.SnapshotUpperLimit != 80 {
+		t.Fatalf("the snapshot must stay until Cancel: snapshotUpper=%d", calibrationState.SnapshotUpperLimit)
+	}
+}
