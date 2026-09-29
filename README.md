@@ -379,6 +379,7 @@ This option suppresses system sleep entirely while the adapter is disabled by te
 - As soon as the adapter is re-enabled, the prior system sleep setting is automatically restored.
 - If the daemon restarts while the adapter is still disabled, protection is reconciled immediately without a sleep gap.
 - If the daemon is uninstalled or shuts down, the adapter is re-enabled before releasing holds and restoring the prior setting.
+- If batt logs an unusable sleep snapshot (`/etc/batt.sleep.json` by default), the daemon still starts, but it cannot hold sleep until you fix or remove that file. If your Mac no longer sleeps, run `sudo pmset -a disablesleep 0`.
 
 To enable this feature, run:
 ```bash

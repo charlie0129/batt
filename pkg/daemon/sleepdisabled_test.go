@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
@@ -495,6 +496,83 @@ func TestStartupSleepPolicyFailureKeepsSnapshotWhenAdapterCannotRestore(t *testi
 	}
 }
 
+// A broken note about the old sleep setting must not keep the daemon from
+// starting. The charge limit does not depend on it. The file stays in place.
+func TestStartupContinuesWhenSnapshotIsMalformed(t *testing.T) {
+	sleep := stubSleepDisabled(t, false)
+	stubAdapter(t, true)
+	conf = &sleepPolicyConf{prevent: false}
+	if err := os.WriteFile(sleepDisabledPath, []byte("{trunc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ensureStartupSleepPolicy(); err != nil {
+		t.Fatalf("a malformed snapshot must not stop the daemon: %v", err)
+	}
+	if b, err := os.ReadFile(sleepDisabledPath); err != nil || string(b) != "{trunc" {
+		t.Fatalf("the malformed snapshot must stay untouched for manual recovery: %q, %v", b, err)
+	}
+	if sleep.writes != 0 {
+		t.Fatalf("nothing may be written for a malformed snapshot, got %d", sleep.writes)
+	}
+}
+
+func TestStartupContinuesWhenSnapshotIsMalformedWithoutAdapterControl(t *testing.T) {
+	stubSleepDisabled(t, false)
+	stubAdapter(t, true)
+	capabilities = compatibility.Capabilities{}
+	conf = &sleepPolicyConf{prevent: false}
+	if err := os.WriteFile(sleepDisabledPath, []byte("{trunc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ensureStartupSleepPolicy(); err != nil {
+		t.Fatalf("a malformed snapshot must not stop the daemon: %v", err)
+	}
+	if _, err := os.Stat(sleepDisabledPath); err != nil {
+		t.Fatalf("the malformed snapshot must be preserved: %v", err)
+	}
+}
+
+func TestStartupWithMalformedSnapshotRestoresWallPowerAndContinues(t *testing.T) {
+	// The adapter is cut and the feature is on, but no hold can be taken while
+	// the snapshot is unreadable. Wall power comes back, and the daemon starts.
+	sleep := stubSleepDisabled(t, false)
+	adapter := stubAdapter(t, false)
+	conf = &sleepPolicyConf{prevent: true}
+	if err := os.WriteFile(sleepDisabledPath, []byte("{trunc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ensureStartupSleepPolicy(); err != nil {
+		t.Fatalf("a malformed snapshot must not stop the daemon: %v", err)
+	}
+	if !adapter.enabled {
+		t.Fatal("wall power must come back when protection cannot be taken")
+	}
+	if sleep.writes != 0 {
+		t.Fatalf("nothing may be written for a malformed snapshot, got %d", sleep.writes)
+	}
+	if _, err := os.Stat(sleepDisabledPath); err != nil {
+		t.Fatalf("the malformed snapshot must be preserved: %v", err)
+	}
+}
+
+func TestUnusableSnapshotErrorNamesTheFile(t *testing.T) {
+	stubSleepDisabled(t, false)
+	if err := os.WriteFile(sleepDisabledPath, []byte("{trunc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := holdSleep("test-reason")
+	if err == nil {
+		t.Fatal("holdSleep must fail while the snapshot is malformed")
+	}
+	if !strings.Contains(err.Error(), sleepDisabledPath) {
+		t.Fatalf("the error must name the file so the user can find it: %v", err)
+	}
+}
+
 func TestInitPreservesMalformedSnapshot(t *testing.T) {
 	fake := stubSleepDisabled(t, false)
 	path := sleepDisabledPath
@@ -734,6 +812,30 @@ func TestAdapterPolicyRollsBackHoldWhenSMCFails(t *testing.T) {
 	}
 	if len(sleepHolds) != 0 {
 		t.Fatalf("no hold may survive a failed disable, got %v", sleepHolds)
+	}
+}
+
+func TestAdapterPolicyKeepsEarlierHoldWhenRedundantDisableFails(t *testing.T) {
+	// The main loop and calibration disable the adapter on every cycle, also
+	// when it is already off. A failed write on such a call leaves the adapter
+	// cut, so it must not drop the hold an earlier call took.
+	sleep := stubSleepDisabled(t, false)
+	adapter := stubAdapter(t, true)
+	conf = &sleepPolicyConf{prevent: true}
+
+	if err := disableAdapterWithSleepPolicy(); err != nil {
+		t.Fatal(err)
+	}
+	adapter.disableErr = errors.New("SMC write failed")
+	if err := disableAdapterWithSleepPolicy(); err == nil {
+		t.Fatal("expected the SMC failure to propagate")
+	}
+
+	if adapter.enabled {
+		t.Fatal("the failed write must leave the adapter cut")
+	}
+	if !sleep.value || !sleepHolds[sleepHoldAdapter] {
+		t.Fatalf("the hold of the earlier disable must survive: sleepDisabled=%v holds=%v", sleep.value, sleepHolds)
 	}
 }
 

@@ -309,12 +309,15 @@ func applyCalibrationWithinLoop(charge int) bool {
 		if time.Now().After(st.HoldEndTime) {
 			logrus.Info("hold phase complete. starting post-hold phase, draining to previous limits")
 			// Begin post-hold discharge back to previous upper limit (if snapshot < 100) or current configured upper.
-			st.Phase = calibration.PhasePostHold
-			// Ensure charging disabled to allow discharge.
-			err := smcDisableAdapter()
-			if err != nil {
+			// Ensure charging disabled to allow discharge. The post-hold phase never cuts the adapter
+			// again, so a failure here must end the calibration instead of waiting at full charge.
+			if err := smcDisableAdapter(); err != nil {
 				logrus.WithError(err).Error("failed to disable adapter during hold phase")
+				st.LastError = err.Error()
+				st.Phase = calibration.PhaseError
+				break
 			}
+			st.Phase = calibration.PhasePostHold
 		}
 	case calibration.PhasePostHold:
 		// Determine target (original snapshot upper limit if it was <100, else current config upper limit).

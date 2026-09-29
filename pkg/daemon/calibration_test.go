@@ -534,3 +534,38 @@ func TestCancelCalibration_RetriesFailedAdapterRestoration(t *testing.T) {
 		t.Fatalf("phase = %s, want idle", calibrationState.Phase)
 	}
 }
+
+func TestCalibrationHoldToPostHold_DisableFailureIsAnError(t *testing.T) {
+	// The post-hold phase never cuts the adapter again. If the cut fails at the
+	// transition, the calibration would wait at full charge without a message.
+	previousConf, previousState, previousCap := conf, calibrationState, capabilities
+	previousStatePath := calibrationStatePath
+	previousDisable := smcDisableAdapter
+	t.Cleanup(func() {
+		conf, calibrationState, capabilities = previousConf, previousState, previousCap
+		calibrationStatePath = previousStatePath
+		smcDisableAdapter = previousDisable
+	})
+	calibrationStatePath = ""
+	newFakeSMC(100, 1, true).inject(t)
+	stubCalibrationSleep(t)
+	capabilities = compatibility.Capabilities{Calibration: true, AdapterControl: true}
+	smcDisableAdapter = func() error { return errors.New("sleep hold could not be taken") }
+	conf = &mockConf{upper: 80, lower: 78}
+	calibrationState = &calibration.State{
+		Phase:              calibration.PhaseHold,
+		HoldEndTime:        time.Now().Add(-time.Minute),
+		SnapshotUpperLimit: 80,
+		SnapshotLowerLimit: 78,
+		SnapshotAdapterOn:  true,
+	}
+
+	applyCalibrationWithinLoop(100)
+
+	if calibrationState.Phase != calibration.PhaseError {
+		t.Fatalf("phase = %s, want %s", calibrationState.Phase, calibration.PhaseError)
+	}
+	if calibrationState.LastError == "" {
+		t.Fatal("the failed adapter cut must be reported in LastError")
+	}
+}

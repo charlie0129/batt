@@ -46,6 +46,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/sirupsen/logrus"
@@ -160,8 +161,25 @@ func restorePendingSleepDisabledLocked() error {
 	return clearSleepDisabledSnapshotLocked()
 }
 
+// sleepSnapshotError marks a snapshot file that exists but cannot be used. The
+// file stays in place for manual recovery.
+type sleepSnapshotError struct {
+	path string
+	err  error
+}
+
+func (e *sleepSnapshotError) Error() string {
+	if strings.Contains(e.err.Error(), e.path) {
+		return e.err.Error()
+	}
+	return fmt.Sprintf("%s: %v", e.path, e.err)
+}
+
+func (e *sleepSnapshotError) Unwrap() error { return e.err }
+
 // loadSleepDisabledSnapshotLocked reads a pending snapshot, if any.
-// A malformed or unreadable file is preserved for recovery and returned as an error.
+// A malformed or unreadable file is preserved for recovery and returned as a
+// *sleepSnapshotError.
 func loadSleepDisabledSnapshotLocked() (sleepDisabledSnapshot, bool, error) {
 	var snapshot sleepDisabledSnapshot
 
@@ -175,18 +193,18 @@ func loadSleepDisabledSnapshotLocked() (sleepDisabledSnapshot, bool, error) {
 			return snapshot, false, nil
 		}
 		logrus.WithError(err).Warn("failed to read sleep-disabled state")
-		return snapshot, false, err
+		return snapshot, false, &sleepSnapshotError{path: sleepDisabledPath, err: err}
 	}
 
 	if err := json.Unmarshal(b, &snapshot); err != nil {
 		logrus.WithError(err).Warn("malformed sleep-disabled state")
-		return snapshot, false, fmt.Errorf("malformed sleep-disabled state: %w", err)
+		return snapshot, false, &sleepSnapshotError{path: sleepDisabledPath, err: fmt.Errorf("malformed sleep-disabled state: %w", err)}
 	}
 
 	if snapshot.Previous == nil {
 		err := fmt.Errorf("missing 'previous' field in sleep-disabled state")
 		logrus.WithError(err).Warn("invalid sleep-disabled state")
-		return snapshot, false, err
+		return snapshot, false, &sleepSnapshotError{path: sleepDisabledPath, err: err}
 	}
 
 	return snapshot, true, nil
@@ -260,21 +278,29 @@ func clearSleepDisabledSnapshotLocked() error {
 // holdSleep suppresses all sleep, including lid-close sleep, on behalf of
 // reason. Holding a reason that is already held does nothing.
 func holdSleep(reason string) error {
+	_, err := acquireSleepHold(reason)
+	return err
+}
+
+// acquireSleepHold is holdSleep that also reports whether this call took the
+// hold. A caller that fails afterwards must roll back only a hold it took
+// itself: an earlier call may still need the one it took.
+func acquireSleepHold(reason string) (bool, error) {
 	sleepDisabledMu.Lock()
 	defer sleepDisabledMu.Unlock()
 
 	if sleepHolds[reason] {
-		return nil
+		return false, nil
 	}
 
 	if len(sleepHolds) == 0 {
 		if err := takeFirstHoldLocked(); err != nil {
-			return err
+			return false, err
 		}
 	}
 
 	sleepHolds[reason] = true
-	return nil
+	return true, nil
 }
 
 // takeFirstHoldLocked records what to restore and disables sleep.
@@ -388,15 +414,19 @@ func disableAdapterWithSleepPolicy() error {
 	adapterPolicyMu.Lock()
 	defer adapterPolicyMu.Unlock()
 
-	holdRequested := conf != nil && conf.PreventSleepOnAdapterDisable()
-	if holdRequested {
-		if err := holdSleep(sleepHoldAdapter); err != nil {
+	// The main loop and calibration call this on every cycle, also when the
+	// adapter is already cut. Roll back only a hold this call took itself.
+	tookHold := false
+	if conf != nil && conf.PreventSleepOnAdapterDisable() {
+		took, err := acquireSleepHold(sleepHoldAdapter)
+		if err != nil {
 			return fmt.Errorf("failed to disable sleep before cutting adapter input: %w", err)
 		}
+		tookHold = took
 	}
 
 	if err := rawDisableAdapter(); err != nil {
-		if holdRequested {
+		if tookHold {
 			if releaseErr := releaseSleep(sleepHoldAdapter); releaseErr != nil {
 				logrus.WithError(releaseErr).Error("failed to restore sleep after adapter disable failed")
 				return fmt.Errorf("adapter disable failed (%w); sleep hold rollback also failed: %v", err, releaseErr)

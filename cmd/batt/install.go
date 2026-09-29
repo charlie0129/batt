@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -84,7 +85,12 @@ type uninstallHardware interface {
 	EnableAdapter() error
 }
 
-func restoreUninstallHardware(hardware uninstallHardware, resetCharging bool) error {
+// restoreUninstallState puts the Mac back into its normal state once the daemon
+// is gone: wall power first, then the system sleep setting. Nothing restores the
+// sleep setting after this command, so a failed charge-limit reset must not skip
+// it. Every failure is reported after all steps ran. An adapter that stays cut
+// is the exception: sleep stays held then, because the Mac still runs on battery.
+func restoreUninstallState(hardware uninstallHardware, resetCharging bool, recoverSleep func() error) error {
 	var resetErr error
 	if resetCharging && hardware.IsChargingControlCapable() {
 		logrus.Info("resetting charge limits")
@@ -95,10 +101,15 @@ func restoreUninstallHardware(hardware uninstallHardware, resetCharging bool) er
 			return fmt.Errorf("failed to enable adapter (charge-limit reset: %v): %w", resetErr, err)
 		}
 	}
+
+	var errs []error
 	if resetErr != nil {
-		return fmt.Errorf("failed to reset charge control: %w", resetErr)
+		errs = append(errs, fmt.Errorf("failed to reset charge control: %w", resetErr))
 	}
-	return nil
+	if err := recoverSleep(); err != nil {
+		errs = append(errs, fmt.Errorf("failed to restore system sleep setting: %w", err))
+	}
+	return errors.Join(errs...)
 }
 
 // NewUninstallCommand .
@@ -132,16 +143,15 @@ You must run this command as root.`,
 			}
 			defer func() { _ = smcC.Close() }()
 
-			if err := restoreUninstallHardware(smcC, !noResetCharging); err != nil {
-				return err
-			}
-
 			sleepStatePath := "/etc/batt.sleep.json"
 			if configPath != "" {
 				sleepStatePath = filepath.Join(filepath.Dir(configPath), "batt.sleep.json")
 			}
-			if err := daemon.RecoverSleepDisabled(sleepStatePath); err != nil {
-				return fmt.Errorf("failed to restore system sleep setting: %w", err)
+			err = restoreUninstallState(smcC, !noResetCharging, func() error {
+				return daemon.RecoverSleepDisabled(sleepStatePath)
+			})
+			if err != nil {
+				return err
 			}
 
 			fmt.Println("successfully uninstalled")

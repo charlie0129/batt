@@ -314,7 +314,22 @@ func reconcileReloadedSleepPolicy() error {
 	return nil
 }
 
+// ensureStartupSleepPolicy reconciles the sleep hold with the adapter state
+// before the daemon serves requests. An unusable snapshot file does not stop the
+// daemon: the charge limit does not depend on it. The file stays in place, no
+// hold can be taken while it exists, and wall power is already restored when
+// protection was missing. Every other failure stops the start.
 func ensureStartupSleepPolicy() error {
+	err := reconcileStartupSleepPolicy()
+	var snapshotErr *sleepSnapshotError
+	if errors.As(err, &snapshotErr) {
+		logrus.WithError(err).Errorf("ignoring the unusable sleep snapshot %s; batt starts without it and cannot hold sleep until it is fixed or removed. If the Mac no longer sleeps, run `sudo pmset -a disablesleep 0`", snapshotErr.path)
+		return nil
+	}
+	return err
+}
+
+func reconcileStartupSleepPolicy() error {
 	if adapterSleepPolicyCapable() {
 		if err := reconcileAdapterSleepPolicy(); err != nil {
 			return fmt.Errorf("startup: %w", restoreAdapterAfterPolicyError(err))
