@@ -23,6 +23,10 @@ type mockConf struct {
 	disableUntil        time.Time
 	preDisableLimit     int
 	adapterDisableUntil time.Time
+	chargeOnceTarget    int
+	// saveErr makes Save fail, so tests can check what a failed persist leaves
+	// behind.
+	saveErr error
 }
 
 func (m *mockConf) UpperLimit() int               { return m.upper }
@@ -49,7 +53,7 @@ func (m *mockConf) SetAdapterMode(bool)                            {}
 func (m *mockConf) SetControlMagSafeLED(config.ControlMagSafeMode) {}
 func (m *mockConf) LogrusFields() logrus.Fields                    { return logrus.Fields{} }
 func (m *mockConf) Load() error                                    { return nil }
-func (m *mockConf) Save() error                                    { return nil }
+func (m *mockConf) Save() error                                    { return m.saveErr }
 func (m *mockConf) Cron() string                                   { return "" }
 func (m *mockConf) SetCron(string)                                 {}
 func (m *mockConf) DisableUntil() time.Time                        { return m.disableUntil }
@@ -67,6 +71,11 @@ func (m *mockConf) SetAdapterDisableTimer(until time.Time) {
 	m.adapterDisableUntil = until
 }
 func (m *mockConf) ClearAdapterDisableTimer() { m.adapterDisableUntil = time.Time{} }
+func (m *mockConf) ChargeOnceTarget() int     { return m.chargeOnceTarget }
+func (m *mockConf) SetChargeOnceTarget(target int) {
+	m.chargeOnceTarget = target
+}
+func (m *mockConf) ClearChargeOnceTarget() { m.chargeOnceTarget = 0 }
 
 // Fake smcConn implementation.
 type fakeSMC struct {

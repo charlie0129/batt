@@ -71,10 +71,16 @@ func loadChargeControl() (compatibility.Capabilities, chargeSwitch) {
 func setChargeControl(caps compatibility.Capabilities) {
 	maintainLoopInnerLock.Lock()
 	defer maintainLoopInnerLock.Unlock()
+	storeChargeControl(caps, selectCharger(caps.ChargeControlMode))
+}
+
+// storeChargeControl swaps capabilities and charger together. The caller must
+// hold maintainLoopInnerLock.
+func storeChargeControl(caps compatibility.Capabilities, ch chargeSwitch) {
 	capabilitiesMu.Lock()
 	defer capabilitiesMu.Unlock()
 	capabilities = caps
-	charger = selectCharger(caps.ChargeControlMode)
+	charger = ch
 }
 
 // selectCharger picks the charge switch for the detected mode.

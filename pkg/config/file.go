@@ -129,6 +129,8 @@ type RawFileConfig struct {
 	PreDisableLimit *int       `json:"preDisableLimit,omitempty"`
 
 	AdapterDisableUntil *time.Time `json:"adapterDisableUntil,omitempty"`
+
+	ChargeOnceTarget *int `json:"chargeOnceTarget,omitempty"`
 }
 
 func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
@@ -154,6 +156,9 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 	}
 	if until := c.AdapterDisableUntil(); !until.IsZero() {
 		rawConfig.AdapterDisableUntil = ptr.To(until)
+	}
+	if target := c.ChargeOnceTarget(); target != 0 {
+		rawConfig.ChargeOnceTarget = ptr.To(target)
 	}
 
 	return rawConfig, nil
@@ -591,6 +596,59 @@ func (f *File) ClearAdapterDisableTimer() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.c.AdapterDisableUntil = nil
+}
+
+// ChargeOnceTarget returns the charge percentage a running one-time charge aims
+// for, or 0 when no one-time charge is running. A value outside 10-100 is
+// treated as absent so a hand-edited config cannot override the configured
+// charge limit.
+func (f *File) ChargeOnceTarget() int {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.ChargeOnceTarget == nil {
+		return 0
+	}
+
+	target := *f.c.ChargeOnceTarget
+	if target < 10 || target > 100 {
+		return 0
+	}
+
+	return target
+}
+
+// SetChargeOnceTarget starts a one-time charge to the given percentage. It
+// leaves the configured charge limit untouched, so there is nothing to restore
+// once the target is reached. Use ClearChargeOnceTarget to drop it.
+func (f *File) SetChargeOnceTarget(target int) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	if target < 10 || target > 100 {
+		panic("one-time charge target must be between 10 and 100")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.ChargeOnceTarget = ptr.To(target)
+}
+
+func (f *File) ClearChargeOnceTarget() {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.c.ChargeOnceTarget = nil
 }
 
 func (f *File) Load() error {

@@ -6,6 +6,7 @@ import "encoding/json"
 const (
 	CalibrationPhase  = "calibration.phase"
 	CalibrationAction = "calibration.action"
+	ChargeOnceAction  = "charge-once.action"
 )
 
 // Event is a generic SSE event from daemon.
@@ -25,6 +26,14 @@ type CalibrationPhaseEvent struct {
 // CalibrationActionEvent is the typed payload for calibration.action.
 type CalibrationActionEvent struct {
 	Action  string `json:"action"`
+	Message string `json:"message,omitempty"`
+	Ts      int64  `json:"ts"`
+}
+
+// ChargeOnceActionEvent is the typed payload for charge-once.action.
+type ChargeOnceActionEvent struct {
+	Action  string `json:"action"`
+	Target  int    `json:"target"`
 	Message string `json:"message,omitempty"`
 	Ts      int64  `json:"ts"`
 }

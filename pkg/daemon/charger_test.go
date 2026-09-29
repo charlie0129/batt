@@ -298,7 +298,9 @@ func TestReapplyChargeControlModeRace(t *testing.T) {
 	logrus.SetLevel(logrus.PanicLevel)
 	t.Cleanup(func() { logrus.SetLevel(logrus.InfoLevel) })
 
-	gatedSMC(t) // macOS 27 firmware: adapter works, charge keys gated
+	// macOS 27 firmware: adapter works, charge keys gated. The adapter loop
+	// also reads the charge and the plug state, so the switch can succeed.
+	adapterMockSMC(t, 78, true, true)
 	file, _ := useTempConfig(t)
 	file.SetUpperLimit(80)
 	file.SetLowerLimit(75)
@@ -331,8 +333,18 @@ func TestReapplyChargeControlModeRace(t *testing.T) {
 	}
 
 	for i := 0; i < 300; i++ {
-		file.SetAdapterMode(i%2 == 0) // flip between adapter and native
-		reapplyChargeControlMode()
+		adapter := i%2 == 0
+		file.SetAdapterMode(adapter) // flip between adapter and native
+		want := compatibility.ChargeControlNative
+		if adapter {
+			want = compatibility.ChargeControlAdapter
+		}
+		err := reapplyChargeControlMode()
+		if got := getCapabilities().ChargeControlMode; err != nil || got != want {
+			close(stop)
+			readers.Wait()
+			t.Fatalf("reapplyChargeControlMode() = %v, mode %s, want nil and %s", err, got, want)
+		}
 	}
 	close(stop)
 	readers.Wait()

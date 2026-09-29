@@ -158,6 +158,9 @@ func startCalibration(threshold, holdMinutes int) error {
 	if !conf.AdapterDisableUntil().IsZero() {
 		return ErrTemporaryAdapterDisableInProgress
 	}
+	if conf.ChargeOnceTarget() != 0 {
+		return ErrChargeOnceInProgress
+	}
 	if err := preventCalibrationSleep(); err != nil {
 		return fmt.Errorf("prevent sleep during calibration: %w", err)
 	}

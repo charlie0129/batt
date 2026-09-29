@@ -291,6 +291,118 @@ func TestMaintainManagedChargeLimitNative(t *testing.T) {
 	}
 }
 
+func TestAdapterModeTransitionDisablesNativeLimit(t *testing.T) {
+	adapterMockSMC(t, 60, true, true)
+	file, _ := useTempConfig(t)
+	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true}
+	useFakeNativeLimit(t, fake)
+	useNativeCapabilities(t, 80, 85, 90, 95, 100)
+	previousCharger := charger
+	t.Cleanup(func() { charger = previousCharger })
+
+	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("true"))
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || fake.enabled || !file.AdapterMode() || capabilities.ChargeControlMode != compatibility.ChargeControlAdapter {
+		t.Fatalf("entering adapter mode must clear native limit: status=%d, native=%+v, mode=%s", response.Code, fake, capabilities.ChargeControlMode)
+	}
+}
+
+func TestAdapterModeReconciliationFailureRestoresNativeMode(t *testing.T) {
+	gatedSMC(t) // adapter key exists, but the missing battery key makes enforcement fail
+	file, path := useTempConfig(t)
+	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true}
+	useFakeNativeLimit(t, fake)
+	useNativeCapabilities(t, 80, 85, 90, 95, 100)
+	previousCharger := charger
+	t.Cleanup(func() { charger = previousCharger })
+
+	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("true"))
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError || file.AdapterMode() || capabilities.ChargeControlMode != compatibility.ChargeControlNative || !fake.enabled || fake.limit != 80 {
+		t.Fatalf("failed adapter backend must restore native 80%% limit: status=%d, native=%+v, mode=%s", response.Code, fake, capabilities.ChargeControlMode)
+	}
+	reloaded, err := config.NewFile(path)
+	if err != nil || reloaded.AdapterMode() {
+		t.Fatalf("adapter-mode setting must roll back on disk: config=%v, err=%v", reloaded, err)
+	}
+}
+
+func TestAdapterModeTransitionFailureRollsBack(t *testing.T) {
+	gatedSMC(t)
+	file, path := useTempConfig(t)
+	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true, err: errors.New("PowerUI unavailable")}
+	useFakeNativeLimit(t, fake)
+	useNativeCapabilities(t, 80, 85, 90, 95, 100)
+	previousCharger := charger
+	t.Cleanup(func() { charger = previousCharger })
+
+	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("true"))
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError || file.AdapterMode() || capabilities.ChargeControlMode != compatibility.ChargeControlNative {
+		t.Fatalf("failed native reset must keep native mode: status=%d, mode=%s", response.Code, capabilities.ChargeControlMode)
+	}
+	reloaded, err := config.NewFile(path)
+	if err != nil || reloaded.AdapterMode() {
+		t.Fatalf("adapter-mode setting must roll back on disk: config=%v, err=%v", reloaded, err)
+	}
+}
+
+func TestLeavingAdapterModeRequiresWallPowerRestore(t *testing.T) {
+	gatedSMCNoAdapter(t) // missing adapter key makes EnableAdapter fail
+	file, path := useTempConfig(t)
+	file.SetAdapterMode(true)
+	if err := file.Save(); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: false}
+	useFakeNativeLimit(t, fake)
+	previousCap, previousCharger := capabilities, charger
+	t.Cleanup(func() { capabilities, charger = previousCap, previousCharger })
+	capabilities = compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter}
+	charger = adapterSwitch{}
+
+	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("false"))
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError || !file.AdapterMode() || capabilities.ChargeControlMode != compatibility.ChargeControlAdapter {
+		t.Fatalf("failed adapter restore must not change mode: status=%d, mode=%s", response.Code, capabilities.ChargeControlMode)
+	}
+	reloaded, err := config.NewFile(path)
+	if err != nil || !reloaded.AdapterMode() {
+		t.Fatalf("adapter-mode setting must roll back on disk: config=%v, err=%v", reloaded, err)
+	}
+}
+
+func TestLeavingAdapterModeCancelsUnsupportedOneTimeTarget(t *testing.T) {
+	gatedSMC(t)
+	file, path := useTempConfig(t)
+	file.SetAdapterMode(true)
+	file.SetChargeOnceTarget(80)
+	if err := file.Save(); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true}
+	useFakeNativeLimit(t, fake)
+	previousCap, previousCharger := capabilities, charger
+	t.Cleanup(func() { capabilities, charger = previousCap, previousCharger })
+	capabilities = compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter}
+	charger = adapterSwitch{}
+
+	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("false"))
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || file.AdapterMode() || file.ChargeOnceTarget() != 0 || capabilities.ChargeControlMode != compatibility.ChargeControlNative {
+		t.Fatalf("native transition must drop unsupported target: status=%d, mode=%s, target=%d", response.Code, capabilities.ChargeControlMode, file.ChargeOnceTarget())
+	}
+	reloaded, err := config.NewFile(path)
+	if err != nil || reloaded.ChargeOnceTarget() != 0 {
+		t.Fatalf("unsupported target must be cleared on disk: config=%v, err=%v", reloaded, err)
+	}
+}
+
 func TestResetChargeControlNative(t *testing.T) {
 	useNativeCapabilities(t, 80, 100)
 	fake := &fakeNativeLimit{limit: 80, enabled: true}

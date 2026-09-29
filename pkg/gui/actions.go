@@ -19,6 +19,12 @@ func (c *menuController) handleAction(item menuItem, checked bool) {
 		c.installOrUpgrade()
 	case itemLimit50, itemLimit60, itemLimit70, itemLimit80, itemLimit90:
 		c.setLimit(quickLimitForItem(item))
+	case itemChargeOnceLimit:
+		c.callChargeOnce(c.api.ChargeOnceToLimit, "Failed to start charging to the limit")
+	case itemChargeOnceFull:
+		c.callChargeOnce(c.api.ChargeOnceToFull, "Failed to start charging to 100%")
+	case itemChargeOnceCancel:
+		c.callChargeOnce(c.api.CancelChargeOnce, "Failed to cancel the one-time charge")
 	case itemMagSafeEnabled:
 		c.setMagSafeMode(config.ControlMagSafeModeEnabled)
 	case itemMagSafeDisabled:
@@ -93,6 +99,31 @@ func (c *menuController) setLimit(limit int) {
 		logrus.WithError(err).Error("Failed to set limit")
 		showAlert("Failed to set limit", response+err.Error())
 	}
+}
+
+func (c *menuController) callChargeOnce(call func() (string, error), failure string) {
+	response, err := call()
+	if err != nil {
+		logrus.WithError(err).Error(failure)
+		showAlert(failure, response+err.Error())
+	}
+}
+
+// chargeOnceLimitTitle labels the action that charges to the configured limit
+// right away.
+func chargeOnceLimitTitle(limit int) string {
+	if limit <= 0 || limit >= 100 {
+		return "Charge to Limit Now"
+	}
+	return fmt.Sprintf("Charge to %d%% Now", limit)
+}
+
+// chargeOnceStatusTitle shows what a running one-time charge is doing.
+func chargeOnceStatusTitle(target, currentCharge int) string {
+	if currentCharge <= 0 {
+		return fmt.Sprintf("Charging to %d%%…", target)
+	}
+	return fmt.Sprintf("Charging to %d%%, now %d%%", target, currentCharge)
 }
 
 func (c *menuController) setMagSafeMode(mode config.ControlMagSafeMode) {

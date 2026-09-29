@@ -215,6 +215,20 @@ void BattBuildMenu(BattMenuController *controller, NSString *version) {
     }
 
     [root addItem:[NSMenuItem separatorItem]];
+    [root addItem:DisplayItem(controller, @"One-Time Charge", BattItemChargeOnce, NO)];
+    [root addItem:ActionItem(controller, @"Charge to Limit Now", @"",
+                              BattItemChargeOnceLimit)];
+    [root addItem:ActionItem(controller, @"Charge to Full Once", @"",
+                              BattItemChargeOnceFull)];
+    NSMenuItem *chargeOnceStatus = DisplayItem(controller, @"", BattItemChargeOnceStatus, NO);
+    chargeOnceStatus.hidden = YES;
+    [root addItem:chargeOnceStatus];
+    NSMenuItem *chargeOnceCancel = ActionItem(controller, @"Cancel One-Time Charge", @"",
+                                              BattItemChargeOnceCancel);
+    chargeOnceCancel.hidden = YES;
+    [root addItem:chargeOnceCancel];
+
+    [root addItem:[NSMenuItem separatorItem]];
     NSMenu *advanced = AddSubmenu(controller, root, @"Advanced", BattItemAdvanced);
     NSMenu *magSafe = AddSubmenu(controller, advanced, @"Control MagSafe LED", BattItemMagSafe);
     [magSafe addItem:ActionItem(controller, @"Enable", @"", BattItemMagSafeEnabled)];

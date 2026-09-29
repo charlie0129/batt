@@ -50,17 +50,39 @@ func detectCapabilities() compatibility.Capabilities {
 // reapplyChargeControlMode re-detects capabilities after the adapter-mode
 // setting changed, restores wall power when leaving adapter mode, and enforces
 // the new mode immediately.
-func reapplyChargeControlMode() {
-	prev := getCapabilities().ChargeControlMode
-	caps := detectCapabilities()
-	setChargeControl(caps)
-
-	if prev == compatibility.ChargeControlAdapter && caps.ChargeControlMode != compatibility.ChargeControlAdapter {
-		_ = smcConn.EnableAdapter()
+func reapplyChargeControlMode() error {
+	maintainLoopInnerLock.Lock()
+	previous, previousCharger := loadChargeControl()
+	prev := previous.ChargeControlMode
+	next := detectCapabilities()
+	if prev == compatibility.ChargeControlNative && next.ChargeControlMode == compatibility.ChargeControlAdapter {
+		if _, err := ensureNativeChargeLimitDisabled(); err != nil {
+			maintainLoopInnerLock.Unlock()
+			return fmt.Errorf("failed to disable native limit before entering adapter mode: %w", err)
+		}
 	}
-	logrus.WithFields(capabilityLogFields(caps)).Info("reapplied charge control mode")
+	if prev == compatibility.ChargeControlAdapter && next.ChargeControlMode != compatibility.ChargeControlAdapter {
+		if err := smcConn.EnableAdapter(); err != nil {
+			maintainLoopInnerLock.Unlock()
+			return fmt.Errorf("failed to restore adapter before leaving adapter mode: %w", err)
+		}
+	}
+	storeChargeControl(next, selectCharger(next.ChargeControlMode))
+	maintainLoopInnerLock.Unlock()
+
+	if !maintainLoopForced() {
+		maintainLoopInnerLock.Lock()
+		storeChargeControl(previous, previousCharger)
+		maintainLoopInnerLock.Unlock()
+		if !maintainLoopForced() {
+			return fmt.Errorf("failed to enforce %s charge-control mode; previous %s mode could not be restored either", next.ChargeControlMode, prev)
+		}
+		return fmt.Errorf("failed to enforce %s charge-control mode; previous %s mode restored", next.ChargeControlMode, prev)
+	}
+
+	logrus.WithFields(capabilityLogFields(next)).Info("reapplied charge control mode")
 	disableUnsupportedConfiguredFeatures()
-	maintainLoopForced()
+	return nil
 }
 
 // detectNativeChargeControl falls back to the charge limit built into macOS
@@ -162,6 +184,11 @@ func disableUnsupportedConfiguredFeatures() {
 			"supportedLimits": caps.SupportedLimits,
 		}).Warn("configured charge limit is not offered by this Mac, raising it to the next supported limit")
 		conf.SetUpperLimit(snapped)
+		changed = true
+	}
+	if target := conf.ChargeOnceTarget(); target != 0 && (!caps.ChargingControl ||
+		(caps.ChargeControlMode == compatibility.ChargeControlNative && target < 100)) {
+		conf.ClearChargeOnceTarget()
 		changed = true
 	}
 	if !changed {

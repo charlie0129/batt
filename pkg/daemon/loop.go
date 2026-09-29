@@ -38,6 +38,9 @@ func infiniteLoop() {
 		if restoreDisabledLimit(conf, now) {
 			maintainLoopForced()
 		}
+		if completeChargeOnce(conf) {
+			maintainLoopForced()
+		}
 		if getCapabilities().AdapterControl {
 			maintainAdapterDisable(conf, now)
 		}
@@ -436,6 +439,10 @@ func maintainManagedChargeLimit() bool {
 		}
 	}
 
+	if target := activeChargeOnceTarget(); target > 0 {
+		return maintainManagedChargeOnce(target)
+	}
+
 	upper := conf.UpperLimit()
 	if upper >= 100 {
 		changed, err := ensureManagedChargeLimitDisabled()
@@ -462,6 +469,35 @@ func maintainManagedChargeLimit() bool {
 		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Tracef("%s charge limit is correct", getCapabilities().ChargeControlMode)
 	}
 	maintainedChargingInProgress = false
+	return true
+}
+
+// maintainManagedChargeOnce temporarily overrides the Apple-managed charge
+// limit. Firmware supports a narrow band below the target; native macOS only
+// supports charging to full once by temporarily disabling its limit.
+func maintainManagedChargeOnce(target int) bool {
+	maintainedChargingInProgress = false
+	mode := getCapabilities().ChargeControlMode
+
+	if target < 100 && mode != compatibility.ChargeControlFirmware {
+		logrus.Error("the native macOS backend cannot force a one-time charge below 100%")
+		return false
+	}
+
+	var changed bool
+	var err error
+	if target >= 100 {
+		changed, err = ensureManagedChargeLimitDisabled()
+	} else {
+		changed, err = ensureManagedChargeLimit(target-1, target)
+	}
+	if err != nil {
+		logrus.Errorf("failed to reconcile %s charge limit for a one-time charge: %v", mode, err)
+		return false
+	}
+	if changed {
+		logrus.WithField("target", target).Infof("reconciled %s charge limit for a one-time charge", mode)
+	}
 	return true
 }
 
@@ -500,8 +536,16 @@ func maintainActiveCharging(ignoreMissedLoops bool) bool {
 		return false
 	}
 
+	chargeOnceTarget := activeChargeOnceTarget()
+	if chargeOnceTarget > 0 && getCapabilities().ChargeControlMode == compatibility.ChargeControlAdapter && nativeLimit.Supported() {
+		if _, err := ensureNativeChargeLimitDisabled(); err != nil {
+			logrus.WithError(err).Error("failed to clear native limit for adapter-mode one-time charge")
+			return false
+		}
+	}
+
 	maintainedChargingInProgress = isChargingEnabled && isPluggedIn && calibrationState.Phase == calibration.PhaseIdle
-	printStatus(batteryCharge, lower, upper, isChargingEnabled, isPluggedIn, maintainedChargingInProgress, calibrationState.Phase != calibration.PhaseIdle)
+	printStatus(batteryCharge, lower, upper, chargeOnceTarget, isChargingEnabled, isPluggedIn, maintainedChargingInProgress, calibrationState.Phase != calibration.PhaseIdle)
 
 	// If calibration is active, advance it and skip normal maintain logic.
 	if applyCalibrationWithinLoop(batteryCharge) {
@@ -514,6 +558,14 @@ func maintainActiveCharging(ignoreMissedLoops bool) bool {
 			// nothing
 		}
 		return true
+	}
+
+	// A one-time charge overrides the configured band until the battery reaches
+	// its target. Passing the target as both bounds removes the hysteresis gap,
+	// so charging starts right away instead of waiting for the charge to fall
+	// below the lower limit, and stops exactly at the target.
+	if chargeOnceTarget > 0 && batteryCharge < chargeOnceTarget {
+		return handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn, batteryCharge, chargeOnceTarget, chargeOnceTarget)
 	}
 
 	// If maintain is disabled, we don't care about the battery charge, enable charging anyway.
@@ -546,6 +598,7 @@ type loopStatus struct {
 	batteryCharge                int
 	lower                        int
 	upper                        int
+	chargeOnceTarget             int
 	isChargingEnabled            bool
 	isPluggedIn                  bool
 	maintainedChargingInProgress bool
@@ -558,6 +611,7 @@ func printStatus(
 	batteryCharge int,
 	lower int,
 	upper int,
+	chargeOnceTarget int,
 	isChargingEnabled bool,
 	isPluggedIn bool,
 	maintainedChargingInProgress bool,
@@ -567,6 +621,7 @@ func printStatus(
 		batteryCharge:                batteryCharge,
 		lower:                        lower,
 		upper:                        upper,
+		chargeOnceTarget:             chargeOnceTarget,
 		isChargingEnabled:            isChargingEnabled,
 		isPluggedIn:                  isPluggedIn,
 		maintainedChargingInProgress: maintainedChargingInProgress,
@@ -577,6 +632,7 @@ func printStatus(
 		"batteryCharge":                batteryCharge,
 		"lower":                        lower,
 		"upper":                        upper,
+		"chargeOnceTarget":             chargeOnceTarget,
 		"chargingEnabled":              isChargingEnabled,
 		"isPluggedIn":                  isPluggedIn,
 		"maintainedChargingInProgress": maintainedChargingInProgress,

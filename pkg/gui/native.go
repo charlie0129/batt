@@ -33,6 +33,11 @@ const (
 	itemLimit70                 menuItem = C.BattItemLimit70
 	itemLimit80                 menuItem = C.BattItemLimit80
 	itemLimit90                 menuItem = C.BattItemLimit90
+	itemChargeOnce              menuItem = C.BattItemChargeOnce
+	itemChargeOnceLimit         menuItem = C.BattItemChargeOnceLimit
+	itemChargeOnceFull          menuItem = C.BattItemChargeOnceFull
+	itemChargeOnceStatus        menuItem = C.BattItemChargeOnceStatus
+	itemChargeOnceCancel        menuItem = C.BattItemChargeOnceCancel
 	itemAdvanced                menuItem = C.BattItemAdvanced
 	itemMagSafe                 menuItem = C.BattItemMagSafe
 	itemMagSafeEnabled          menuItem = C.BattItemMagSafeEnabled
@@ -84,6 +89,14 @@ var quickLimitItems = []menuItem{
 	itemLimit70,
 	itemLimit80,
 	itemLimit90,
+}
+
+var chargeOnceItems = []menuItem{
+	itemChargeOnce,
+	itemChargeOnceLimit,
+	itemChargeOnceFull,
+	itemChargeOnceStatus,
+	itemChargeOnceCancel,
 }
 
 var disableLimitActionItems = []menuItem{

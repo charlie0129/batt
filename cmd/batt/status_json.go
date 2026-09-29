@@ -46,6 +46,8 @@ type statusConfigJSON struct {
 	PreventSystemSleep      bool                 `json:"preventSystemSleep"`
 	AllowNonRootAccess      bool                 `json:"allowNonRootAccess"`
 	ControlMagSafeLed       statusMagSafeLedJSON `json:"controlMagSafeLed"`
+	// ChargeOnceTargetPercent is null when no one-time charge is running.
+	ChargeOnceTargetPercent *int `json:"chargeOnceTargetPercent"`
 }
 
 type statusMagSafeLedJSON struct {
@@ -98,6 +100,11 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 		lowerLimit = upperLimit
 	}
 
+	var chargeOnceTarget *int
+	if target := cfg.ChargeOnceTarget(); target > 0 {
+		chargeOnceTarget = &target
+	}
+
 	var allowCharging *bool
 	if data.capabilities.ChargeControlMode == compatibility.ChargeControlLegacy {
 		allowCharging = &data.charging
@@ -133,6 +140,7 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 				Enabled: mode != config.ControlMagSafeModeDisabled,
 				Mode:    string(mode),
 			},
+			ChargeOnceTargetPercent: chargeOnceTarget,
 		},
 		Compatibility: data.capabilities,
 	}
