@@ -596,6 +596,7 @@ func TestNativeChargeOnceToFullUsesNativeLimit(t *testing.T) {
 	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true}
 	useFakeNativeLimit(t, fake)
 	stubBatteryCharge(t, 70)
+	stubAdapterEnabled(t, true, nil)
 
 	if response := postChargeOnce(chargeOnceLimitPath); response.Code != http.StatusConflict {
 		t.Fatalf("native charge now must be rejected: status=%d body=%s", response.Code, response.Body.String())

@@ -62,10 +62,14 @@ func reapplyChargeControlMode() error {
 		}
 	}
 	if prev == compatibility.ChargeControlAdapter && next.ChargeControlMode != compatibility.ChargeControlAdapter {
-		if err := smcConn.EnableAdapter(); err != nil {
+		if err := smcEnableAdapter(); err != nil {
 			maintainLoopInnerLock.Unlock()
-			return fmt.Errorf("failed to restore adapter before leaving adapter mode: %w", err)
+			return fmt.Errorf("failed to restore adapter when leaving adapter mode: %w", err)
 		}
+	}
+	if err := reconcileAdapterSleepPolicy(); err != nil {
+		maintainLoopInnerLock.Unlock()
+		return restoreAdapterAfterPolicyError(err)
 	}
 	storeChargeControl(next, selectCharger(next.ChargeControlMode))
 	maintainLoopInnerLock.Unlock()

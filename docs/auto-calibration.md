@@ -138,6 +138,7 @@ Add RPC endpoints (names illustrative):
 ### Error Handling
 
 - Do not auto-retry. If any operation fails, present the error message and suggest "Cancel" to restore the previous state.
+- While a calibration is in the error phase, a new start is rejected until the user cancels it, because the snapshot of the original limits lives in the failed run.
 
 ## Implementation Plan (high level)
 

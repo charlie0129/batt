@@ -50,6 +50,7 @@ func setupRoutes() *gin.Engine {
 	router.PUT("/prevent-idle-sleep", setPreventIdleSleep)
 	router.PUT("/disable-charging-pre-sleep", setDisableChargingPreSleep)
 	router.PUT("/prevent-system-sleep", setPreventSystemSleep)
+	router.PUT("/prevent-sleep-on-adapter-disable", setPreventSleepOnAdapterDisable)
 	router.PUT("/adapter", setAdapter)
 	router.PUT("/adapter/disable", setAdapterDisableFor)
 	router.GET("/adapter", getAdapter)
@@ -127,15 +128,13 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	logrus.WithFields(capabilityLogFields(caps)).Info("detected hardware capabilities")
 	disableUnsupportedConfiguredFeatures()
 
-	// Initialize calibration state before the scheduler and main loop can use it.
-	if configPath != "" {
-		dir := filepath.Dir(configPath)
-		initCalibrationState(filepath.Join(dir, "batt.state.json"))
-	} else {
-		initCalibrationState("/etc/batt.state.json")
-	}
+	initRuntimeStates(configPath)
 	disableUnsupportedCalibrationState()
 	restoreCalibrationSleepAssertion()
+
+	if err := ensureStartupSleepPolicy(); err != nil {
+		return err
+	}
 
 	router := setupRoutes()
 	sseHub = events.NewEventHub()
@@ -145,12 +144,17 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		sigc := make(chan os.Signal, 1)
 		signal.Notify(sigc, syscall.SIGHUP)
 		for range sigc {
+			chargeControlTransitionMu.Lock()
 			err := conf.Load()
+			if err == nil {
+				disableUnsupportedConfiguredFeatures()
+				err = reconcileReloadedSleepPolicy()
+			}
+			chargeControlTransitionMu.Unlock()
 			if err != nil {
-				logrus.Errorf("failed to reload config: %v", err)
+				logrus.WithError(err).Error("failed to reload config safely")
 				continue
 			}
-			disableUnsupportedConfiguredFeatures()
 			logrus.Infof("config reloaded")
 		}
 	}()
@@ -286,10 +290,8 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		}
 	}
 
-	if exitCaps.AdapterControl {
-		if err := smcConn.EnableAdapter(); err != nil {
-			logrus.Errorf("failed to re-enable adapter before exiting: %v", err)
-		}
+	if err := shutdownAdapterAndSleep(); err != nil {
+		logrus.Errorf("failed to restore adapter/sleep state before exiting: %v", err)
 	}
 
 	logrus.Info("closing smc connection")
@@ -300,4 +302,72 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 
 	logrus.Info("exiting")
 	return nil
+}
+
+func reconcileReloadedSleepPolicy() error {
+	if !adapterSleepPolicyCapable() {
+		return nil
+	}
+	if err := reconcileAdapterSleepPolicy(); err != nil {
+		return restoreAdapterAfterPolicyError(err)
+	}
+	return nil
+}
+
+// ensureStartupSleepPolicy reconciles the sleep hold with the adapter state
+// before the daemon serves requests. An unusable snapshot file does not stop the
+// daemon: the charge limit does not depend on it. The file stays in place, no
+// hold can be taken while it exists, and wall power is already restored when
+// protection was missing. Every other failure stops the start.
+func ensureStartupSleepPolicy() error {
+	err := reconcileStartupSleepPolicy()
+	var snapshotErr *sleepSnapshotError
+	if errors.As(err, &snapshotErr) {
+		logrus.WithError(err).Errorf("ignoring the unusable sleep snapshot %s; batt starts without it and cannot hold sleep until it is fixed or removed. If the Mac no longer sleeps, run `sudo pmset -a disablesleep 0`", snapshotErr.path)
+		return nil
+	}
+	return err
+}
+
+func reconcileStartupSleepPolicy() error {
+	if adapterSleepPolicyCapable() {
+		if err := reconcileAdapterSleepPolicy(); err != nil {
+			return fmt.Errorf("startup: %w", restoreAdapterAfterPolicyError(err))
+		}
+		return nil
+	}
+	if err := restorePendingSleepDisabled(); err != nil {
+		return fmt.Errorf("failed to restore pending sleep-disabled state during startup: %w", err)
+	}
+	return nil
+}
+
+func shutdownAdapterAndSleep() error {
+	if adapterSleepPolicyCapable() {
+		if err := smcEnableAdapter(); err != nil {
+			logrus.Errorf("failed to re-enable adapter before exiting: %v", err)
+			return err
+		}
+		if err := releaseAllSleepHolds(); err != nil {
+			logrus.Errorf("failed to restore SleepDisabled before exiting: %v", err)
+			return err
+		}
+	} else {
+		if err := releaseAllSleepHolds(); err != nil {
+			logrus.Errorf("failed to restore SleepDisabled before exiting: %v", err)
+			return err
+		}
+	}
+	return nil
+}
+
+func initRuntimeStates(configPath string) {
+	dir := "/etc"
+	if configPath != "" {
+		dir = filepath.Dir(configPath)
+	}
+	initCalibrationState(filepath.Join(dir, "batt.state.json"))
+	if err := initSleepDisabledState(filepath.Join(dir, "batt.sleep.json")); err != nil {
+		logrus.WithError(err).Warn("failed to initialize sleep disabled state")
+	}
 }

@@ -72,6 +72,62 @@ func TestSelectCharger(t *testing.T) {
 	}
 }
 
+func TestAdapterSwitchUsesSleepPolicy(t *testing.T) {
+	sleep := stubSleepDisabled(t, false)
+	adapter := stubAdapter(t, true)
+	capabilities = compatibility.Capabilities{ChargeControlMode: compatibility.ChargeControlAdapter}
+	conf = &sleepPolicyConf{prevent: true}
+
+	switcher := selectCharger(compatibility.ChargeControlAdapter)
+	if err := switcher.Disable(); err != nil {
+		t.Fatal(err)
+	}
+	if adapter.enabled || !sleep.value || !sleepHolds[sleepHoldAdapter] {
+		t.Fatal("adapter mode must hold sleep before cutting wall power")
+	}
+	if err := switcher.Enable(); err != nil {
+		t.Fatal(err)
+	}
+	if !adapter.enabled || sleep.value || sleepHolds[sleepHoldAdapter] {
+		t.Fatal("adapter mode must restore wall power before releasing the sleep hold")
+	}
+}
+
+func TestAdapterSwitchDoesNotCutPowerIfSleepHoldFails(t *testing.T) {
+	sleep := stubSleepDisabled(t, false)
+	adapter := stubAdapter(t, true)
+	capabilities = compatibility.Capabilities{ChargeControlMode: compatibility.ChargeControlAdapter}
+	conf = &sleepPolicyConf{prevent: true}
+	sleep.setErr = errors.New("sleep setting unavailable")
+
+	if err := (adapterSwitch{}).Disable(); err == nil {
+		t.Fatal("expected sleep hold failure")
+	}
+	if !adapter.enabled {
+		t.Fatal("wall power must remain on when the sleep hold fails")
+	}
+}
+
+func TestAdapterModeReconcilesSleepAfterRestart(t *testing.T) {
+	sleep := stubSleepDisabled(t, false)
+	adapter := stubAdapter(t, false)
+	capabilities = compatibility.Capabilities{ChargeControlMode: compatibility.ChargeControlAdapter}
+	conf = &sleepPolicyConf{prevent: true}
+
+	if err := reconcileAdapterSleepPolicy(); err != nil {
+		t.Fatal(err)
+	}
+	if adapter.enabled || !sleep.value || !sleepHolds[sleepHoldAdapter] {
+		t.Fatal("adapter mode must recover sleep protection for an already-cut adapter")
+	}
+	if err := shutdownAdapterAndSleep(); err != nil {
+		t.Fatal(err)
+	}
+	if !adapter.enabled || sleep.value || sleepHolds[sleepHoldAdapter] {
+		t.Fatal("shutdown must restore wall power and sleep in adapter mode")
+	}
+}
+
 func TestUsesActiveChargeControl(t *testing.T) {
 	previous := capabilities
 	t.Cleanup(func() { capabilities = previous })

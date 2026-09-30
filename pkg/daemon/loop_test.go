@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -433,5 +434,132 @@ func TestMaintainFirmwareChargeLimitWithoutLegacyPolling(t *testing.T) {
 	}
 	if state.Active {
 		t.Fatal("firmware charge limit should be inactive at 100%")
+	}
+}
+
+type loopMockConf struct {
+	mockConf
+	prevent bool
+}
+
+func (c *loopMockConf) PreventSleepOnAdapterDisable() bool { return c.prevent }
+
+func TestMaintainAdapterDisable_RestartIndefiniteReconcilesHold(t *testing.T) {
+	previousConf, previousCap := conf, capabilities
+	previousIsAdapter := smcIsAdapterEnabled
+	t.Cleanup(func() {
+		conf, capabilities = previousConf, previousCap
+		smcIsAdapterEnabled = previousIsAdapter
+		sleepHolds = map[string]bool{}
+	})
+
+	sleep := stubSleepDisabled(t, false)
+	capabilities = compatibility.Capabilities{AdapterControl: true}
+	smcIsAdapterEnabled = func() (bool, error) { return false, nil } // adapter disabled
+	configured := &loopMockConf{
+		prevent: true,
+	}
+	conf = configured
+
+	maintainAdapterDisable(configured, time.Now())
+
+	if !sleepHolds[sleepHoldAdapter] {
+		t.Fatal("expected sleep hold to be acquired for indefinite disable on restart")
+	}
+	if !sleep.value {
+		t.Fatal("expected SleepDisabled to be true")
+	}
+}
+
+func TestMaintainAdapterDisable_EnableFailureKeepsTimer(t *testing.T) {
+	previousEnable := smcEnableAdapter
+	previousIsAdapter := smcIsAdapterEnabled
+	t.Cleanup(func() {
+		smcEnableAdapter = previousEnable
+		smcIsAdapterEnabled = previousIsAdapter
+	})
+
+	smcIsAdapterEnabled = func() (bool, error) { return false, nil }
+	smcEnableAdapter = func() error { return errors.New("SMC enable failed") }
+
+	now := time.Now()
+	configured := &mockConf{
+		adapterDisableUntil: now.Add(-time.Second),
+	}
+
+	if restored := maintainAdapterDisable(configured, now); restored {
+		t.Fatal("maintainAdapterDisable should report false when enable fails")
+	}
+	if configured.adapterDisableUntil.IsZero() {
+		t.Fatal("timer must not be cleared when adapter enable fails")
+	}
+}
+
+func TestMaintainAdapterDisable_ActiveTimerRetriesReleaseAfterOptionDisabled(t *testing.T) {
+	previousIsAdapter, previousDisable := smcIsAdapterEnabled, smcDisableAdapter
+	previousConf, previousCapabilities := conf, capabilities
+	t.Cleanup(func() {
+		smcIsAdapterEnabled, smcDisableAdapter = previousIsAdapter, previousDisable
+		conf, capabilities = previousConf, previousCapabilities
+		sleepHolds = map[string]bool{}
+	})
+
+	sleep := stubSleepDisabled(t, false)
+	capabilities.AdapterControl = true
+	sleepHolds[sleepHoldAdapter] = true
+	smcIsAdapterEnabled = func() (bool, error) { return false, nil }
+	smcDisableAdapter = func() error { return nil }
+	configured := &loopMockConf{
+		mockConf: mockConf{adapterDisableUntil: time.Now().Add(time.Hour)},
+		prevent:  false,
+	}
+	conf = configured
+
+	maintainAdapterDisable(configured, time.Now())
+
+	if sleepHolds[sleepHoldAdapter] || sleep.value {
+		t.Fatal("disabled option must release a stale hold before the timer expires")
+	}
+}
+
+func TestMaintainAdapterDisable_AlreadyEnabledRetriesReleaseHold(t *testing.T) {
+	previousIsAdapter := smcIsAdapterEnabled
+	t.Cleanup(func() {
+		smcIsAdapterEnabled = previousIsAdapter
+		sleepHolds = map[string]bool{}
+	})
+
+	sleep := stubSleepDisabled(t, false)
+	sleepHolds[sleepHoldAdapter] = true
+	smcIsAdapterEnabled = func() (bool, error) { return true, nil } // already enabled
+
+	// Simulate release failure
+	sleep.setErr = errors.New("IOPMSetSystemPowerSetting failed")
+
+	now := time.Now()
+	configured := &mockConf{
+		adapterDisableUntil: now.Add(-time.Second),
+	}
+
+	if restored := maintainAdapterDisable(configured, now); restored {
+		t.Fatal("maintainAdapterDisable should report false when release fails")
+	}
+	if configured.adapterDisableUntil.IsZero() {
+		t.Fatal("timer must not be cleared when sleep hold release fails")
+	}
+	if !sleepHolds[sleepHoldAdapter] {
+		t.Fatal("hold must be preserved on release failure")
+	}
+
+	// Retry succeeds
+	sleep.setErr = nil
+	if restored := maintainAdapterDisable(configured, now); !restored {
+		t.Fatal("maintainAdapterDisable should report true when release succeeds")
+	}
+	if !configured.adapterDisableUntil.IsZero() {
+		t.Fatal("timer must be cleared once release succeeds")
+	}
+	if sleepHolds[sleepHoldAdapter] {
+		t.Fatal("hold must be released")
 	}
 }

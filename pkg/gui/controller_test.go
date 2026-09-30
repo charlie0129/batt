@@ -44,6 +44,66 @@ func TestCalibrationAndTemporaryDisableMenuExclusion(t *testing.T) {
 	}
 }
 
+func TestCanShowPreventSleepOnAdapterDisable(t *testing.T) {
+	tests := []struct {
+		name         string
+		installed    bool
+		capabilities compatibility.Capabilities
+		needsUpgrade bool
+		want         bool
+	}{
+		{
+			name:         "supported and ready",
+			installed:    true,
+			capabilities: compatibility.Capabilities{ChargingControl: true, AdapterControl: true},
+			needsUpgrade: false,
+			want:         true,
+		},
+		{
+			name:         "adapter mode without manual adapter controls",
+			installed:    true,
+			capabilities: compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter},
+			want:         true,
+		},
+		{
+			name:         "not installed",
+			installed:    false,
+			capabilities: compatibility.Capabilities{ChargingControl: true, AdapterControl: true},
+			needsUpgrade: false,
+			want:         false,
+		},
+		{
+			name:         "needs upgrade",
+			installed:    true,
+			capabilities: compatibility.Capabilities{ChargingControl: true, AdapterControl: true},
+			needsUpgrade: true,
+			want:         false,
+		},
+		{
+			name:         "no charging control",
+			installed:    true,
+			capabilities: compatibility.Capabilities{ChargingControl: false, AdapterControl: true},
+			needsUpgrade: false,
+			want:         false,
+		},
+		{
+			name:         "no adapter control",
+			installed:    true,
+			capabilities: compatibility.Capabilities{ChargingControl: true, AdapterControl: false},
+			needsUpgrade: false,
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := canShowPreventSleepOnAdapterDisable(tt.installed, tt.capabilities, tt.needsUpgrade); got != tt.want {
+				t.Errorf("canShowPreventSleepOnAdapterDisable() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestChargeOnceMenuAvailability(t *testing.T) {
 	tests := []struct {
 		name                    string

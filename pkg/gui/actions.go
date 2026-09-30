@@ -37,6 +37,8 @@ func (c *menuController) handleAction(item menuItem, checked bool) {
 		c.setDisableChargingPreSleep(checked)
 	case itemPreventSystemSleep:
 		c.setPreventSystemSleep(checked)
+	case itemPreventSleepOnAdapterDisable:
+		c.setPreventSleepOnAdapterDisable(checked)
 	case itemForceDischargeStop:
 		c.stopForceDischarge()
 	case itemForceDischargeIndefinitely:
@@ -150,6 +152,20 @@ func (c *menuController) setDisableChargingPreSleep(checked bool) {
 func (c *menuController) setPreventSystemSleep(checked bool) {
 	if _, err := c.api.SetPreventSystemSleep(checked); err != nil {
 		showAlert("Failed to set prevent system sleep", err.Error())
+	}
+}
+
+func (c *menuController) setPreventSleepOnAdapterDisable(checked bool) {
+	if checked {
+		if !showConfirmation(confirmPreventSleepOnAdapterDisable) {
+			logrus.Info("User cancelled prevent sleep on adapter disable")
+			c.menu.setChecked(itemPreventSleepOnAdapterDisable, false)
+			return
+		}
+	}
+	if _, err := c.api.SetPreventSleepOnAdapterDisable(checked); err != nil {
+		c.menu.setChecked(itemPreventSleepOnAdapterDisable, !checked)
+		showAlert("Failed to set prevent sleep on adapter disable", err.Error())
 	}
 }
 

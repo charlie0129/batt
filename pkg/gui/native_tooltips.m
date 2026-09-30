@@ -45,9 +45,13 @@ void BattApplyTooltips(BattMenuController *controller) {
          "So your computer can go to sleep as soon as a charging session is completed / charger disconnected.\n\n"
          "Does similar thing to prevent-idle-sleep, but works for manual sleep too.\n\n"
          "Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while this feature is in use");
+    SetTooltip(controller, BattItemPreventSleepOnAdapterDisable,
+        @"Set whether to keep Clamshell mode alive while adapter input is disabled by temporarily disabling system sleep.\n\n"
+         "This prevents all sleep—not just idle sleep—while adapter input is disabled, allowing Force Discharge and Auto Calibration to continue with the lid closed. When adapter input returns, batt automatically restores the prior sleep setting.\n\n"
+         "WARNING: Your Mac may remain awake with the lid closed, overheat in a bag, or drain its battery to 0% if unplugged and left unattended.");
     SetTooltip(controller, BattItemForceDischarge,
         @"Cut power from the wall and run from the battery, either indefinitely or for a selected duration. After a temporary force discharge, batt automatically restores the power adapter.\n\n"
-         "NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.");
+         "NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep* unless \"Prevent Sleep when Adapter is Disabled\" is enabled. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.");
     SetTooltip(controller, BattItemAutoCalibration,
         @"Calibration helps you calibrate your battery by automatically discharging and charging it according to best practices.\n\n"
          "batt prevents idle sleep for the entire calibration session. Closing the lid or explicitly choosing Sleep can still force sleep.\n\n"

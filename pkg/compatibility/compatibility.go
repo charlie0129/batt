@@ -29,12 +29,13 @@ const (
 type Feature string
 
 const (
-	FeatureChargingControl Feature = "charging control"
-	FeatureLowerLimit      Feature = "lower charge limit"
-	FeatureSleepHooks      Feature = "sleep hooks"
-	FeatureMagSafeLED      Feature = "MagSafe LED control"
-	FeatureAdapterControl  Feature = "power adapter control"
-	FeatureCalibration     Feature = "auto calibration"
+	FeatureChargingControl    Feature = "charging control"
+	FeatureLowerLimit         Feature = "lower charge limit"
+	FeatureSleepHooks         Feature = "sleep hooks"
+	FeatureMagSafeLED         Feature = "MagSafe LED control"
+	FeatureAdapterControl     Feature = "power adapter control"
+	FeatureAdapterSleepPolicy Feature = "adapter sleep protection"
+	FeatureCalibration        Feature = "auto calibration"
 )
 
 // Capabilities reports the hardware-dependent features supported by the daemon.
@@ -80,6 +81,8 @@ func (c Capabilities) Supports(feature Feature) bool {
 		return c.MagSafeLED
 	case FeatureAdapterControl:
 		return c.AdapterControl
+	case FeatureAdapterSleepPolicy:
+		return c.AdapterControl || c.ChargeControlMode == ChargeControlAdapter
 	case FeatureCalibration:
 		return c.Calibration
 	default:

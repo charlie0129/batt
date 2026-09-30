@@ -38,14 +38,15 @@ type statusBatteryJSON struct {
 }
 
 type statusConfigJSON struct {
-	Enabled                 bool                 `json:"enabled"`
-	UpperLimitPercent       int                  `json:"upperLimitPercent"`
-	LowerLimitPercent       int                  `json:"lowerLimitPercent"`
-	PreventIdleSleep        bool                 `json:"preventIdleSleep"`
-	DisableChargingPreSleep bool                 `json:"disableChargingPreSleep"`
-	PreventSystemSleep      bool                 `json:"preventSystemSleep"`
-	AllowNonRootAccess      bool                 `json:"allowNonRootAccess"`
-	ControlMagSafeLed       statusMagSafeLedJSON `json:"controlMagSafeLed"`
+	Enabled                      bool                 `json:"enabled"`
+	UpperLimitPercent            int                  `json:"upperLimitPercent"`
+	LowerLimitPercent            int                  `json:"lowerLimitPercent"`
+	PreventIdleSleep             bool                 `json:"preventIdleSleep"`
+	DisableChargingPreSleep      bool                 `json:"disableChargingPreSleep"`
+	PreventSystemSleep           bool                 `json:"preventSystemSleep"`
+	PreventSleepOnAdapterDisable *bool                `json:"preventSleepOnAdapterDisable,omitempty"`
+	AllowNonRootAccess           bool                 `json:"allowNonRootAccess"`
+	ControlMagSafeLed            statusMagSafeLedJSON `json:"controlMagSafeLed"`
 	// ChargeOnceTargetPercent is null when no one-time charge is running.
 	ChargeOnceTargetPercent *int `json:"chargeOnceTargetPercent"`
 }
@@ -114,6 +115,12 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 		useAdapter = &data.adapter
 	}
 
+	var preventSleepOnAdapterDisable *bool
+	if data.capabilities.Supports(compatibility.FeatureAdapterSleepPolicy) {
+		val := cfg.PreventSleepOnAdapterDisable()
+		preventSleepOnAdapterDisable = &val
+	}
+
 	out := statusJSON{
 		Charging: statusChargingJSON{
 			AllowCharging: allowCharging,
@@ -129,13 +136,14 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 			VoltageVolts:         math.Round(data.batteryInfo.DesignVoltage*100) / 100,
 		},
 		Configuration: statusConfigJSON{
-			Enabled:                 enabled,
-			UpperLimitPercent:       upperLimit,
-			LowerLimitPercent:       lowerLimit,
-			PreventIdleSleep:        cfg.PreventIdleSleep(),
-			DisableChargingPreSleep: cfg.DisableChargingPreSleep(),
-			PreventSystemSleep:      cfg.PreventSystemSleep(),
-			AllowNonRootAccess:      cfg.AllowNonRootAccess(),
+			Enabled:                      enabled,
+			UpperLimitPercent:            upperLimit,
+			LowerLimitPercent:            lowerLimit,
+			PreventIdleSleep:             cfg.PreventIdleSleep(),
+			DisableChargingPreSleep:      cfg.DisableChargingPreSleep(),
+			PreventSystemSleep:           cfg.PreventSystemSleep(),
+			PreventSleepOnAdapterDisable: preventSleepOnAdapterDisable,
+			AllowNonRootAccess:           cfg.AllowNonRootAccess(),
 			ControlMagSafeLed: statusMagSafeLedJSON{
 				Enabled: mode != config.ControlMagSafeModeDisabled,
 				Mode:    string(mode),
@@ -145,32 +153,34 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 		Compatibility: data.capabilities,
 	}
 
-	tr, err := apiClient.GetTelemetry(false, true)
-	if data.capabilities.Calibration && err == nil && tr.Calibration != nil {
-		cal := tr.Calibration
+	if apiClient != nil && data.capabilities.Calibration {
+		tr, err := apiClient.GetTelemetry(false, true)
+		if err == nil && tr.Calibration != nil {
+			cal := tr.Calibration
 
-		var startedAt *time.Time
-		if cal.Phase != calibration.PhaseIdle && !cal.StartedAt.IsZero() {
-			startedAt = &cal.StartedAt
-		}
+			var startedAt *time.Time
+			if cal.Phase != calibration.PhaseIdle && !cal.StartedAt.IsZero() {
+				startedAt = &cal.StartedAt
+			}
 
-		cron := cfg.Cron()
-		sched := statusCalibrationSchedJSON{
-			Enabled: cron != "",
-			Cron:    cron,
-		}
-		if cron != "" && !cal.ScheduledAt.IsZero() {
-			sched.ScheduledAt = &cal.ScheduledAt
-		}
+			cron := cfg.Cron()
+			sched := statusCalibrationSchedJSON{
+				Enabled: cron != "",
+				Cron:    cron,
+			}
+			if cron != "" && !cal.ScheduledAt.IsZero() {
+				sched.ScheduledAt = &cal.ScheduledAt
+			}
 
-		out.Calibration = &statusCalibrationJSON{
-			Phase:     string(cal.Phase),
-			StartedAt: startedAt,
-			Paused:    cal.Paused,
-			CanPause:  cal.CanPause,
-			CanCancel: cal.CanCancel,
-			Message:   cal.Message,
-			Schedule:  sched,
+			out.Calibration = &statusCalibrationJSON{
+				Phase:     string(cal.Phase),
+				StartedAt: startedAt,
+				Paused:    cal.Paused,
+				CanPause:  cal.CanPause,
+				CanCancel: cal.CanCancel,
+				Message:   cal.Message,
+				Schedule:  sched,
+			}
 		}
 	}
 

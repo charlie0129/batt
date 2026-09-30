@@ -21,8 +21,8 @@ var (
 	smcEnableCharging       = func() error { return smcConn.EnableCharging() }
 	smcDisableCharging      = func() error { return smcConn.DisableCharging() }
 	smcIsAdapterEnabled     = func() (bool, error) { return smcConn.IsAdapterEnabled() }
-	smcEnableAdapter        = func() error { return smcConn.EnableAdapter() }
-	smcDisableAdapter       = func() error { return smcConn.DisableAdapter() }
+	smcEnableAdapter        = enableAdapterWithSleepPolicy
+	smcDisableAdapter       = disableAdapterWithSleepPolicy
 	smcIsPluggedIn          = func() (bool, error) { return smcConn.IsPluggedIn() }
 	preventCalibrationSleep = PreventCalibrationSleep
 	allowCalibrationSleep   = AllowCalibrationSleep
@@ -149,7 +149,12 @@ func startCalibration(threshold, holdMinutes int) error {
 	calibrationMu.Lock()
 	defer calibrationMu.Unlock()
 
-	if calibrationState.Phase != calibration.PhaseIdle && calibrationState.Phase != calibration.PhaseError {
+	if calibrationState.Phase == calibration.PhaseError {
+		// A failed calibration may have left the charge limit at 100. Its snapshot
+		// is the only record of the original limit, and Cancel restores it.
+		return ErrCalibrationControlsChargeLimit
+	}
+	if calibrationState.Phase != calibration.PhaseIdle {
 		return ErrCalibrationInProgress
 	}
 	if !conf.DisableUntil().IsZero() {
@@ -160,9 +165,6 @@ func startCalibration(threshold, holdMinutes int) error {
 	}
 	if conf.ChargeOnceTarget() != 0 {
 		return ErrChargeOnceInProgress
-	}
-	if err := preventCalibrationSleep(); err != nil {
-		return fmt.Errorf("prevent sleep during calibration: %w", err)
 	}
 
 	if threshold < 5 {
@@ -181,9 +183,25 @@ func startCalibration(threshold, holdMinutes int) error {
 	lower := conf.LowerLimit()
 	chargingEnabled := true
 	if !isManagedChargeControl() {
-		chargingEnabled, _ = smcIsChargingEnabled()
+		var err error
+		chargingEnabled, err = smcIsChargingEnabled()
+		if err != nil {
+			return fmt.Errorf("failed to check charging state before starting calibration: %w", err)
+		}
 	}
-	adapterEnabled, _ := smcIsAdapterEnabled()
+	adapterEnabled, err := smcIsAdapterEnabled()
+	if err != nil {
+		return fmt.Errorf("failed to check adapter state before starting calibration: %w", err)
+	}
+
+	if getCapabilities().AdapterControl {
+		if err := reconcileAdapterSleepPolicy(); err != nil {
+			return fmt.Errorf("failed to reconcile adapter sleep policy before starting calibration: %w", err)
+		}
+	}
+	if err := preventCalibrationSleep(); err != nil {
+		return fmt.Errorf("prevent sleep during calibration: %w", err)
+	}
 
 	if sseHub != nil {
 		sseHub.Publish(events.CalibrationAction, events.CalibrationActionEvent{
@@ -279,23 +297,11 @@ func applyCalibrationWithinLoop(charge int) bool {
 				st.Phase = calibration.PhaseError
 			}
 		} else {
-			adapterEnabled, err := smcIsAdapterEnabled()
-			if err != nil {
-				logrus.WithError(err).Error("failed to check adapter state during discharge phase")
-
+			log.Info("disabling adapter to allow discharge")
+			if err := smcDisableAdapter(); err != nil {
+				logrus.WithError(err).Error("failed to disable adapter during discharge phase")
 				st.LastError = err.Error()
 				st.Phase = calibration.PhaseError
-				break
-			}
-			if adapterEnabled {
-				log.Info("disabling adapter to allow discharge")
-				err := smcDisableAdapter()
-				if err != nil {
-					logrus.WithError(err).Error("failed to disable adapter during discharge phase")
-
-					st.LastError = err.Error()
-					st.Phase = calibration.PhaseError
-				}
 			}
 		}
 	case calibration.PhaseCharge:
@@ -308,12 +314,25 @@ func applyCalibrationWithinLoop(charge int) bool {
 		if time.Now().After(st.HoldEndTime) {
 			logrus.Info("hold phase complete. starting post-hold phase, draining to previous limits")
 			// Begin post-hold discharge back to previous upper limit (if snapshot < 100) or current configured upper.
-			st.Phase = calibration.PhasePostHold
-			// Ensure charging disabled to allow discharge.
-			err := smcDisableAdapter()
-			if err != nil {
+			// Ensure charging disabled to allow discharge. The post-hold phase never cuts the adapter
+			// again, so a failure here must end the calibration instead of waiting at full charge.
+			if err := smcDisableAdapter(); err != nil {
 				logrus.WithError(err).Error("failed to disable adapter during hold phase")
+				st.LastError = err.Error()
+				// The limit is still 100 here. Write the snapshot back, as Cancel does, so the
+				// failed run does not leave the battery without a limit while it waits for
+				// Cancel. The maintain loop drops a calibration in the error phase when the
+				// limit is 100, without restoring anything.
+				conf.SetUpperLimit(st.SnapshotUpperLimit)
+				conf.SetLowerLimit(st.SnapshotLowerLimit)
+				if saveErr := conf.Save(); saveErr != nil {
+					logrus.WithError(saveErr).Warn("failed to save config after the calibration failed")
+				}
+				restoreChargeControlAfterCalibration(st)
+				st.Phase = calibration.PhaseError
+				break
 			}
+			st.Phase = calibration.PhasePostHold
 		}
 	case calibration.PhasePostHold:
 		// Determine target (original snapshot upper limit if it was <100, else current config upper limit).
@@ -341,10 +360,17 @@ func applyCalibrationWithinLoop(charge int) bool {
 			break
 		}
 		restoreChargeControlAfterCalibration(st)
+		var adapterErr error
 		if st.SnapshotAdapterOn {
-			_ = smcEnableAdapter()
+			adapterErr = smcEnableAdapter()
 		} else {
-			_ = smcDisableAdapter()
+			adapterErr = smcDisableAdapter()
+		}
+		if adapterErr != nil {
+			logrus.WithError(adapterErr).Error("failed to restore adapter during calibration restore phase")
+			st.LastError = adapterErr.Error()
+			st.Phase = calibration.PhaseError
+			break
 		}
 		st.Phase = calibration.PhaseIdle
 	}
@@ -452,10 +478,18 @@ func cancelCalibration() error {
 	}
 
 	restoreChargeControlAfterCalibration(st)
+	var adapterErr error
 	if st.SnapshotAdapterOn {
-		_ = smcEnableAdapter()
+		adapterErr = smcEnableAdapter()
 	} else {
-		_ = smcDisableAdapter()
+		adapterErr = smcDisableAdapter()
+	}
+	if adapterErr != nil {
+		logrus.WithError(adapterErr).Error("failed to restore adapter while canceling calibration")
+		st.LastError = adapterErr.Error()
+		st.Phase = calibration.PhaseError
+		persistCalibrationState()
+		return fmt.Errorf("failed to restore adapter while canceling calibration: %w", adapterErr)
 	}
 
 	if sseHub != nil {
@@ -487,10 +521,18 @@ func cancelCalibrationNoRestoreNoError() {
 	}
 
 	st := calibrationState
+	var adapterErr error
 	if st.SnapshotAdapterOn {
-		_ = smcEnableAdapter()
+		adapterErr = smcEnableAdapter()
 	} else {
-		_ = smcDisableAdapter()
+		adapterErr = smcDisableAdapter()
+	}
+	if adapterErr != nil {
+		logrus.WithError(adapterErr).Error("failed to restore adapter while canceling calibration")
+		st.LastError = adapterErr.Error()
+		st.Phase = calibration.PhaseError
+		persistCalibrationState()
+		return
 	}
 
 	if sseHub != nil {

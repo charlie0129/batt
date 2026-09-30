@@ -19,44 +19,45 @@ import (
 type menuItem int
 
 const (
-	itemPowerFlow               menuItem = C.BattItemPowerFlow
-	itemPowerSystem             menuItem = C.BattItemPowerSystem
-	itemPowerAdapter            menuItem = C.BattItemPowerAdapter
-	itemPowerBattery            menuItem = C.BattItemPowerBattery
-	itemUpgrade                 menuItem = C.BattItemUpgrade
-	itemInstall                 menuItem = C.BattItemInstall
-	itemState                   menuItem = C.BattItemState
-	itemCurrentLimit            menuItem = C.BattItemCurrentLimit
-	itemQuickLimits             menuItem = C.BattItemQuickLimits
-	itemLimit50                 menuItem = C.BattItemLimit50
-	itemLimit60                 menuItem = C.BattItemLimit60
-	itemLimit70                 menuItem = C.BattItemLimit70
-	itemLimit80                 menuItem = C.BattItemLimit80
-	itemLimit90                 menuItem = C.BattItemLimit90
-	itemChargeOnce              menuItem = C.BattItemChargeOnce
-	itemChargeOnceLimit         menuItem = C.BattItemChargeOnceLimit
-	itemChargeOnceFull          menuItem = C.BattItemChargeOnceFull
-	itemChargeOnceStatus        menuItem = C.BattItemChargeOnceStatus
-	itemChargeOnceCancel        menuItem = C.BattItemChargeOnceCancel
-	itemAdvanced                menuItem = C.BattItemAdvanced
-	itemMagSafe                 menuItem = C.BattItemMagSafe
-	itemMagSafeEnabled          menuItem = C.BattItemMagSafeEnabled
-	itemMagSafeDisabled         menuItem = C.BattItemMagSafeDisabled
-	itemMagSafeAlwaysOff        menuItem = C.BattItemMagSafeAlwaysOff
-	itemPreventIdleSleep        menuItem = C.BattItemPreventIdleSleep
-	itemDisableChargingPreSleep menuItem = C.BattItemDisableChargingPreSleep
-	itemPreventSystemSleep      menuItem = C.BattItemPreventSystemSleep
-	itemForceDischarge          menuItem = C.BattItemForceDischarge
-	itemAutoCalibration         menuItem = C.BattItemAutoCalibration
-	itemCalibrationStatus       menuItem = C.BattItemCalibrationStatus
-	itemCalibrationStart        menuItem = C.BattItemCalibrationStart
-	itemCalibrationPause        menuItem = C.BattItemCalibrationPause
-	itemCalibrationResume       menuItem = C.BattItemCalibrationResume
-	itemCalibrationCancel       menuItem = C.BattItemCalibrationCancel
-	itemVersion                 menuItem = C.BattItemVersion
-	itemUninstall               menuItem = C.BattItemUninstall
-	itemDisableLimit            menuItem = C.BattItemDisableLimit
-	itemQuit                    menuItem = C.BattItemQuit
+	itemPowerFlow                    menuItem = C.BattItemPowerFlow
+	itemPowerSystem                  menuItem = C.BattItemPowerSystem
+	itemPowerAdapter                 menuItem = C.BattItemPowerAdapter
+	itemPowerBattery                 menuItem = C.BattItemPowerBattery
+	itemUpgrade                      menuItem = C.BattItemUpgrade
+	itemInstall                      menuItem = C.BattItemInstall
+	itemState                        menuItem = C.BattItemState
+	itemCurrentLimit                 menuItem = C.BattItemCurrentLimit
+	itemQuickLimits                  menuItem = C.BattItemQuickLimits
+	itemLimit50                      menuItem = C.BattItemLimit50
+	itemLimit60                      menuItem = C.BattItemLimit60
+	itemLimit70                      menuItem = C.BattItemLimit70
+	itemLimit80                      menuItem = C.BattItemLimit80
+	itemLimit90                      menuItem = C.BattItemLimit90
+	itemChargeOnce                   menuItem = C.BattItemChargeOnce
+	itemChargeOnceLimit              menuItem = C.BattItemChargeOnceLimit
+	itemChargeOnceFull               menuItem = C.BattItemChargeOnceFull
+	itemChargeOnceStatus             menuItem = C.BattItemChargeOnceStatus
+	itemChargeOnceCancel             menuItem = C.BattItemChargeOnceCancel
+	itemAdvanced                     menuItem = C.BattItemAdvanced
+	itemMagSafe                      menuItem = C.BattItemMagSafe
+	itemMagSafeEnabled               menuItem = C.BattItemMagSafeEnabled
+	itemMagSafeDisabled              menuItem = C.BattItemMagSafeDisabled
+	itemMagSafeAlwaysOff             menuItem = C.BattItemMagSafeAlwaysOff
+	itemPreventIdleSleep             menuItem = C.BattItemPreventIdleSleep
+	itemDisableChargingPreSleep      menuItem = C.BattItemDisableChargingPreSleep
+	itemPreventSystemSleep           menuItem = C.BattItemPreventSystemSleep
+	itemPreventSleepOnAdapterDisable menuItem = C.BattItemPreventSleepOnAdapterDisable
+	itemForceDischarge               menuItem = C.BattItemForceDischarge
+	itemAutoCalibration              menuItem = C.BattItemAutoCalibration
+	itemCalibrationStatus            menuItem = C.BattItemCalibrationStatus
+	itemCalibrationStart             menuItem = C.BattItemCalibrationStart
+	itemCalibrationPause             menuItem = C.BattItemCalibrationPause
+	itemCalibrationResume            menuItem = C.BattItemCalibrationResume
+	itemCalibrationCancel            menuItem = C.BattItemCalibrationCancel
+	itemVersion                      menuItem = C.BattItemVersion
+	itemUninstall                    menuItem = C.BattItemUninstall
+	itemDisableLimit                 menuItem = C.BattItemDisableLimit
+	itemQuit                         menuItem = C.BattItemQuit
 )
 
 const (
@@ -123,9 +124,10 @@ var forceDischargeActionItems = []menuItem{
 type confirmation int
 
 const (
-	confirmForceDischarge             confirmation = C.BattConfirmationForceDischarge
-	confirmForceDischargeIndefinitely confirmation = C.BattConfirmationForceDischargeIndefinitely
-	confirmStartCalibration           confirmation = C.BattConfirmationStartCalibration
+	confirmForceDischarge               confirmation = C.BattConfirmationForceDischarge
+	confirmForceDischargeIndefinitely   confirmation = C.BattConfirmationForceDischargeIndefinitely
+	confirmStartCalibration             confirmation = C.BattConfirmationStartCalibration
+	confirmPreventSleepOnAdapterDisable confirmation = C.BattConfirmationPreventSleepOnAdapterDisable
 )
 
 type nativeMenu struct {

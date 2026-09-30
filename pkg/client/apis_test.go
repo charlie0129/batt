@@ -104,3 +104,30 @@ func TestGetCompatibility(t *testing.T) {
 		t.Fatalf("unexpected compatibility: %+v", got)
 	}
 }
+
+func TestSetPreventSleepOnAdapterDisable(t *testing.T) {
+	client := &Client{httpClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Method != http.MethodPut {
+			t.Fatalf("method = %q, want PUT", request.Method)
+		}
+		if request.URL.Path != "/prevent-sleep-on-adapter-disable" {
+			t.Fatalf("path = %q, want /prevent-sleep-on-adapter-disable", request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := string(body); got != "true" {
+			t.Fatalf("body = %q, want true", got)
+		}
+		return &http.Response{
+			StatusCode: http.StatusCreated,
+			Body:       io.NopCloser(strings.NewReader(`"ok"`)),
+			Header:     make(http.Header),
+		}, nil
+	})}}
+
+	if _, err := client.SetPreventSleepOnAdapterDisable(true); err != nil {
+		t.Fatal(err)
+	}
+}

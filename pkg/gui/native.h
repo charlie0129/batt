@@ -34,6 +34,7 @@ typedef enum {
     BattItemPreventIdleSleep,
     BattItemDisableChargingPreSleep,
     BattItemPreventSystemSleep,
+    BattItemPreventSleepOnAdapterDisable,
     BattItemForceDischarge,
     BattItemForceDischargeCountdown,
     BattItemForceDischargeStop,
@@ -69,6 +70,7 @@ typedef enum {
     BattConfirmationForceDischarge = 1,
     BattConfirmationForceDischargeIndefinitely,
     BattConfirmationStartCalibration,
+    BattConfirmationPreventSleepOnAdapterDisable,
 } BattConfirmation;
 
 BattMenuRef batt_menu_create(uintptr_t handle, const char *version);

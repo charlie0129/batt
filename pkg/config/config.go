@@ -12,6 +12,7 @@ type Config interface {
 	PreventIdleSleep() bool
 	DisableChargingPreSleep() bool
 	PreventSystemSleep() bool
+	PreventSleepOnAdapterDisable() bool
 	AllowNonRootAccess() bool
 	AdapterMode() bool
 	ControlMagSafeLED() ControlMagSafeMode
@@ -28,6 +29,7 @@ type Config interface {
 	SetPreventIdleSleep(bool)
 	SetDisableChargingPreSleep(bool)
 	SetPreventSystemSleep(bool)
+	SetPreventSleepOnAdapterDisable(bool)
 	SetAllowNonRootAccess(bool)
 	SetAdapterMode(bool)
 	SetControlMagSafeLED(ControlMagSafeMode)

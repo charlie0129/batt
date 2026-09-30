@@ -295,6 +295,75 @@ func setPreventSystemSleep(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, "ok")
 }
 
+func setPreventSleepOnAdapterDisable(c *gin.Context) {
+	if !requireCapability(c, compatibility.FeatureAdapterSleepPolicy) {
+		return
+	}
+	var requested bool
+	if err := c.BindJSON(&requested); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, err.Error())
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+
+	adapterPolicyMu.Lock()
+	defer adapterPolicyMu.Unlock()
+
+	adapterEnabled, err := smcIsAdapterEnabled()
+	if err != nil {
+		logrus.WithError(err).Error("failed to check adapter state for prevent-sleep setting")
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	current := conf.PreventSleepOnAdapterDisable()
+
+	if requested {
+		if !adapterEnabled {
+			if err := holdSleep(sleepHoldAdapter); err != nil {
+				logrus.WithError(err).Error("failed to acquire sleep hold before saving config")
+				c.IndentedJSON(http.StatusInternalServerError, err.Error())
+				_ = c.AbortWithError(http.StatusInternalServerError, err)
+				return
+			}
+		}
+		conf.SetPreventSleepOnAdapterDisable(true)
+		if err := conf.Save(); err != nil {
+			conf.SetPreventSleepOnAdapterDisable(current)
+			if !adapterEnabled && !current {
+				_ = releaseSleep(sleepHoldAdapter)
+			}
+			logrus.Errorf("saveConfig failed: %v", err)
+			c.IndentedJSON(http.StatusInternalServerError, err.Error())
+			_ = c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		conf.SetPreventSleepOnAdapterDisable(false)
+		if err := conf.Save(); err != nil {
+			conf.SetPreventSleepOnAdapterDisable(current)
+			logrus.Errorf("saveConfig failed: %v", err)
+			c.IndentedJSON(http.StatusInternalServerError, err.Error())
+			_ = c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+		if err := releaseSleep(sleepHoldAdapter); err != nil {
+			logrus.WithError(err).Error("failed to release sleep hold after disabling setting")
+			c.IndentedJSON(http.StatusInternalServerError, err.Error())
+			_ = c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	logrus.Infof("set prevent sleep on adapter disable to %t", requested)
+
+	c.IndentedJSON(http.StatusCreated, "ok")
+}
+
 func setAdapter(c *gin.Context) {
 	if !requireCapability(c, compatibility.FeatureAdapterControl) {
 		return

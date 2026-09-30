@@ -98,7 +98,7 @@ func resetChargeControl() error {
 		return err
 	case compatibility.ChargeControlAdapter:
 		// Restore wall power so the Mac is not left running from the battery.
-		return smcConn.EnableAdapter()
+		return smcEnableAdapter()
 	default:
 		return smcConn.ResetChargeControl()
 	}

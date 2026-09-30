@@ -3,14 +3,17 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	pkgerrors "github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/daemon"
 	"github.com/charlie0129/batt/pkg/smc"
 	daemonutils "github.com/charlie0129/batt/pkg/utils/daemon"
 )
@@ -75,6 +78,40 @@ By default, only root user is allowed to access the batt daemon for security rea
 	return cmd
 }
 
+type uninstallHardware interface {
+	IsChargingControlCapable() bool
+	ResetChargeControl() error
+	IsAdapterControlCapable() bool
+	EnableAdapter() error
+}
+
+// restoreUninstallState puts the Mac back into its normal state once the daemon
+// is gone: wall power first, then the system sleep setting. Nothing restores the
+// sleep setting after this command, so a failed charge-limit reset must not skip
+// it. Every failure is reported after all steps ran. An adapter that stays cut
+// is the exception: sleep stays held then, because the Mac still runs on battery.
+func restoreUninstallState(hardware uninstallHardware, resetCharging bool, recoverSleep func() error) error {
+	var resetErr error
+	if resetCharging && hardware.IsChargingControlCapable() {
+		logrus.Info("resetting charge limits")
+		resetErr = hardware.ResetChargeControl()
+	}
+	if hardware.IsAdapterControlCapable() {
+		if err := hardware.EnableAdapter(); err != nil {
+			return fmt.Errorf("failed to enable adapter (charge-limit reset: %v): %w", resetErr, err)
+		}
+	}
+
+	var errs []error
+	if resetErr != nil {
+		errs = append(errs, fmt.Errorf("failed to reset charge control: %w", resetErr))
+	}
+	if err := recoverSleep(); err != nil {
+		errs = append(errs, fmt.Errorf("failed to restore system sleep setting: %w", err))
+	}
+	return errors.Join(errs...)
+}
+
 // NewUninstallCommand .
 func NewUninstallCommand() *cobra.Command {
 	noResetCharging := false
@@ -98,32 +135,23 @@ You must run this command as root.`,
 				return fmt.Errorf("failed to uninstall daemon: %v", err)
 			}
 
-			if !noResetCharging {
-				logrus.Infof("resetting charge limits")
+			// Wall power must be restored before recovering SleepDisabled, even
+			// when --no-reset-charging skips the charge-limit reset.
+			smcC := smc.New()
+			if err := smcC.Open(); err != nil {
+				return fmt.Errorf("failed to open SMC: %w", err)
+			}
+			defer func() { _ = smcC.Close() }()
 
-				// Open Apple SMC for read/writing
-				smcC := smc.New()
-				if err := smcC.Open(); err != nil {
-					return fmt.Errorf("failed to open SMC: %v", err)
-				}
-
-				if smcC.IsChargingControlCapable() {
-					err = smcC.ResetChargeControl()
-					if err != nil {
-						return fmt.Errorf("failed to reset charge control: %v", err)
-					}
-				}
-
-				if smcC.IsAdapterControlCapable() {
-					err = smcC.EnableAdapter()
-					if err != nil {
-						return fmt.Errorf("failed to enable adapter: %v", err)
-					}
-				}
-
-				if err := smcC.Close(); err != nil {
-					return fmt.Errorf("failed to close SMC: %v", err)
-				}
+			sleepStatePath := "/etc/batt.sleep.json"
+			if configPath != "" {
+				sleepStatePath = filepath.Join(filepath.Dir(configPath), "batt.sleep.json")
+			}
+			err = restoreUninstallState(smcC, !noResetCharging, func() error {
+				return daemon.RecoverSleepDisabled(sleepStatePath)
+			})
+			if err != nil {
+				return err
 			}
 
 			fmt.Println("successfully uninstalled")

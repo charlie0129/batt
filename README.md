@@ -108,7 +108,7 @@ This accepts any upper limit from 10 to 100 and supports the lower-limit delta, 
 Intentional differences and limitations in adapter mode:
 
 - The limit is enforced only while `batt` is awake. Just before sleep `batt` restores/holds a safe state (charging is disabled pre-sleep by default) to avoid overcharging while asleep; the sleep options apply as in legacy mode.
-- In Clamshell mode (lid closed with an external display), cutting wall power makes the Mac sleep. This is a macOS limitation, the same one that applies to `batt adapter disable`.
+- In Clamshell mode (lid closed with an external display), cutting wall power makes the Mac sleep unless `batt prevent-sleep-on-adapter-disable` is enabled. This opt-in setting also applies to adapter mode; it prevents all system sleep while wall power is cut. See [Prevent sleep when adapter is disabled](#prevent-sleep-when-adapter-is-disabled) for safety warnings.
 - Because `batt` owns the adapter to enforce the limit, the manual `batt adapter` / GUI Force Discharge feature and auto-calibration are disabled in this mode.
 - MagSafe LED control is unavailable, because `batt` does not toggle the charge state directly.
 - If the SMC charge keys are gated **and** the adapter key is unavailable, `batt` uses the native macOS limit instead (80% and above only), driven through PowerUIAgent.
@@ -221,7 +221,7 @@ Cut or restore power from the wall. This has the same effect as unplugging/plugg
 
 This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.
 
-NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.
+NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep* unless `batt prevent-sleep-on-adapter-disable` is enabled. See [Prevent sleep when adapter is disabled](#prevent-sleep-when-adapter-is-disabled) below for details and warnings.
 
 To enable/disable the power adapter, see `batt adapter`. For example, to disable the power adapter, run `sudo batt adapter disable`. To enable the power adapter, run `sudo batt adapter enable`.
 
@@ -257,6 +257,7 @@ Battery configuration:
   Prevent idle-sleep when charging: ✔
   Disable charging before sleep if charge limit is enabled: ✔
   Prevent system-sleep when charging: ✘
+  Prevent sleep while adapter is disabled: ✘
   Allow non-root users to access the daemon: ✔
   Control MagSafe LED: ✔
 
@@ -364,6 +365,33 @@ Does similar thing to [Preventing idle sleep](#preventing-idle-sleep), but works
 *Note*: Please disable [Preventing idle sleep](#preventing-idle-sleep) and [Disabling charging before sleep](#disabling-charging-before-sleep), while this feature is in use.
 
 To enable this feature, run `sudo batt prevent-system-sleep enable`. To disable, run `sudo batt prevent-system-sleep disable`.
+
+### Prevent sleep when adapter is disabled
+
+> [!WARNING]
+> This is an advanced, opt-in feature. When enabled, your Mac will not sleep at all while the adapter is disabled, even with the lid closed. If placed in a bag while discharging, your Mac can dangerously overheat or drain its battery to 0%. Always monitor your Mac while using this feature, and prefer timed discharge over indefinite discharge.
+
+Disabling the power adapter makes macOS behave as if the power cord was unplugged. In Clamshell mode (using a MacBook with an external display and the lid closed), macOS ends Clamshell mode when power is cut, causing your external display and Mac to sleep immediately. This affects manual force discharge (`batt adapter disable`), the discharge phases of Auto Calibration, and charge limiting in adapter mode.
+
+This option suppresses system sleep entirely while the adapter is disabled by temporarily setting the global macOS `SleepDisabled` power setting (equivalent to `pmset disablesleep 1`), keeping Clamshell mode alive.
+
+- `batt` durably records the previous system sleep setting before changing it.
+- As soon as the adapter is re-enabled, the prior system sleep setting is automatically restored.
+- If the daemon restarts while the adapter is still disabled, protection is reconciled immediately without a sleep gap.
+- If the daemon is uninstalled or shuts down, the adapter is re-enabled before releasing holds and restoring the prior setting.
+- If batt logs an unusable sleep snapshot (`/etc/batt.sleep.json` by default), the daemon still starts, but it cannot hold sleep until you fix or remove that file. If your Mac no longer sleeps, run `sudo pmset -a disablesleep 0`.
+
+To enable this feature, run:
+```bash
+sudo batt prevent-sleep-on-adapter-disable enable
+```
+
+To disable:
+```bash
+sudo batt prevent-sleep-on-adapter-disable disable
+```
+
+The GUI also exposes this setting under **Advanced → Prevent Sleep when Adapter is Disabled**.
 
 ### Upper and lower charge limit
 

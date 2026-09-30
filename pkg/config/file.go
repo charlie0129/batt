@@ -30,13 +30,14 @@ const (
 
 var (
 	defaultFileConfig = &RawFileConfig{
-		Limit:                   ptr.To(80),
-		PreventIdleSleep:        ptr.To(true),
-		DisableChargingPreSleep: ptr.To(true),
-		PreventSystemSleep:      ptr.To(false),
-		AllowNonRootAccess:      ptr.To(false),
-		AdapterMode:             ptr.To(false),
-		LowerLimitDelta:         ptr.To(2),
+		Limit:                        ptr.To(80),
+		PreventIdleSleep:             ptr.To(true),
+		DisableChargingPreSleep:      ptr.To(true),
+		PreventSleepOnAdapterDisable: ptr.To(false),
+		PreventSystemSleep:           ptr.To(false),
+		AllowNonRootAccess:           ptr.To(false),
+		AdapterMode:                  ptr.To(false),
+		LowerLimitDelta:              ptr.To(2),
 
 		CalibrationDischargeThreshold:  ptr.To(15),
 		CalibrationHoldDurationMinutes: ptr.To(120),
@@ -128,7 +129,8 @@ type RawFileConfig struct {
 	DisableUntil    *time.Time `json:"disableUntil,omitempty"`
 	PreDisableLimit *int       `json:"preDisableLimit,omitempty"`
 
-	AdapterDisableUntil *time.Time `json:"adapterDisableUntil,omitempty"`
+	AdapterDisableUntil          *time.Time `json:"adapterDisableUntil,omitempty"`
+	PreventSleepOnAdapterDisable *bool      `json:"preventSleepOnAdapterDisable,omitempty"`
 
 	ChargeOnceTarget *int `json:"chargeOnceTarget,omitempty"`
 }
@@ -139,15 +141,16 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 	}
 
 	rawConfig := &RawFileConfig{
-		Limit:                   ptr.To(c.UpperLimit()),
-		PreventIdleSleep:        ptr.To(c.PreventIdleSleep()),
-		DisableChargingPreSleep: ptr.To(c.DisableChargingPreSleep()),
-		PreventSystemSleep:      ptr.To(c.PreventSystemSleep()),
-		AllowNonRootAccess:      ptr.To(c.AllowNonRootAccess()),
-		AdapterMode:             ptr.To(c.AdapterMode()),
-		LowerLimitDelta:         ptr.To(c.UpperLimit() - c.LowerLimit()),
-		ControlMagSafeLED:       ptr.To(c.ControlMagSafeLED()),
-		Cron:                    ptr.To(c.Cron()),
+		Limit:                        ptr.To(c.UpperLimit()),
+		PreventIdleSleep:             ptr.To(c.PreventIdleSleep()),
+		DisableChargingPreSleep:      ptr.To(c.DisableChargingPreSleep()),
+		PreventSystemSleep:           ptr.To(c.PreventSystemSleep()),
+		PreventSleepOnAdapterDisable: ptr.To(c.PreventSleepOnAdapterDisable()),
+		AllowNonRootAccess:           ptr.To(c.AllowNonRootAccess()),
+		AdapterMode:                  ptr.To(c.AdapterMode()),
+		LowerLimitDelta:              ptr.To(c.UpperLimit() - c.LowerLimit()),
+		ControlMagSafeLED:            ptr.To(c.ControlMagSafeLED()),
+		Cron:                         ptr.To(c.Cron()),
 	}
 
 	if until := c.DisableUntil(); !until.IsZero() {
@@ -403,6 +406,21 @@ func (f *File) SetDisableChargingPreSleep(b bool) {
 	f.c.DisableChargingPreSleep = &b
 }
 
+func (f *File) PreventSleepOnAdapterDisable() bool {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.c.PreventSleepOnAdapterDisable != nil {
+		return *f.c.PreventSleepOnAdapterDisable
+	}
+
+	return *defaultFileConfig.PreventSleepOnAdapterDisable
+}
+
 func (f *File) SetPreventSystemSleep(b bool) {
 	if f.c == nil {
 		panic("config is nil")
@@ -411,6 +429,16 @@ func (f *File) SetPreventSystemSleep(b bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.c.PreventSystemSleep = &b
+}
+
+func (f *File) SetPreventSleepOnAdapterDisable(b bool) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.c.PreventSleepOnAdapterDisable = &b
 }
 
 func (f *File) SetAllowNonRootAccess(b bool) {
@@ -732,12 +760,13 @@ func (f *File) LogrusFields() logrus.Fields {
 	}
 
 	return logrus.Fields{
-		"upperLimit":              f.UpperLimit(),
-		"lowerLimit":              f.LowerLimit(),
-		"preventIdleSleep":        f.PreventIdleSleep(),
-		"disableChargingPreSleep": f.DisableChargingPreSleep(),
-		"preventSystemSleep":      f.PreventSystemSleep(),
-		"allowNonRootAccess":      f.AllowNonRootAccess(),
-		"controlMagsafeLed":       f.ControlMagSafeLED(),
+		"upperLimit":                   f.UpperLimit(),
+		"lowerLimit":                   f.LowerLimit(),
+		"preventIdleSleep":             f.PreventIdleSleep(),
+		"disableChargingPreSleep":      f.DisableChargingPreSleep(),
+		"preventSystemSleep":           f.PreventSystemSleep(),
+		"preventSleepOnAdapterDisable": f.PreventSleepOnAdapterDisable(),
+		"allowNonRootAccess":           f.AllowNonRootAccess(),
+		"controlMagsafeLed":            f.ControlMagSafeLED(),
 	}
 }

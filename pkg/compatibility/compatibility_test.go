@@ -51,6 +51,24 @@ func TestLowerLimitFeature(t *testing.T) {
 	}
 }
 
+func TestAdapterSleepPolicyCapability(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		capabilities Capabilities
+		want         bool
+	}{
+		{"manual adapter", Capabilities{AdapterControl: true}, true},
+		{"adapter charge limiting", Capabilities{ChargeControlMode: ChargeControlAdapter}, true},
+		{"no adapter", Capabilities{ChargeControlMode: ChargeControlNative}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.capabilities.Supports(FeatureAdapterSleepPolicy); got != tt.want {
+				t.Fatalf("Supports(adapter sleep policy) = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFormatLimits(t *testing.T) {
 	for _, tt := range []struct {
 		limits []int

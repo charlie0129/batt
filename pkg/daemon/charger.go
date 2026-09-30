@@ -34,8 +34,8 @@ func (chargeKeySwitch) Disable() error           { return smcConn.DisableChargin
 type adapterSwitch struct{}
 
 func (adapterSwitch) IsEnabled() (bool, error) { return smcConn.IsAdapterEnabled() }
-func (adapterSwitch) Enable() error            { return smcConn.EnableAdapter() }
-func (adapterSwitch) Disable() error           { return smcConn.DisableAdapter() }
+func (adapterSwitch) Enable() error            { return smcEnableAdapter() }
+func (adapterSwitch) Disable() error           { return smcDisableAdapter() }
 
 // charger is the active-mode on/off primitive, selected at daemon startup from
 // the detected charge-control mode. It defaults to the legacy charge keys so

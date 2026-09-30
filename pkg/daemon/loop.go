@@ -41,7 +41,7 @@ func infiniteLoop() {
 		if completeChargeOnce(conf) {
 			maintainLoopForced()
 		}
-		if getCapabilities().AdapterControl {
+		if adapterSleepPolicyCapable() {
 			maintainAdapterDisable(conf, now)
 		}
 		maintainLoop()
@@ -55,6 +55,10 @@ func infiniteLoop() {
 func maintainAdapterDisable(conf config.Config, now time.Time) bool {
 	chargeControlTransitionMu.Lock()
 	defer chargeControlTransitionMu.Unlock()
+
+	if err := reconcileAdapterSleepPolicy(); err != nil {
+		logrus.WithError(err).Error("failed to reconcile adapter sleep policy")
+	}
 
 	until := conf.AdapterDisableUntil()
 	if until.IsZero() {
@@ -73,10 +77,8 @@ func maintainAdapterDisable(conf config.Config, now time.Time) bool {
 	}
 
 	if now.Before(until) {
-		if enabled {
-			if err := smcDisableAdapter(); err != nil {
-				logrus.WithError(err).Error("failed to maintain temporary power adapter disable")
-			}
+		if err := smcDisableAdapter(); err != nil {
+			logrus.WithError(err).Error("failed to maintain temporary power adapter disable")
 		}
 		return false
 	}
@@ -86,10 +88,16 @@ func maintainAdapterDisable(conf config.Config, now time.Time) bool {
 			logrus.WithError(err).Error("failed to enable power adapter after temporary disable")
 			return false
 		}
+	} else {
+		if err := releaseSleep(sleepHoldAdapter); err != nil {
+			logrus.WithError(err).Error("failed to release sleep hold after temporary disable")
+			return false
+		}
 	}
 	conf.ClearAdapterDisableTimer()
 	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
+		return false
 	}
 	logrus.Info("adapter disable duration elapsed, power adapter enabled")
 	return true

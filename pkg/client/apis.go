@@ -75,6 +75,10 @@ func (c *Client) SetPreventSystemSleep(enabled bool) (string, error) {
 	return c.Put("/prevent-system-sleep", strconv.FormatBool(enabled))
 }
 
+func (c *Client) SetPreventSleepOnAdapterDisable(enabled bool) (string, error) {
+	return c.Put("/prevent-sleep-on-adapter-disable", strconv.FormatBool(enabled))
+}
+
 func (c *Client) SetAdapterMode(enabled bool) (string, error) {
 	return c.Put("/adapter-mode", strconv.FormatBool(enabled))
 }

@@ -141,7 +141,7 @@ func NewAdapterCommand() *cobra.Command {
 
 This is useful when you want to use your battery to lower the battery charge, but you don't want to unplug the power adapter.
 
-NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep*. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.`,
+NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep* unless "prevent-sleep-on-adapter-disable" is enabled. Note that enabling this will prevent sleep entirely while the adapter is disabled, risking overheating in a bag or battery drain if left unattended. See "batt prevent-sleep-on-adapter-disable --help" for details.`,
 	}
 
 	var forDuration string

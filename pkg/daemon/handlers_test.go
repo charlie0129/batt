@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
+	"github.com/charlie0129/batt/pkg/config"
 )
 
 func TestResolveDisableLimit(t *testing.T) {
@@ -271,5 +273,297 @@ func TestStartCalibrationRequestRejectsTemporaryDisable(t *testing.T) {
 	}
 	if calibrationState.Phase != calibration.PhaseIdle {
 		t.Fatalf("phase = %s, want idle", calibrationState.Phase)
+	}
+}
+
+type handlerMockConf struct {
+	mockConf
+	preventSleepOnAdapterDisable bool
+}
+
+func (h *handlerMockConf) PreventSleepOnAdapterDisable() bool {
+	return h.preventSleepOnAdapterDisable
+}
+
+func (h *handlerMockConf) SetPreventSleepOnAdapterDisable(p bool) {
+	h.preventSleepOnAdapterDisable = p
+}
+
+func TestSetAdapterMode_RollsBackWhenWallPowerCannotBeRestored(t *testing.T) {
+	stubSleepDisabled(t, false)
+	adapterMockSMC(t, 60, true, false)
+	adapter := stubAdapter(t, false)
+	adapter.enableErr = errors.New("SMC enable failed")
+	file, path := useTempConfig(t)
+	file.SetAdapterMode(true)
+	if err := file.Save(); err != nil {
+		t.Fatal(err)
+	}
+	previousCap, previousCharger := capabilities, charger
+	t.Cleanup(func() { capabilities, charger = previousCap, previousCharger })
+	capabilities = compatibility.Capabilities{ChargeControlMode: compatibility.ChargeControlAdapter}
+
+	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("false"))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError || !file.AdapterMode() || adapter.enabled || capabilities.ChargeControlMode != compatibility.ChargeControlAdapter {
+		t.Fatalf("failed transition must keep adapter mode: status=%d, configured=%t, adapter=%t, mode=%s", response.Code, file.AdapterMode(), adapter.enabled, capabilities.ChargeControlMode)
+	}
+	reloaded, err := config.NewFile(path)
+	if err != nil || !reloaded.AdapterMode() {
+		t.Fatalf("failed transition must roll back persisted config: config=%v, err=%v", reloaded, err)
+	}
+}
+
+func TestSetAdapterMode_ReconciliationFailureRollsBackAndRestoresPower(t *testing.T) {
+	sleep := stubSleepDisabled(t, false)
+	adapterMockSMC(t, 60, true, false)
+	adapter := stubAdapter(t, false)
+	file, path := useTempConfig(t)
+	previousCap, previousCharger := capabilities, charger
+	t.Cleanup(func() { capabilities, charger = previousCap, previousCharger })
+	capabilities = compatibility.Capabilities{AdapterControl: true}
+	file.SetPreventSleepOnAdapterDisable(true)
+	if err := file.Save(); err != nil {
+		t.Fatal(err)
+	}
+	sleep.setErr = errors.New("IOPM unavailable")
+
+	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("true"))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError || file.AdapterMode() || !adapter.enabled {
+		t.Fatalf("failed policy must roll back mode and restore wall power: status=%d, configured=%t, adapter=%t", response.Code, file.AdapterMode(), adapter.enabled)
+	}
+	reloaded, err := config.NewFile(path)
+	if err != nil || reloaded.AdapterMode() {
+		t.Fatalf("failed transition must roll back persisted config: config=%v, err=%v", reloaded, err)
+	}
+}
+
+func TestSetPreventSleepOnAdapterDisable_RequiresCapability(t *testing.T) {
+	previousConf, previousCap := conf, capabilities
+	t.Cleanup(func() { conf, capabilities = previousConf, previousCap })
+
+	conf = &handlerMockConf{}
+	capabilities = compatibility.Capabilities{AdapterControl: false}
+
+	request := httptest.NewRequest(http.MethodPut, "/prevent-sleep-on-adapter-disable", strings.NewReader("true"))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusConflict {
+		t.Fatalf("expected status 409 Conflict, got %d", response.Code)
+	}
+}
+
+func TestSetPreventSleepOnAdapterDisable_EnablingWhileDisabledAcquiresHold(t *testing.T) {
+	previousConf, previousCap := conf, capabilities
+	previousIsAdapter := smcIsAdapterEnabled
+	t.Cleanup(func() {
+		conf, capabilities = previousConf, previousCap
+		smcIsAdapterEnabled = previousIsAdapter
+		sleepHolds = map[string]bool{}
+	})
+
+	sleep := stubSleepDisabled(t, false)
+	capabilities = compatibility.Capabilities{AdapterControl: true}
+	smcIsAdapterEnabled = func() (bool, error) { return false, nil } // adapter is disabled
+	configured := &handlerMockConf{}
+	conf = configured
+
+	request := httptest.NewRequest(http.MethodPut, "/prevent-sleep-on-adapter-disable", strings.NewReader("true"))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", response.Code, response.Body.String())
+	}
+	if !configured.preventSleepOnAdapterDisable {
+		t.Fatal("configuration was not updated to true")
+	}
+	if !sleepHolds[sleepHoldAdapter] {
+		t.Fatal("sleep hold was not acquired when enabling while adapter is disabled")
+	}
+	if !sleep.value {
+		t.Fatal("SleepDisabled was not set to true")
+	}
+}
+
+func TestSetPreventSleepOnAdapterDisable_AdapterModeCanEnable(t *testing.T) {
+	sleep := stubSleepDisabled(t, false)
+	adapter := stubAdapter(t, false)
+	capabilities = compatibility.Capabilities{ChargeControlMode: compatibility.ChargeControlAdapter}
+	configured := &handlerMockConf{}
+	conf = configured
+
+	request := httptest.NewRequest(http.MethodPut, "/prevent-sleep-on-adapter-disable", strings.NewReader("true"))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated || !configured.preventSleepOnAdapterDisable || adapter.enabled || !sleep.value {
+		t.Fatalf("adapter mode sleep policy not enabled: status=%d, setting=%t, adapter=%t, sleep=%t", response.Code, configured.preventSleepOnAdapterDisable, adapter.enabled, sleep.value)
+	}
+}
+
+func TestSetPreventSleepOnAdapterDisable_DisablingWhileDisabledRestoresHold(t *testing.T) {
+	previousConf, previousCap := conf, capabilities
+	previousIsAdapter := smcIsAdapterEnabled
+	t.Cleanup(func() {
+		conf, capabilities = previousConf, previousCap
+		smcIsAdapterEnabled = previousIsAdapter
+		sleepHolds = map[string]bool{}
+	})
+
+	sleep := stubSleepDisabled(t, false)
+	capabilities = compatibility.Capabilities{AdapterControl: true}
+	smcIsAdapterEnabled = func() (bool, error) { return false, nil }
+	configured := &handlerMockConf{preventSleepOnAdapterDisable: true}
+	conf = configured
+
+	// Acquire initial hold
+	if err := holdSleep(sleepHoldAdapter); err != nil {
+		t.Fatal(err)
+	}
+	if !sleep.value {
+		t.Fatal("SleepDisabled must be true initially")
+	}
+
+	request := httptest.NewRequest(http.MethodPut, "/prevent-sleep-on-adapter-disable", strings.NewReader("false"))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", response.Code, response.Body.String())
+	}
+	if configured.preventSleepOnAdapterDisable {
+		t.Fatal("configuration was not updated to false")
+	}
+	if sleepHolds[sleepHoldAdapter] {
+		t.Fatal("sleep hold must be released when setting disabled")
+	}
+	if sleep.value {
+		t.Fatal("SleepDisabled must be restored to false")
+	}
+}
+
+func TestSetPreventSleepOnAdapterDisable_HoldFailurePreventsConfigChange(t *testing.T) {
+	previousConf, previousCap := conf, capabilities
+	previousIsAdapter := smcIsAdapterEnabled
+	t.Cleanup(func() {
+		conf, capabilities = previousConf, previousCap
+		smcIsAdapterEnabled = previousIsAdapter
+		sleepHolds = map[string]bool{}
+	})
+
+	sleep := stubSleepDisabled(t, false)
+	capabilities = compatibility.Capabilities{AdapterControl: true}
+	smcIsAdapterEnabled = func() (bool, error) { return false, nil }
+	configured := &handlerMockConf{preventSleepOnAdapterDisable: false}
+	conf = configured
+
+	// Simulate hold failure
+	sleep.setErr = errors.New("IOPMSetSystemPowerSetting error")
+
+	request := httptest.NewRequest(http.MethodPut, "/prevent-sleep-on-adapter-disable", strings.NewReader("true"))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 error on hold failure, got %d", response.Code)
+	}
+	if configured.preventSleepOnAdapterDisable {
+		t.Fatal("configuration must NOT be changed when hold acquisition fails")
+	}
+	if sleepHolds[sleepHoldAdapter] {
+		t.Fatal("hold must not be recorded")
+	}
+}
+
+func TestSetPreventSleepOnAdapterDisable_ReleaseFailureReturnsErrorAndKeepsHold(t *testing.T) {
+	previousConf, previousCap := conf, capabilities
+	previousIsAdapter := smcIsAdapterEnabled
+	t.Cleanup(func() {
+		conf, capabilities = previousConf, previousCap
+		smcIsAdapterEnabled = previousIsAdapter
+		sleepHolds = map[string]bool{}
+	})
+
+	sleep := stubSleepDisabled(t, false)
+	capabilities = compatibility.Capabilities{AdapterControl: true}
+	smcIsAdapterEnabled = func() (bool, error) { return false, nil }
+	configured := &handlerMockConf{preventSleepOnAdapterDisable: true}
+	conf = configured
+
+	if err := holdSleep(sleepHoldAdapter); err != nil {
+		t.Fatal(err)
+	}
+
+	// Release will fail
+	sleep.setErr = errors.New("IOPMSetSystemPowerSetting release error")
+
+	request := httptest.NewRequest(http.MethodPut, "/prevent-sleep-on-adapter-disable", strings.NewReader("false"))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 error on release failure, got %d", response.Code)
+	}
+	if !sleepHolds[sleepHoldAdapter] {
+		t.Fatal("hold must be preserved for retry when release fails")
+	}
+}
+
+func TestSetPreventSleepOnAdapterDisable_SerializedWithAdapterTransition(t *testing.T) {
+	previousConf, previousCap := conf, capabilities
+	previousIsAdapter := smcIsAdapterEnabled
+	t.Cleanup(func() {
+		conf, capabilities = previousConf, previousCap
+		smcIsAdapterEnabled = previousIsAdapter
+		sleepHolds = map[string]bool{}
+	})
+
+	stubSleepDisabled(t, false)
+	capabilities = compatibility.Capabilities{AdapterControl: true}
+	smcIsAdapterEnabled = func() (bool, error) { return true, nil }
+	configured := &handlerMockConf{}
+	conf = configured
+
+	// Acquire transition lock to simulate active adapter transition
+	chargeControlTransitionMu.Lock()
+
+	done := make(chan struct{})
+	go func() {
+		request := httptest.NewRequest(http.MethodPut, "/prevent-sleep-on-adapter-disable", strings.NewReader("true"))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		setupRoutes().ServeHTTP(response, request)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		chargeControlTransitionMu.Unlock()
+		t.Fatal("setting request completed while chargeControlTransitionMu was locked! Must be serialized.")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: blocked on lock
+	}
+
+	chargeControlTransitionMu.Unlock()
+	select {
+	case <-done:
+		// Succeeded after unlocking
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("setting request failed to complete after chargeControlTransitionMu was unlocked")
 	}
 }

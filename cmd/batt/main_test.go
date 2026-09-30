@@ -29,16 +29,17 @@ func TestHideUnsupportedCommands(t *testing.T) {
 	})
 
 	tests := map[string]bool{
-		"limit":                      false,
-		"lower-limit-delta":          false,
-		"status":                     false,
-		"adapter":                    true,
-		"prevent-idle-sleep":         true,
-		"disable-charging-pre-sleep": true,
-		"prevent-system-sleep":       true,
-		"magsafe-led":                true,
-		"calibration":                true,
-		"schedule":                   true,
+		"limit":                            false,
+		"lower-limit-delta":                false,
+		"status":                           false,
+		"adapter":                          true,
+		"prevent-idle-sleep":               true,
+		"disable-charging-pre-sleep":       true,
+		"prevent-system-sleep":             true,
+		"prevent-sleep-on-adapter-disable": true,
+		"magsafe-led":                      true,
+		"calibration":                      true,
+		"schedule":                         true,
 	}
 	for name, wantHidden := range tests {
 		cmd, _, err := root.Find([]string{name})

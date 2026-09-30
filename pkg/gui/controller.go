@@ -54,6 +54,7 @@ func (c *menuController) refreshCompatibility() {
 	}
 	conf := config.NewFileFromConfig(rawConfig, "")
 	logrus.WithFields(conf.LogrusFields()).Info("Got config")
+	c.menu.setChecked(itemPreventSleepOnAdapterDisable, conf.PreventSleepOnAdapterDisable())
 
 	logrus.Info("Getting hardware compatibility")
 	capabilities, err := c.api.GetCompatibility()
@@ -160,6 +161,7 @@ func (c *menuController) refreshOnOpen() {
 	c.menu.setChecked(itemPreventIdleSleep, conf.PreventIdleSleep())
 	c.menu.setChecked(itemDisableChargingPreSleep, conf.DisableChargingPreSleep())
 	c.menu.setChecked(itemPreventSystemSleep, conf.PreventSystemSleep())
+	c.menu.setChecked(itemPreventSleepOnAdapterDisable, conf.PreventSleepOnAdapterDisable())
 	if capabilities.AdapterControl {
 		if adapter, err := c.api.GetAdapter(); err == nil {
 			c.updateAdapterState(adapter)
@@ -182,6 +184,7 @@ func (c *menuController) refreshDisableSchedules() {
 	}
 	conf := config.NewFileFromConfig(rawConfig, "")
 	c.updateDisableSchedules(conf)
+	c.menu.setChecked(itemPreventSleepOnAdapterDisable, conf.PreventSleepOnAdapterDisable())
 
 	currentCharge, err := c.api.GetCurrentCharge()
 	if err != nil {
@@ -301,6 +304,10 @@ func (c *menuController) setStateError(message string, err error) {
 	c.menu.setTitle(itemState, "State: Error")
 }
 
+func canShowPreventSleepOnAdapterDisable(installed bool, capabilities compatibility.Capabilities, needsUpgrade bool) bool {
+	return installed && capabilities.ChargingControl && !needsUpgrade && capabilities.Supports(compatibility.FeatureAdapterSleepPolicy)
+}
+
 func (c *menuController) setCompatibility(installed bool, capabilities compatibility.Capabilities, needsUpgrade bool) {
 	if value := os.Getenv("BATT_GUI_NO_COMPATIBILITY_CHECK"); value == "1" || value == "true" {
 		return
@@ -333,6 +340,7 @@ func (c *menuController) setCompatibility(installed bool, capabilities compatibi
 	c.menu.setHidden(itemPreventIdleSleep, !usable || !capabilities.SleepHooks)
 	c.menu.setHidden(itemDisableChargingPreSleep, !usable || !capabilities.SleepHooks)
 	c.menu.setHidden(itemPreventSystemSleep, !usable || !capabilities.SleepHooks)
+	c.menu.setHidden(itemPreventSleepOnAdapterDisable, !canShowPreventSleepOnAdapterDisable(installed, capabilities, needsUpgrade))
 	c.menu.setHidden(itemForceDischarge, !usable || !capabilities.AdapterControl)
 	c.menu.setHidden(itemAutoCalibration, !usable || !capabilities.Calibration)
 	c.menu.setHidden(itemUninstall, !installed)
