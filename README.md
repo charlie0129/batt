@@ -52,6 +52,8 @@ Yes, macOS have optimized battery charging. It will try to find out your chargin
 
 ## Compatibility Matrix
 
+This table is for master branch, for release version, please check the [release page](https://github.com/charlie0129/batt/releases).
+
 Check your firmware version by running `system_profiler SPHardwareDataType | grep -i firmware` in Terminal. Do NOT rely on macOS version.
 
 | Firmware Version          | First macOS release  | GUI | CLI (Prebuilt) | CLI (Build from Source) | Note                               |
