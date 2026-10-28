@@ -67,15 +67,15 @@ func setLimit(c *gin.Context) {
 		return
 	}
 
-	minimumLower := 0
-	switch {
-	case caps.NativeChargeBand:
+	minimumLower := 11
+	if caps.NativeChargeBand {
 		minimumLower = 1
-	case caps.Supports(compatibility.FeatureLowerLimit):
-		minimumLower = 11
 	}
 	if delta := conf.UpperLimit() - conf.LowerLimit(); l-delta < minimumLower {
 		err := fmt.Errorf("upper limit %d%% cannot retain delta %d%%: lower limit must be at least %d%%", l, delta, minimumLower)
+		if !caps.NativeChargeBand {
+			err = fmt.Errorf("upper limit must be greater than lower limit + 10, got %d", l-delta)
+		}
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -109,7 +109,7 @@ func setLimit(c *gin.Context) {
 	var msg string
 	charge, err := smcConn.GetBatteryCharge()
 	switch {
-	case caps.ChargeControlMode == compatibility.ChargeControlNative:
+	case caps.NativeChargeBand:
 		msg = fmt.Sprintf("requested native charging limit %d%%", l)
 		if caps.NativeChargeBand {
 			msg = fmt.Sprintf("requested native upper/lower charging limits %d%%/%d%%", l, conf.LowerLimit())
@@ -142,7 +142,7 @@ func setLimit(c *gin.Context) {
 	}
 
 	// Immediate single maintain loop, to avoid waiting for the next loop
-	if !maintainLoopForced() {
+	if applied := maintainLoopForced(); !applied && caps.NativeChargeBand {
 		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -243,7 +243,7 @@ func setDisableFor(c *gin.Context) {
 		"prevLimit": prevLimit,
 	}).Infof("disabled batt temporarily")
 
-	if !maintainLoopForced() {
+	if applied := maintainLoopForced(); !applied && getCapabilities().NativeChargeBand {
 		err := fmt.Errorf("temporary disable was saved, but releasing charge control failed; the daemon will retry")
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -606,25 +606,29 @@ func setLowerLimitDelta(c *gin.Context) {
 		return
 	}
 
-	if d <= 0 {
+	nativeBandCapable := getCapabilities().NativeChargeBand
+	if d < 0 || (nativeBandCapable && d == 0) {
 		err := fmt.Errorf("lower limit delta must be positive, got %d", d)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	chargeControlTransitionMu.Lock()
-	defer chargeControlTransitionMu.Unlock()
 	minimumLower := 10
-	if getCapabilities().NativeChargeBand {
+	if nativeBandCapable {
+		chargeControlTransitionMu.Lock()
+		defer chargeControlTransitionMu.Unlock()
 		minimumLower = 1
 	}
 	upper := conf.UpperLimit()
-	if !conf.DisableUntil().IsZero() {
+	if nativeBandCapable && !conf.DisableUntil().IsZero() {
 		upper = conf.PreDisableLimit()
 	}
 	if upper-d < minimumLower {
 		err := fmt.Errorf("lower limit must be at least %d%% with upper limit %d%%, got delta %d", minimumLower, upper, d)
+		if !nativeBandCapable {
+			err = fmt.Errorf("lower limit delta must be less than limit - 10, got %d", d)
+		}
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -640,7 +644,7 @@ func setLowerLimitDelta(c *gin.Context) {
 
 	ret := fmt.Sprintf("set lower limit delta to %d, current upper/lower limit is %d%%/%d%%", d, conf.UpperLimit(), conf.LowerLimit())
 	logrus.Info(ret)
-	if !maintainLoopForced() {
+	if applied := maintainLoopForced(); !applied && nativeBandCapable {
 		err := fmt.Errorf("lower limit delta was saved, but applying the charge band failed; the daemon will retry")
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -918,7 +922,7 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 		return
 	}
 	mode := getCapabilities().ChargeControlMode
-	if !full && mode == compatibility.ChargeControlNative {
+	if !full && mode == compatibility.ChargeControlNative && !getCapabilities().NativeChargeBand {
 		c.IndentedJSON(http.StatusConflict, ErrNativeChargeNow.Error())
 		_ = c.AbortWithError(http.StatusConflict, ErrNativeChargeNow)
 		return

@@ -100,6 +100,8 @@ Starting with macOS 27 Developer Beta 4 (firmware `20457.0.125.0.2`+, also shipp
 
 By default, `batt` uses PowerUIAgent's native charge limit when direct SMC control is unavailable. On macOS 27, the System Settings slider API clamps targets below 80%. The root `batt` daemon instead writes the agent's exact target preference and posts its reload notification, accepting **10–100%**, including `batt limit 69`. It re-engages the agent after a previous disable and verifies the saved target. On other macOS versions, the native backend continues to use the values offered by the slider API. This preference mechanism is documented in [Ampere's native limit implementation](https://github.com/az-code-lab/ampere/blob/v0.0.71/Sources/Shared/NativeChargeLimit.swift).
 
+This is an automatic compatibility path for the existing commands and settings; there is no new mode to enable. It is selected only on macOS 27 when direct charge control is unavailable and PowerUI supports it. Earlier versions keep their existing charge-control paths. Upper/lower limits, disable and temporary disable, and the existing one-time charge actions are supported. Adapter controls, calibration and scheduling remain available when the adapter control is usable. Native mode does not provide direct MagSafe LED control or the legacy sleep controls, and this change does not claim hardware validation of every feature.
+
 Native updates are asynchronous and can take several minutes after re-enabling the feature. Changing an already-enabled target avoids re-enabling the agent, which would temporarily reset it to Apple's 80% default. A successful command means the request was accepted and its settings checked; it does **not** prove charging has stopped. Check `batt status`, `pmset -g battlimit`, and actual battery current. If applying a saved limit fails, the command returns an error and the daemon retries on subsequent maintenance passes.
 
 Software tests cover exact targets from 10–99%, including 55%, with isolated preferences and mocked Apple services. Live tests on an M4 Mac running macOS 27.0.1 confirmed a 70% hold and a delayed 69% request that overshot to 70%. This does not establish immediate enforcement at every target.
@@ -211,7 +213,7 @@ In native mode, `batt disable` / `batt limit 100` releases the manual charge lim
 
 On macOS 27, release checks the feature state, saved preference, and absence of a manual-limit registration in `pmset -g battlimit`. It clears stale registrations even if the feature says disabled, and reports failed or unfamiliar readings as errors. Temporary disable retains its deadline and restore target for retry if release fails. Repeating a clean disable leaves it disabled.
 
-A graceful daemon shutdown releases its charge control and blocks queued maintenance from reapplying it. A crash or `SIGKILL` cannot run that cleanup: the native limit is owned by PowerUIAgent and can remain until released or reconciled after restart. Closing only the GUI does not stop the background daemon. An installed launchd job may also restart a stopped daemon and reapply its saved target; use the disable command to persist the disabled state.
+In macOS 27 native mode, a graceful daemon shutdown releases its charge control and blocks queued maintenance from reapplying it. A crash or `SIGKILL` cannot run that cleanup: the native limit is owned by PowerUIAgent and can remain until released or reconciled after restart. Closing only the GUI does not stop the background daemon. An installed launchd job may also restart a stopped daemon and reapply its saved target; use the disable command to persist the disabled state.
 
 To disable the limit only temporarily, use `batt disable --for=1d`. Your current limit is restored automatically once the duration has elapsed, even if your Mac reboots in the meantime. Durations accept minutes, hours, days and weeks, e.g. `30m`, `2h`, `1d`, `1w`. Setting a limit with `batt limit` before the duration elapses cancels the scheduled restore. `batt status` shows when the limit will be restored.
 
@@ -229,7 +231,7 @@ A one-time charge and a disabled power adapter exclude each other, because cutti
 
 On `20xxx` firmware, `batt charge now` hands the firmware the narrowest range that ends at your limit, and the firmware does not start charging from the top of that range. A one-time charge to the limit can therefore finish one percent short of it. `batt charge full` is exact, because it deactivates the limit instead of narrowing it.
 
-When macOS controls the charge limit natively, it decides when charging starts. `batt charge now` is unavailable in that mode; `batt charge full` temporarily disables the native limit, then restores it at 100%. In adapter mode, both one-time actions use the adapter to control charging.
+On macOS 27, `batt charge now` requests the configured upper target even from inside the band; macOS applies it asynchronously. Older slider-only native backends cannot request that action. `batt charge full` temporarily disables the native limit, then restores the band at 100%. In adapter mode, both one-time actions use the adapter to control charging.
 
 The GUI exposes the same actions in the menubar as **Charge to 70% Now** and **Charge to Full Once**, with the current progress and a **Cancel One-Time Charge** item while one is running.
 

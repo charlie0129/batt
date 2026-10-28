@@ -19,7 +19,7 @@ func NewChargeCommand() *cobra.Command {
 		GroupID: gBasic,
 		Long: `Charge the battery once, then let the configured charge limit apply again.
 
-Your charge limit and lower-limit delta stay as they are, so normal behavior resumes as soon as the battery reaches the target. A one-time charge survives a daemon restart or reboot. Cancel it with "batt charge cancel"; setting a limit with "batt limit" cancels it too. When macOS controls the charge limit natively, "batt charge now" is unavailable because macOS decides when charging starts; "batt charge full" remains available.`,
+Your charge limit and lower-limit delta stay as they are, so normal behavior resumes as soon as the battery reaches the target. A one-time charge survives a daemon restart or reboot. Cancel it with "batt charge cancel"; setting a limit with "batt limit" cancels it too. On macOS 27, native charge requests apply asynchronously. Older slider-only native backends cannot request "batt charge now"; "batt charge full" remains available.`,
 		Example: `  batt charge now
   batt charge full
   batt charge cancel`,
