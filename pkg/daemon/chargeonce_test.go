@@ -265,6 +265,8 @@ func TestCancelChargeOnceWithoutSession(t *testing.T) {
 func TestSetLimitCancelsChargeOnce(t *testing.T) {
 	configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: 100}
 	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
+	useNativeCapabilities(t, 60, 70, 100)
+	useFakeNativeLimit(t, &fakeNativeLimit{limit: 100})
 	stubBatteryCharge(t, 58)
 	previousSMC := smcConn
 	t.Cleanup(func() { smcConn = previousSMC })

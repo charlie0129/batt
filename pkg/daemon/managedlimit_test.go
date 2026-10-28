@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -16,13 +17,14 @@ import (
 
 // fakeNativeLimit stands in for PowerUIAgent.
 type fakeNativeLimit struct {
-	supported bool
-	limits    []int
-	limit     int
-	enabled   bool
-	err       error
-	setCalls  []int
-	disables  int
+	supported  bool
+	limits     []int
+	limit      int
+	enabled    bool
+	registered bool
+	err        error
+	setCalls   []int
+	disables   int
 }
 
 func (f *fakeNativeLimit) Supported() bool { return f.supported }
@@ -55,9 +57,13 @@ func (f *fakeNativeLimit) Disable() error {
 	if f.err != nil {
 		return f.err
 	}
+	if !f.enabled && !f.registered {
+		return nil
+	}
 	f.disables++
 	f.limit = 100
 	f.enabled = false
+	f.registered = false
 	return nil
 }
 
@@ -433,5 +439,49 @@ func TestSetLimitRejectsUnsupportedNativeLimit(t *testing.T) {
 	setupRoutes().ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("lower-limit-delta status = %d, want %d; body=%s", recorder.Code, http.StatusConflict, recorder.Body.String())
+	}
+}
+
+func TestNativeExactLimitsAreAppliedWithoutAdapterControl(t *testing.T) {
+	for _, target := range []int{10, 55, 60, 69, 79, 81, 99} {
+		t.Run(strconv.Itoa(target), func(t *testing.T) {
+			gatedSMCNoAdapter(t)
+			file, path := useTempConfig(t)
+			limits := make([]int, 91)
+			for i := range limits {
+				limits[i] = 10 + i
+			}
+			useNativeCapabilities(t, limits...)
+			fake := &fakeNativeLimit{limit: 100}
+			useFakeNativeLimit(t, fake)
+			response := httptest.NewRecorder()
+			setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader(strconv.Itoa(target))))
+			if response.Code != http.StatusCreated || fake.limit != target || !fake.enabled {
+				t.Fatalf("target %d: status=%d body=%s native=%+v", target, response.Code, response.Body.String(), fake)
+			}
+			disableUnsupportedConfiguredFeatures()
+			reloaded, err := config.NewFile(path)
+			if err != nil || reloaded.UpperLimit() != target || file.AdapterMode() {
+				t.Fatalf("exact limit not retained or adapter selected: config=%+v err=%v", reloaded, err)
+			}
+			if !maintainManagedChargeLimit() || len(fake.setCalls) != 1 {
+				t.Fatal("unchanged target rewritten")
+			}
+		})
+	}
+}
+
+func TestSetNativeLimitReportsApplicationFailure(t *testing.T) {
+	gatedSMCNoAdapter(t)
+	file, _ := useTempConfig(t)
+	useNativeCapabilities(t, 69, 100)
+	useFakeNativeLimit(t, &fakeNativeLimit{err: errors.New("agent unavailable")})
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader("69")))
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "applying it failed") {
+		t.Fatalf("failed apply reported as success: %d %s", response.Code, response.Body.String())
+	}
+	if file.UpperLimit() != 69 {
+		t.Fatal("saved target lost; daemon must be able to retry it")
 	}
 }

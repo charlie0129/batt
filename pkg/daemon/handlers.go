@@ -67,7 +67,7 @@ func setLimit(c *gin.Context) {
 		return
 	}
 
-	if delta := conf.UpperLimit() - conf.LowerLimit(); l-delta <= 10 {
+	if delta := conf.UpperLimit() - conf.LowerLimit(); caps.Supports(compatibility.FeatureLowerLimit) && l-delta <= 10 {
 		err := fmt.Errorf("upper limit must be greater than lower limit + 10, got %d", l-delta)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
@@ -101,9 +101,19 @@ func setLimit(c *gin.Context) {
 
 	var msg string
 	charge, err := smcConn.GetBatteryCharge()
-	if err != nil {
+	switch {
+	case caps.ChargeControlMode == compatibility.ChargeControlNative:
+		msg = fmt.Sprintf("requested native charging limit %d%%", l)
+		if err == nil {
+			msg += fmt.Sprintf(", current charge: %d%%", charge)
+		}
+		msg += ". macOS applies the target asynchronously; check batt status to confirm charging stopped."
+		if err == nil && charge > l {
+			msg += " Current charge is above the limit; macOS may discharge the battery toward the target."
+		}
+	case err != nil:
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", conf.UpperLimit(), conf.LowerLimit())
-	} else {
+	default:
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", conf.UpperLimit(), conf.LowerLimit(), charge)
 		if charge > conf.UpperLimit() {
 			switch {
@@ -122,7 +132,12 @@ func setLimit(c *gin.Context) {
 	}
 
 	// Immediate single maintain loop, to avoid waiting for the next loop
-	maintainLoopForced()
+	if !maintainLoopForced() {
+		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
 
 	c.IndentedJSON(http.StatusCreated, msg)
 }
@@ -218,7 +233,12 @@ func setDisableFor(c *gin.Context) {
 		"prevLimit": prevLimit,
 	}).Infof("disabled batt temporarily")
 
-	maintainLoopForced()
+	if !maintainLoopForced() {
+		err := fmt.Errorf("temporary disable was saved, but releasing charge control failed; the daemon will retry")
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
 
 	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("batt disabled, charge limit will be restored to %d%% at %s", prevLimit, until.Format(time.DateTime)))
 }
