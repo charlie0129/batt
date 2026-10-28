@@ -459,15 +459,13 @@ func TestSetLimitRejectsUnsupportedNativeLimit(t *testing.T) {
 func TestNativeExactLimitsAreAppliedWithoutAdapterControl(t *testing.T) {
 	for _, target := range []int{10, 55, 60, 69, 79, 81, 99} {
 		t.Run(strconv.Itoa(target), func(t *testing.T) {
-			gatedSMCNoAdapter(t)
 			file, path := useTempConfig(t)
 			limits := make([]int, 91)
 			for i := range limits {
 				limits[i] = 10 + i
 			}
-			useNativeCapabilities(t, limits...)
-			fake := &fakeNativeLimit{limit: 100}
-			useFakeNativeLimit(t, fake)
+			fake, _ := useNativeBand(t, nativeBatteryState{charge: 0, plugged: true})
+			capabilities.SupportedLimits = limits
 			response := httptest.NewRecorder()
 			setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader(strconv.Itoa(target))))
 			if response.Code != http.StatusCreated || fake.limit != target || !fake.enabled {
@@ -486,10 +484,9 @@ func TestNativeExactLimitsAreAppliedWithoutAdapterControl(t *testing.T) {
 }
 
 func TestSetNativeLimitReportsApplicationFailure(t *testing.T) {
-	gatedSMCNoAdapter(t)
 	file, _ := useTempConfig(t)
-	useNativeCapabilities(t, 69, 100)
-	useFakeNativeLimit(t, &fakeNativeLimit{err: errors.New("agent unavailable")})
+	fake, _ := useNativeBand(t, nativeBatteryState{charge: 68, charging: true, plugged: true})
+	fake.err = errors.New("agent unavailable")
 	response := httptest.NewRecorder()
 	setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader("69")))
 	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "applying it failed") {

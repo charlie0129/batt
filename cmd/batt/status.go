@@ -192,10 +192,13 @@ func NewStatusCommand() *cobra.Command {
 				cmd.Println("    The firmware decides when to charge and can continue enforcing the limit during sleep.")
 			case compatibility.ChargeControlNative:
 				cmd.Println("  Control mode: " + bold("native macOS charge limit"))
-				cmd.Println("  Charge limit configured: " + bool2Text(cfg.UpperLimit() < 100))
-				cmd.Println("    macOS applies the target asynchronously. Check the battery state below to confirm charging stopped; a configured target alone does not prove enforcement.")
 				if data.capabilities.NativeChargeBand {
+					cmd.Println("  Charge limit configured: " + bool2Text(cfg.UpperLimit() < 100))
+					cmd.Println("    macOS applies the target asynchronously. Check the battery state below to confirm charging stopped; a configured target alone does not prove enforcement.")
 					cmd.Println("    batt requests charging toward the upper limit below the lower limit, then holds the observed percentage until the next charge. The daemon must be awake to update that request.")
+				} else {
+					cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100))
+					cmd.Println("    batt sets the limit built into macOS (System Settings -> Battery -> Charge Limit). macOS decides when to charge and keeps enforcing the limit during sleep.")
 				}
 			case compatibility.ChargeControlAdapter:
 				cmd.Println("  Control mode: " + bold("adapter (wall power)"))

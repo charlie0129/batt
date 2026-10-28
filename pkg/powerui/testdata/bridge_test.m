@@ -8,6 +8,17 @@ static NSMutableDictionary *prefs;
 static int writes, notifications;
 static BOOL flushOK=YES, notifyOK=YES;
 static uid_t fakeUID=0;
+static NSInteger fakeMajor=27;
+@interface FakeProcessInfo : NSObject
++ (instancetype)processInfo;
+- (NSOperatingSystemVersion)operatingSystemVersion;
+@end
+@implementation FakeProcessInfo
++ (instancetype)processInfo { return [[[self alloc] init] autorelease]; }
+- (NSOperatingSystemVersion)operatingSystemVersion {
+    return (NSOperatingSystemVersion){fakeMajor, 0, 0};
+}
+@end
 static uid_t test_geteuid(void) { return fakeUID; }
 static void checkDomain(CFStringRef domain, CFStringRef user, CFStringRef host) {
     assert(CFEqual(domain,CFSTR("com.apple.smartcharging.topoffprotection")));
@@ -32,7 +43,9 @@ static uint32_t test_notify(const char *name) {
 #define CFPreferencesCopyValue test_copy
 #define CFPreferencesSetValue test_set
 #define notify_post test_notify
+#define NSProcessInfo FakeProcessInfo
 #include "../powerui.m"
+#undef NSProcessInfo
 
 @interface FakeClient : NSObject
 @property BOOL fail;
@@ -52,6 +65,23 @@ int main(void) { @autoreleasepool {
     prefs=[NSMutableDictionary dictionary];
     FakeClient *fake=[FakeClient new]; gClient=fake; gClientProbed=YES;
     char *error=NULL; int target=0,enabled=0;
+    for(NSNumber *major in @[@13,@15,@26,@27,@28]) {
+        fakeMajor=major.integerValue;
+        assert(batt_powerui_custom_limits()==(fakeMajor==27));
+        if(fakeMajor!=27) {
+            assert(batt_powerui_write_preferences(55,&error)==-1);
+            free(error); error=NULL;
+            assert(writes==0 && notifications==0);
+        }
+    }
+    fakeMajor=27;
+    id unsupported=[NSObject new];
+    gClient=unsupported;
+    assert(!batt_powerui_custom_limits());
+    assert(batt_powerui_write_preferences(55,&error)==-1);
+    free(error); error=NULL;
+    assert(writes==0 && notifications==0);
+    gClient=fake; [unsupported release];
     assert(batt_powerui_get_preferences(&target,&enabled,&error)==0 && target==100 && !enabled);
     assert(batt_powerui_write_preferences(69,&error)==0);
     assert(writes==2 && notifications==1);

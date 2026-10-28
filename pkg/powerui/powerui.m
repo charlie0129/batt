@@ -187,6 +187,10 @@ int batt_powerui_custom_limits(void) {
 static CFStringRef const kNativeDomain = CFSTR("com.apple.smartcharging.topoffprotection");
 
 static BOOL checkPreferenceAccess(char **err) {
+    if (!batt_powerui_custom_limits()) {
+        setError(err, @"exact native charge preferences require supported macOS 27 PowerUI");
+        return NO;
+    }
     if (geteuid() != 0) {
         setError(err, @"native charge preferences must be accessed by the root batt daemon");
         return NO;

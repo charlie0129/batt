@@ -14,7 +14,7 @@ import (
 
 func TestNativeDisableReleasesStaleRegistration(t *testing.T) {
 	useNativeCapabilities(t, 55, 100)
-	f := &fakeNativeLimit{limit: 100, registered: true}
+	f := &fakeNativeLimit{limit: 100, registered: true, band: true}
 	useFakeNativeLimit(t, f)
 	if _, err := ensureNativeChargeLimitDisabled(); err != nil || f.registered || f.disables != 1 {
 		t.Fatalf("disabled feature concealed a stale policy: %v %+v", err, f)
@@ -59,9 +59,8 @@ func TestNativeTemporaryDisableReportsReleaseFailure(t *testing.T) {
 	gatedSMCNoAdapter(t)
 	file, _ := useTempConfig(t)
 	file.SetUpperLimit(55)
-	useNativeCapabilities(t, 55, 100)
-	f := &fakeNativeLimit{limit: 55, enabled: true, err: errors.New("release failed")}
-	useFakeNativeLimit(t, f)
+	f, _ := useNativeBand(t, nativeBatteryState{charge: 55, plugged: true})
+	f.limit, f.enabled, f.err = 55, true, errors.New("release failed")
 	r := httptest.NewRecorder()
 	setupRoutes().ServeHTTP(r, httptest.NewRequest(http.MethodPut, "/disable", strings.NewReader(`"1h"`)))
 	if r.Code != http.StatusInternalServerError || file.UpperLimit() != 100 || file.PreDisableLimit() != 55 {

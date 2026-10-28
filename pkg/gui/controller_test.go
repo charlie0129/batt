@@ -114,6 +114,7 @@ func TestChargeOnceMenuAvailability(t *testing.T) {
 		upperLimit              int
 		currentCharge           int
 		chargeControlMode       compatibility.ChargeControlMode
+		nativeChargeBand        bool
 		adapterControl          bool
 		adapterKnown            bool
 		adapterEnabled          bool
@@ -182,6 +183,10 @@ func TestChargeOnceMenuAvailability(t *testing.T) {
 			chargeControlMode: compatibility.ChargeControlNative, wantLimit: false, wantFull: true,
 		},
 		{
+			name: "macOS 27 requests the one-time native target", upperLimit: 55, currentCharge: 52,
+			chargeControlMode: compatibility.ChargeControlNative, nativeChargeBand: true, wantLimit: true, wantFull: true,
+		},
+		{
 			name: "legacy target is not reached at target minus one", upperLimit: 80, currentCharge: 79,
 			chargeControlMode: compatibility.ChargeControlLegacy, wantLimit: true, wantFull: true,
 		},
@@ -197,6 +202,7 @@ func TestChargeOnceMenuAvailability(t *testing.T) {
 			got := canChargeOnceToLimit(
 				phase, tt.disableScheduled, tt.adapterDisableScheduled, tt.chargeOnceTarget,
 				tt.upperLimit, tt.currentCharge, tt.chargeControlMode,
+				tt.nativeChargeBand,
 				tt.adapterControl, tt.adapterKnown, tt.adapterEnabled,
 			)
 			if got != tt.wantLimit {

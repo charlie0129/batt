@@ -486,22 +486,31 @@ func maintainManagedChargeLimit() bool {
 }
 
 // maintainManagedChargeOnce temporarily overrides the Apple-managed charge
-// limit. Firmware supports a narrow band below the target; native macOS only
-// supports charging to full once by temporarily disabling its limit.
+// limit. Exact native targets can request the one-time upper limit directly;
+// slider-only native control still only supports charging to full once.
 func maintainManagedChargeOnce(target int) bool {
 	maintainedChargingInProgress = false
-	mode := getCapabilities().ChargeControlMode
+	caps := getCapabilities()
+	mode := caps.ChargeControlMode
 
-	if target < 100 && mode != compatibility.ChargeControlFirmware {
+	if target < 100 && mode != compatibility.ChargeControlFirmware && !caps.NativeChargeBand {
 		logrus.Error("the native macOS backend cannot force a one-time charge below 100%")
 		return false
 	}
 
 	var changed bool
 	var err error
-	if target >= 100 {
+	switch {
+	case target >= 100:
 		changed, err = ensureManagedChargeLimitDisabled()
-	} else {
+	case caps.NativeChargeBand:
+		changed, err = ensureNativeChargeLimit(target)
+		if err == nil {
+			nativeBandMu.Lock()
+			nativeBand = nativeBandState{lower: conf.LowerLimit(), upper: conf.UpperLimit(), initialized: true, charging: true}
+			nativeBandMu.Unlock()
+		}
+	default:
 		changed, err = ensureManagedChargeLimit(target-1, target)
 	}
 	if err != nil {

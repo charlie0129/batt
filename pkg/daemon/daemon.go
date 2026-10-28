@@ -110,9 +110,6 @@ func removeStaleSocket(path string) error {
 }
 
 func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
-	if os.Geteuid() != 0 {
-		return fmt.Errorf("batt daemon must run as root to control charging; start it with sudo or install the daemon")
-	}
 	maintainLoopInnerLock.Lock()
 	chargeControlStopped = false
 	resetNativeBand()
@@ -131,6 +128,10 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		return fmt.Errorf("open Apple SMC: %w", err)
 	}
 	caps := detectCapabilities()
+	if caps.NativeChargeBand && os.Geteuid() != 0 {
+		_ = smcConn.Close()
+		return fmt.Errorf("native macOS 27 charge control requires the root batt daemon")
+	}
 	setChargeControl(caps)
 	logrus.WithFields(capabilityLogFields(caps)).Info("detected hardware capabilities")
 	disableUnsupportedConfiguredFeatures()
@@ -282,7 +283,10 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 
 	logrus.Info("stopping listening notifications")
 	stopListeningNotifications()
-	scheduler.Stop()
+	nativeShutdown := getCapabilities().NativeChargeBand
+	if nativeShutdown {
+		scheduler.Stop()
+	}
 
 	if err := AllowSleepOnAC(); err != nil {
 		logrus.Errorf("failed to remove PM assertion before exiting: %v", err)
@@ -292,7 +296,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	}
 
 	var cleanupErr error
-	if err := stopChargeControl(); err != nil {
+	if err := releaseChargeControlOnExit(); err != nil {
 		logrus.Errorf("failed to reset charge control before exiting: %v", err)
 		cleanupErr = errors.Join(cleanupErr, err)
 	}
@@ -310,7 +314,10 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	}
 
 	logrus.Info("exiting")
-	return cleanupErr
+	if nativeShutdown {
+		return cleanupErr
+	}
+	return nil
 }
 
 func reconcileReloadedSleepPolicy() error {

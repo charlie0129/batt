@@ -86,6 +86,9 @@ func ensureNativeChargeLimitDisabled() (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if !enabled && !nativeLimit.SupportsChargeBand() {
+		return false, nil
+	}
 	// The agent can say disabled while powerd still has its registration.
 	// The client checks that independently and makes clean releases no-ops.
 	err = nativeLimit.Disable()
@@ -108,6 +111,17 @@ func resetChargeControl() error {
 	default:
 		return smcConn.ResetChargeControl()
 	}
+}
+
+func releaseChargeControlOnExit() error {
+	caps := getCapabilities()
+	if caps.NativeChargeBand {
+		return stopChargeControl()
+	}
+	if caps.ChargingControl {
+		return resetChargeControl()
+	}
+	return nil
 }
 
 // stopChargeControl waits for an in-flight maintenance pass, prevents queued
