@@ -3,6 +3,8 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #include <string.h>
+#include <notify.h>
+#include <unistd.h>
 
 #include "powerui.h"
 
@@ -147,7 +149,7 @@ int batt_powerui_set_limit(int limit, char **err) {
         }
         NSError *error = nil;
         BOOL ok = ((boolUcharErrFn)objc_msgSend)(c, sel_registerName("setMCLLimit:error:"), (unsigned char)limit, &error);
-        if (!ok) {
+        if (!ok || error != nil) {
             setNSError(err, error, @"setMCLLimit:error: failed");
             return -1;
         }
@@ -164,9 +166,94 @@ int batt_powerui_disable(char **err) {
         }
         NSError *error = nil;
         BOOL ok = ((boolErrFn)objc_msgSend)(c, sel_registerName("disableMCL:"), &error);
-        if (!ok) {
+        if (!ok || error != nil) {
             setNSError(err, error, @"disableMCL: failed");
             return -1;
+        }
+        return 0;
+    }
+}
+
+// Mechanism documented by az-code-lab/ampere v0.0.71,
+// Sources/Shared/NativeChargeLimit.swift and Sources/SMCWriter/main.swift.
+// Use only on the OS generation whose preference schema has been checked.
+int batt_powerui_custom_limits(void) {
+    @autoreleasepool {
+        return NSProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 &&
+            responds(client(), "enableMCL:") ? 1 : 0;
+    }
+}
+
+static CFStringRef const kNativeDomain = CFSTR("com.apple.smartcharging.topoffprotection");
+
+static BOOL checkPreferenceAccess(char **err) {
+    if (geteuid() != 0) {
+        setError(err, @"native charge preferences must be accessed by the root batt daemon");
+        return NO;
+    }
+    if (!CFPreferencesSynchronize(kNativeDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)) {
+        setError(err, @"could not synchronize native charging preferences");
+        return NO;
+    }
+    return YES;
+}
+
+int batt_powerui_get_preferences(int *limit, int *enabled, char **err) {
+    @autoreleasepool {
+        if (!checkPreferenceAccess(err)) return -1;
+        id feature = (id)CFPreferencesCopyValue(CFSTR("MCLFeatureState"), kNativeDomain,
+            kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+        id target = (id)CFPreferencesCopyValue(CFSTR("mclLimitValue"), kNativeDomain,
+            kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+        BOOL validFeature = feature == nil ||
+            ([feature isKindOfClass:NSNumber.class] &&
+             ([feature isEqual:@0] || [feature isEqual:@1]));
+        BOOL validTarget = target == nil ||
+            ([target isKindOfClass:NSNumber.class] && [target doubleValue] == [target intValue] &&
+             [target intValue] >= 1 && [target intValue] <= 100);
+        if (!validFeature || !validTarget || ([feature isEqual:@1] && target == nil)) {
+            [feature release]; [target release];
+            setError(err, @"unrecognized native charging preferences; refusing to guess the target");
+            return -1;
+        }
+        *enabled = [feature isEqual:@1] ? 1 : 0;
+        *limit = *enabled ? [target intValue] : 100;
+        [feature release]; [target release];
+        return 0;
+    }
+}
+
+int batt_powerui_enable(char **err) {
+    @autoreleasepool {
+        id c = client();
+        if (!responds(c, "enableMCL:")) {
+            setError(err, @"enableMCL: is unavailable"); return -1;
+        }
+        NSError *error = nil;
+        BOOL ok = ((boolErrFn)objc_msgSend)(c, sel_registerName("enableMCL:"), &error);
+        if (!ok || error != nil) {
+            setNSError(err, error, @"enableMCL: failed"); return -1;
+        }
+        return 0;
+    }
+}
+
+int batt_powerui_write_preferences(int limit, char **err) {
+    @autoreleasepool {
+        if (limit < 10 || limit >= 100) {
+            setError(err, @"native preference target must be 10 through 99"); return -1;
+        }
+        if (!checkPreferenceAccess(err)) return -1;
+        // This is the root user's domain, matching the root PowerUIAgent.
+        CFPreferencesSetValue(CFSTR("MCLFeatureState"), (CFNumberRef)@1,
+            kNativeDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+        CFPreferencesSetValue(CFSTR("mclLimitValue"), (CFNumberRef)@(limit),
+            kNativeDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+        if (!CFPreferencesSynchronize(kNativeDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)) {
+            setError(err, @"could not save native charge target"); return -1;
+        }
+        if (notify_post("com.apple.smartcharging.defaultschanged") != NOTIFY_STATUS_OK) {
+            setError(err, @"could not notify PowerUIAgent of the new target"); return -1;
         }
         return 0;
     }

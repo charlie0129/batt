@@ -14,3 +14,10 @@ int batt_powerui_available_limits(int *limits, int max, int *count, char **err);
 int batt_powerui_get_limit(int *limit, int *enabled, char **err);
 int batt_powerui_set_limit(int limit, char **err);
 int batt_powerui_disable(char **err);
+
+// macOS 27's slider setter clamps targets below 80%. The agent's root-owned
+// preferences accept the actual target, followed by its reload notification.
+int batt_powerui_custom_limits(void);
+int batt_powerui_get_preferences(int *limit, int *enabled, char **err);
+int batt_powerui_enable(char **err);
+int batt_powerui_write_preferences(int limit, char **err);
