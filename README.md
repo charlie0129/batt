@@ -1,5 +1,5 @@
 > [!TIP]
-> Feb 17, 2026 UPDATE: Finally, after more than 5 years, macOS 26.4 and later supports charge limiting natively (adjustable from 80% to 100%), so **`batt` is not needed if the built-in range meets your needs**. `batt` remains useful on older releases and when you want a limit below 80%. On macOS 27-era firmware, `batt` programs the firmware's charge-limit facility directly.
+> Feb 17, 2026 UPDATE: Finally, after more than 5 years, macOS 26.4 and later supports charge limiting natively (adjustable from 80% to 100%), so **`batt` is not needed if the built-in range meets your needs**. `batt` remains useful on older releases and when you want a limit below 80%. On macOS 27-era firmware, the selected backend depends on which SMC controls and native macOS services remain available; see the limitations below.
 
 Note: Use table of contents of quickly navigate to the section you want, e.g., `Installation`. 👆↗
 
@@ -48,7 +48,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 
 Yes, macOS have optimized battery charging. It will try to find out your charging and working schedule and prohibits charging above 80% for a couple of hours overnight. However, if you have an un-regular schedule, this will simply not work. Also, you lose predictability (which I value a lot) about your computer's behavior, i.e., by letting macOS decide for you, you, the one who knows your schedule the best, cannot control when to charge or when not to charge.
 
-`batt` can make sure your computer does exactly what you want. You can set a maximum charge level, and it will stop charging when the battery reaches that level. Therefore, it is recommended to disable macOS's optimized charging when using `batt`.
+`batt` requests your chosen maximum charge level. Direct SMC control and native macOS control behave differently: the native backend applies targets asynchronously and remains subject to Apple's periodic full-charge maintenance. Turning off Optimized Battery Charging does not remove that native maintenance override.
 
 ## Compatibility Matrix
 
@@ -65,7 +65,7 @@ Check your firmware version by running `system_profiler SPHardwareDataType | gre
 | `118xx.x.x`               | macOS 15 Sequoia     | ✅   | ✅              | ✅                       |                                    |
 | `138xx.x.x` / `18xxx.x.x` | macOS 26 Tahoe       | ✅   | ✅              | ✅                       |                                    |
 | `20356.0.0.0.15` ~ `20457.0.77.0.2`               | macOS 27 Golden Gate Developer Beta 1~3 | ✅   | ✅              | ✅                       | Firmware-managed limits; see below |
-| `20457.0.125.0.2`+ | macOS 27 Golden Gate Developer Beta 4+ | ✅   | ✅     | ✅       | Charge keys gated; adapter mode. Any limit, incl. below 80%. See below |
+| `20457.0.125.0.2`+ | macOS 27 Golden Gate Developer Beta 4+ | ✅   | ✅     | ✅       | Charge keys gated; native PowerUI control by default, adapter mode opt-in. See below |
 | Other                     | Unknown              | ❓   | ❓              | ❓                       |                                    |
 
 - ❌: Unsupported
@@ -94,13 +94,19 @@ This mode has several intentional differences and current limitations:
 
 The daemon reports these capabilities to current CLI and GUI clients. Older daemons that do not provide detailed compatibility data retain the previous permissive client behavior.
 
-### macOS 27 firmware with gated charge keys (adapter mode)
+### macOS 27 firmware with gated charge keys
 
 Starting with macOS 27 Developer Beta 4 (firmware `20457.0.125.0.2`+, also shipped in some macOS 15.x / 26.x security updates), Apple gated the SMC charge-control keys behind a private entitlement (`com.apple.private.iokit.soc-limit`). Both the legacy keys (`CH0B`/`CH0C`/`CHTE`) and the firmware-limit keys (`bfF0`/`bfD0`/`bfE0`) now return `kIOReturnNotPrivileged` even to root, so neither the legacy nor the firmware backend works. See [#152](https://github.com/charlie0129/batt/issues/152).
 
-The macOS charge limit built into System Settings still works, but it is enforced by `powerd` behind that entitlement and only offers a fixed set of values **at or above 80%**.
+By default, `batt` uses PowerUIAgent's native charge limit when direct SMC control is unavailable. On macOS 27, the System Settings slider API clamps targets below 80%. The root `batt` daemon instead writes the agent's exact target preference and posts its reload notification, accepting **10–100%**, including `batt limit 69`. It re-engages the agent after a previous disable and verifies the saved target. On other macOS versions, the native backend continues to use the values offered by the slider API. This preference mechanism is documented in [Ampere's native limit implementation](https://github.com/az-code-lab/ampere/blob/v0.0.71/Sources/Shared/NativeChargeLimit.swift).
 
-To keep charge limiting working, including limits **below 80%**, `batt` offers an opt-in **adapter mode**, enabled at runtime with `sudo batt adapter-mode enable`. The adapter (wall-power) SMC key is not entitlement-gated, so `batt` runs the same ThinkPad-style hysteresis loop it uses in legacy mode, but toggles wall power instead of the charge state:
+Native updates are asynchronous and can take several minutes after re-enabling the feature. Changing an already-enabled target avoids re-enabling the agent, which would temporarily reset it to Apple's 80% default. A successful command means the request was accepted and its settings checked; it does **not** prove charging has stopped. Check `batt status`, `pmset -g battlimit`, and actual battery current. If applying a saved limit fails, the command returns an error and the daemon retries on subsequent maintenance passes.
+
+Software tests cover exact targets from 10–99%, including 55%, with isolated preferences and mocked Apple services. Live tests on an M4 Mac running macOS 27.0.1 confirmed a 70% hold and a delayed 69% request that overshot to 70%. This does not establish immediate enforcement at every target.
+
+This backend does not cut adapter power. Apple firmware can still discharge a battery that is **above** the requested target, and [Apple's periodic full-charge maintenance](https://support.apple.com/en-mo/102338) still applies. It does not prevent that override or guarantee zero battery cycling. Run only one charge controller at a time.
+
+`batt` also offers an opt-in **adapter mode**, enabled at runtime with `sudo batt adapter-mode enable`. The adapter (wall-power) SMC key is not entitlement-gated, so `batt` runs the same ThinkPad-style hysteresis loop it uses in legacy mode, but toggles wall power instead of the charge state:
 
 - When the battery reaches the upper limit, `batt` cuts wall power (the Mac runs from the battery, even though the adapter is physically plugged in), so the charge falls.
 - When the battery drops to the lower limit, `batt` restores wall power and the Mac charges again.
@@ -113,9 +119,9 @@ Intentional differences and limitations in adapter mode:
 - In Clamshell mode (lid closed with an external display), cutting wall power makes the Mac sleep unless `batt prevent-sleep-on-adapter-disable` is enabled. This opt-in setting also applies to adapter mode; it prevents all system sleep while wall power is cut. See [Prevent sleep when adapter is disabled](#prevent-sleep-when-adapter-is-disabled) for safety warnings.
 - Because `batt` owns the adapter to enforce the limit, the manual `batt adapter` / GUI Force Discharge feature and auto-calibration are disabled in this mode.
 - MagSafe LED control is unavailable, because `batt` does not toggle the charge state directly.
-- If the SMC charge keys are gated **and** the adapter key is unavailable, `batt` uses the native macOS limit instead (80% and above only), driven through PowerUIAgent.
+- Adapter mode is never selected automatically. Native control remains the default when direct charge keys are gated.
 
-`batt` selects the backend automatically at runtime from which SMC keys and services are usable; it does not branch on the reported macOS or firmware version.
+`batt` selects the backend from usable SMC keys and services. The exact native preference path is restricted to macOS 27, whose schema has been checked; it is not assumed compatible with future versions.
 
 ## Installation (GUI Version)
 
@@ -126,7 +132,7 @@ GUI version is a native macOS menubar app. It's not as feature-complete as the c
 3. macOS may say it's damaged when you try to run it (it's NOT) and wants you to move it to trash. To fix it, run this in Terminal: `sudo xattr -r -d com.apple.quarantine /Applications/batt.app`.
 4. Run `batt.app`.
 5. Follow the MenuBar UI to install or upgrade.
-6. It is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`. Built-in charge limit also need to be disabled if you are on macOS 26.4 or later.
+6. It is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`. When using direct SMC control, also disable a competing built-in charge limit. In native mode, batt manages that built-in setting itself; changing it separately competes with batt.
 
 <img width="191" alt="SCR-20250624-lbmb-3" src="https://github.com/user-attachments/assets/4bef52d7-8483-49bd-b579-736b87c81a52" />
 <img width="206" alt="SCR-20250624-lbmb-2" src="https://github.com/user-attachments/assets/f3731a00-d973-4d67-8b4a-d57595e3842f" />
@@ -177,7 +183,7 @@ You can choose either one. Please do not use both at the same time to avoid conf
 
 - Test if it works by running `sudo batt status`. If you see your battery status, you are good to go!
 - Time to customize. By default `batt` will set a charge limit to 60%. For example, to set the charge limit to 80%, run `sudo batt limit 80`.
-- As said before, it is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`. Built-in charge limit also need to be disabled if you are on macOS 26.4 or later.
+- As said before, it is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`. When using direct SMC control, also disable a competing built-in charge limit. In native mode, batt manages that built-in setting itself; changing it separately competes with batt.
 - If your current charge is above the limit, behavior depends on the detected backend. Firmwares < `20xxx` stops charging and keeps running from the wall, so the percentage stays steady. `20xxx` firmware may run from the battery until it falls back into the configured range.
 - You can refer to [Usage](#usage) for additional configurations. Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
 - To disable the charge limit, run `batt disable` or `batt limit 100`.
@@ -189,13 +195,19 @@ You can choose either one. Please do not use both at the same time to avoid conf
 
 ### Limit battery charge
 
-Make sure your computer doesn't charge beyond what you said.
+Request a maximum battery charge. Enforcement timing and overrides depend on the selected backend.
 
 Setting the limit to 10-99 will enable the battery charge limit, limiting the maximum charge to _somewhere around_ your setting. However, setting the limit to 100 will disable the battery charge limit.
 
 By default, `batt` will set a 60% charge limit.
 
 To customize charge limit, see `batt limit`. For example,to set the limit to 80%, run `batt limit 80`. To disable the limit, run `batt disable` or `batt limit 100`.
+
+In native mode, `batt disable` / `batt limit 100` releases the manual charge limit and leaves charging decisions to macOS. It does **not** force charging, clear Apple's full-charge override, or restore a pre-batt charge-limit setting: no snapshot of earlier Apple settings is saved. It does not explicitly change the Optimized Battery Charging switch. A separately requested adapter disable is independent; use `batt adapter enable` to restore wall power.
+
+On macOS 27, release checks the feature state, saved preference, and absence of a manual-limit registration in `pmset -g battlimit`. It clears stale registrations even if the feature says disabled, and reports failed or unfamiliar readings as errors. Temporary disable retains its deadline and restore target for retry if release fails. Repeating a clean disable leaves it disabled.
+
+A graceful daemon shutdown releases its charge control and blocks queued maintenance from reapplying it. A crash or `SIGKILL` cannot run that cleanup: the native limit is owned by PowerUIAgent and can remain until released or reconciled after restart. Closing only the GUI does not stop the background daemon. An installed launchd job may also restart a stopped daemon and reapply its saved target; use the disable command to persist the disabled state.
 
 To disable the limit only temporarily, use `batt disable --for=1d`. Your current limit is restored automatically once the duration has elapsed, even if your Mac reboots in the meantime. Durations accept minutes, hours, days and weeks, e.g. `30m`, `2h`, `1d`, `1w`. Setting a limit with `batt limit` before the duration elapses cancels the scheduled restore. `batt status` shows when the limit will be restored.
 
@@ -630,7 +642,7 @@ The reason behind is that the GUI app does not do the actual battery charge cont
 
 ### Will batt work after shutdown?
 
-No. batt only works when macOS is running. After shutdown, there is no way to control battery charging until macOS boots up again.
+The legacy software loop only runs while macOS is running. Managed firmware/native limits are owned by Apple and may outlive the batt process, but batt requests their release on graceful daemon shutdown. A crash cannot run that cleanup. Shutdown and reboot ordering on macOS 27 have not been verified by the current live tests; do not infer behavior across a full shutdown from a successful awake hold.
 
 ## Acknowledgements
 
