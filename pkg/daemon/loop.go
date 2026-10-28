@@ -437,10 +437,9 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 	}
 }
 
-// maintainManagedChargeLimit delegates hysteresis enforcement to Apple (the
-// firmware or macOS's built-in limit). It deliberately does not read
-// battery/charging state or interact with sleep, MagSafe, adapter, or
-// calibration features.
+// maintainManagedChargeLimit maintains Apple's charge control. Firmware takes
+// both thresholds directly; native exact-target mode maps batt's charging/hold
+// state onto the single target accepted by PowerUI.
 func maintainManagedChargeLimit() bool {
 	if calibrationNeedsMaintainLoop() {
 		batteryCharge, err := smcConn.GetBatteryCharge()

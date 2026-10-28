@@ -15,12 +15,17 @@ import (
 type Controller interface {
 	Supported() bool
 	AvailableLimits() ([]int, error)
+	// SupportsChargeBand reports whether exact pause targets are available.
+	SupportsChargeBand() bool
 	// Limit reads the target and feature switch, not physical enforcement.
 	// A zero target with enabled=true means the agent and saved settings
 	// disagree; callers must reconcile rather than assume a disabled limiter.
 	Limit() (limit int, enabled bool, err error)
 	// SetLimit requests a target; 100 releases the native limit.
 	SetLimit(limit int) error
+	// HoldAt requests an internal pause target, including levels below the
+	// user-facing 10% minimum. It requires the exact native preference path.
+	HoldAt(limit int) error
 	Disable() error
 }
 
@@ -55,6 +60,12 @@ func (c *Client) Supported() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.api.Supported()
+}
+
+func (c *Client) SupportsChargeBand() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.api.CustomLimits()
 }
 
 func (c *Client) AvailableLimits() ([]int, error) {
@@ -107,6 +118,22 @@ func (c *Client) SetLimit(limit int) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.setLimit(limit)
+}
+
+func (c *Client) HoldAt(limit int) error {
+	if limit < 1 || limit >= 100 {
+		return fmt.Errorf("invalid native hold target %d: expected 1 through 99", limit)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.api.CustomLimits() {
+		return ErrUnavailable
+	}
+	return c.setLimit(limit)
+}
+
+func (c *Client) setLimit(limit int) error {
 	if limit == 100 {
 		return c.disable()
 	}

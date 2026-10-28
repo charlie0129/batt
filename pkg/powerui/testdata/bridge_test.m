@@ -58,7 +58,7 @@ int main(void) { @autoreleasepool {
     assert(batt_powerui_get_preferences(&target,&enabled,&error)==0 && target==69 && enabled);
     // Exercise the actual ObjC bridge for all advertised exact targets,
     // including 55%, while keeping every OS side effect stubbed out.
-    for(int requested=10;requested<100;requested++) {
+    for(int requested=1;requested<100;requested++) {
         int beforeWrites=writes, beforeNotifications=notifications;
         assert(batt_powerui_write_preferences(requested,&error)==0);
         assert(writes==beforeWrites+2 && notifications==beforeNotifications+1);

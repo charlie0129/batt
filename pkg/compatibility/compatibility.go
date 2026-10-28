@@ -42,6 +42,9 @@ const (
 type Capabilities struct {
 	ChargingControl   bool              `json:"chargingControl"`
 	ChargeControlMode ChargeControlMode `json:"chargeControlMode"`
+	// NativeChargeBand means batt can request exact native hold targets while
+	// it waits for the configured lower threshold. Apple applies them asynchronously.
+	NativeChargeBand bool `json:"nativeChargeBand,omitempty"`
 	// SupportedLimits lists the only upper limits the charge-control backend
 	// accepts, in ascending order. Empty means any limit from 10 to 100.
 	SupportedLimits []int `json:"supportedLimits,omitempty"`
@@ -71,10 +74,7 @@ func (c Capabilities) Supports(feature Feature) bool {
 	case FeatureChargingControl:
 		return c.ChargingControl
 	case FeatureLowerLimit:
-		// The native backend only takes an upper limit; Apple decides when
-		// charging resumes. Older daemons never report the native mode, so
-		// they keep the lower limit available.
-		return c.ChargingControl && c.ChargeControlMode != ChargeControlNative
+		return c.ChargingControl && (c.ChargeControlMode != ChargeControlNative || c.NativeChargeBand)
 	case FeatureSleepHooks:
 		return c.SleepHooks
 	case FeatureMagSafeLED:

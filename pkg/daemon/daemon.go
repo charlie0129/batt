@@ -115,6 +115,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	}
 	maintainLoopInnerLock.Lock()
 	chargeControlStopped = false
+	resetNativeBand()
 	maintainLoopInnerLock.Unlock()
 	var err error
 	conf, err = config.NewFile(configPath)

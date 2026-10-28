@@ -22,12 +22,14 @@ type fakeNativeLimit struct {
 	limit      int
 	enabled    bool
 	registered bool
+	band       bool
 	err        error
 	setCalls   []int
 	disables   int
 }
 
-func (f *fakeNativeLimit) Supported() bool { return f.supported }
+func (f *fakeNativeLimit) Supported() bool          { return f.supported }
+func (f *fakeNativeLimit) SupportsChargeBand() bool { return f.band }
 
 func (f *fakeNativeLimit) AvailableLimits() ([]int, error) {
 	if f.err != nil {
@@ -52,6 +54,8 @@ func (f *fakeNativeLimit) SetLimit(limit int) error {
 	f.enabled = limit < 100
 	return nil
 }
+
+func (f *fakeNativeLimit) HoldAt(limit int) error { return f.SetLimit(limit) }
 
 func (f *fakeNativeLimit) Disable() error {
 	if f.err != nil {
@@ -202,6 +206,16 @@ func TestDetectCapabilitiesStaysUnsupportedWithoutNativeLimit(t *testing.T) {
 		if got.ChargeControlMode != compatibility.ChargeControlUnsupported || got.ChargingControl || got.Calibration {
 			t.Errorf("%s: capabilities = %+v, want unsupported", name, got)
 		}
+	}
+}
+
+func TestDetectCapabilitiesOffersExactNativeBand(t *testing.T) {
+	useTempConfig(t)
+	gatedSMCNoAdapter(t)
+	useFakeNativeLimit(t, &fakeNativeLimit{supported: true, band: true, limits: []int{50, 55, 100}})
+	got := detectCapabilities()
+	if !got.NativeChargeBand || !got.Supports(compatibility.FeatureLowerLimit) || got.SleepHooks {
+		t.Fatalf("incorrect exact-native capabilities: %+v", got)
 	}
 }
 

@@ -194,6 +194,9 @@ func NewStatusCommand() *cobra.Command {
 				cmd.Println("  Control mode: " + bold("native macOS charge limit"))
 				cmd.Println("  Charge limit configured: " + bool2Text(cfg.UpperLimit() < 100))
 				cmd.Println("    macOS applies the target asynchronously. Check the battery state below to confirm charging stopped; a configured target alone does not prove enforcement.")
+				if data.capabilities.NativeChargeBand {
+					cmd.Println("    batt requests charging toward the upper limit below the lower limit, then holds the observed percentage until the next charge. The daemon must be awake to update that request.")
+				}
 			case compatibility.ChargeControlAdapter:
 				cmd.Println("  Control mode: " + bold("adapter (wall power)"))
 				cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100))

@@ -87,9 +87,7 @@ func (b *blockingNativeController) Limit() (int, bool, error) {
 func TestNativeShutdownDoesNotReapplyLimit(t *testing.T) {
 	file, _ := useTempConfig(t)
 	file.SetUpperLimit(55)
-	useNativeCapabilities(t, 55, 100)
-	f := &fakeNativeLimit{limit: 100}
-	useFakeNativeLimit(t, f)
+	f, _ := useNativeBand(t, nativeBatteryState{charge: 49, plugged: true})
 	b := &blockingNativeController{fakeNativeLimit: f, entered: make(chan struct{}), proceed: make(chan struct{})}
 	nativeLimit = b
 	previous := chargeControlStopped
