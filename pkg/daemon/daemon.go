@@ -110,6 +110,12 @@ func removeStaleSocket(path string) error {
 }
 
 func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("batt daemon must run as root to control charging; start it with sudo or install the daemon")
+	}
+	maintainLoopInnerLock.Lock()
+	chargeControlStopped = false
+	maintainLoopInnerLock.Unlock()
 	var err error
 	conf, err = config.NewFile(configPath)
 	if err != nil {
@@ -275,6 +281,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 
 	logrus.Info("stopping listening notifications")
 	stopListeningNotifications()
+	scheduler.Stop()
 
 	if err := AllowSleepOnAC(); err != nil {
 		logrus.Errorf("failed to remove PM assertion before exiting: %v", err)
@@ -283,25 +290,26 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		logrus.Errorf("failed to remove calibration sleep assertion before exiting: %v", err)
 	}
 
-	exitCaps := getCapabilities()
-	if exitCaps.ChargingControl {
-		if err := resetChargeControl(); err != nil {
-			logrus.Errorf("failed to reset charge control before exiting: %v", err)
-		}
+	var cleanupErr error
+	if err := stopChargeControl(); err != nil {
+		logrus.Errorf("failed to reset charge control before exiting: %v", err)
+		cleanupErr = errors.Join(cleanupErr, err)
 	}
 
 	if err := shutdownAdapterAndSleep(); err != nil {
 		logrus.Errorf("failed to restore adapter/sleep state before exiting: %v", err)
+		cleanupErr = errors.Join(cleanupErr, err)
 	}
 
 	logrus.Info("closing smc connection")
 	err = smcConn.Close()
 	if err != nil {
 		logrus.Errorf("failed to close smc connection: %v", err)
+		cleanupErr = errors.Join(cleanupErr, err)
 	}
 
 	logrus.Info("exiting")
-	return nil
+	return cleanupErr
 }
 
 func reconcileReloadedSleepPolicy() error {

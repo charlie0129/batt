@@ -16,6 +16,9 @@ import (
 var (
 	maintainedChargingInProgress = false
 	maintainLoopInnerLock        = &sync.Mutex{}
+	// Protected by maintainLoopInnerLock. Once shutdown releases charging,
+	// a queued maintenance pass must not put the limit back before exit.
+	chargeControlStopped = false
 	// wg is used to skip several loops when system woke up or before sleep
 	wg                      = &sync.WaitGroup{}
 	loopInterval            = time.Duration(10) * time.Second
@@ -419,6 +422,9 @@ func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool,
 func maintainLoopInner(ignoreMissedLoops bool) bool {
 	maintainLoopInnerLock.Lock()
 	defer maintainLoopInnerLock.Unlock()
+	if chargeControlStopped {
+		return true
+	}
 
 	switch getCapabilities().ChargeControlMode {
 	case compatibility.ChargeControlFirmware, compatibility.ChargeControlNative:
