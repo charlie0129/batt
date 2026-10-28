@@ -67,8 +67,15 @@ func setLimit(c *gin.Context) {
 		return
 	}
 
-	if delta := conf.UpperLimit() - conf.LowerLimit(); caps.Supports(compatibility.FeatureLowerLimit) && l-delta <= 10 {
-		err := fmt.Errorf("upper limit must be greater than lower limit + 10, got %d", l-delta)
+	minimumLower := 0
+	switch {
+	case caps.NativeChargeBand:
+		minimumLower = 1
+	case caps.Supports(compatibility.FeatureLowerLimit):
+		minimumLower = 11
+	}
+	if delta := conf.UpperLimit() - conf.LowerLimit(); l-delta < minimumLower {
+		err := fmt.Errorf("upper limit %d%% cannot retain delta %d%%: lower limit must be at least %d%%", l, delta, minimumLower)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -104,11 +111,14 @@ func setLimit(c *gin.Context) {
 	switch {
 	case caps.ChargeControlMode == compatibility.ChargeControlNative:
 		msg = fmt.Sprintf("requested native charging limit %d%%", l)
+		if caps.NativeChargeBand {
+			msg = fmt.Sprintf("requested native upper/lower charging limits %d%%/%d%%", l, conf.LowerLimit())
+		}
 		if err == nil {
 			msg += fmt.Sprintf(", current charge: %d%%", charge)
 		}
 		msg += ". macOS applies the target asynchronously; check batt status to confirm charging stopped."
-		if err == nil && charge > l {
+		if err == nil && charge > l && !caps.NativeChargeBand {
 			msg += " Current charge is above the limit; macOS may discharge the battery toward the target."
 		}
 	case err != nil:
@@ -596,15 +606,25 @@ func setLowerLimitDelta(c *gin.Context) {
 		return
 	}
 
-	if d < 0 {
+	if d <= 0 {
 		err := fmt.Errorf("lower limit delta must be positive, got %d", d)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	if conf.UpperLimit()-d < 10 {
-		err := fmt.Errorf("lower limit delta must be less than limit - 10, got %d", d)
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+	minimumLower := 10
+	if getCapabilities().NativeChargeBand {
+		minimumLower = 1
+	}
+	upper := conf.UpperLimit()
+	if !conf.DisableUntil().IsZero() {
+		upper = conf.PreDisableLimit()
+	}
+	if upper-d < minimumLower {
+		err := fmt.Errorf("lower limit must be at least %d%% with upper limit %d%%, got delta %d", minimumLower, upper, d)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -620,7 +640,12 @@ func setLowerLimitDelta(c *gin.Context) {
 
 	ret := fmt.Sprintf("set lower limit delta to %d, current upper/lower limit is %d%%/%d%%", d, conf.UpperLimit(), conf.LowerLimit())
 	logrus.Info(ret)
-	maintainLoopForced()
+	if !maintainLoopForced() {
+		err := fmt.Errorf("lower limit delta was saved, but applying the charge band failed; the daemon will retry")
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
 
 	c.IndentedJSON(http.StatusCreated, ret)
 }

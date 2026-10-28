@@ -239,6 +239,9 @@ func TestNativeLimitsAndOlderSystemFallback(t *testing.T) {
 	for _, custom := range []bool{true, false} {
 		f := &fakeOperations{custom: custom}
 		c := &Client{api: f}
+		if c.SupportsChargeBand() != custom {
+			t.Fatal("charge bands require exact native targets")
+		}
 		limits, err := c.AvailableLimits()
 		if err != nil {
 			t.Fatal(err)
@@ -262,6 +265,28 @@ func TestNativeLimitsAndOlderSystemFallback(t *testing.T) {
 			if err := c.SetLimit(target); err == nil {
 				t.Fatalf("accepted %d", target)
 			}
+		}
+	}
+}
+
+func TestNativePauseTargets(t *testing.T) {
+	for _, target := range []int{1, 8, 9, 52, 70, 99} {
+		f := &fakeOperations{custom: true, target: 100}
+		c := &Client{api: f}
+		if err := c.HoldAt(target); err != nil {
+			t.Fatal(err)
+		}
+		if got, on, err := c.Limit(); err != nil || !on || got != target {
+			t.Fatalf("hold %d: %d %t %v", target, got, on, err)
+		}
+	}
+	f := &fakeOperations{}
+	if err := (&Client{api: f}).HoldAt(52); err == nil || len(f.sliderTargets) != 0 {
+		t.Fatal("slider-only native path accepted a pause target")
+	}
+	for _, target := range []int{-1, 0, 100, 101} {
+		if err := (&Client{api: &fakeOperations{custom: true}}).HoldAt(target); err == nil {
+			t.Fatalf("invalid pause %d accepted", target)
 		}
 	}
 }

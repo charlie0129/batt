@@ -104,6 +104,10 @@ Native updates are asynchronous and can take several minutes after re-enabling t
 
 Software tests cover exact targets from 10–99%, including 55%, with isolated preferences and mocked Apple services. Live tests on an M4 Mac running macOS 27.0.1 confirmed a 70% hold and a delayed 69% request that overshot to 70%. This does not establish immediate enforcement at every target.
 
+On macOS 27, `batt` also uses the configured lower limit to decide when to request a charge. For example, `batt limit 55` with `batt lower-limit-delta 5` requests charging toward 55% below 50%, keeps that request through the band, and requests a pause at the upper limit. While paused it holds the observed percentage, following natural downward drift until the lower threshold is crossed. An already-above-limit battery is initially held at its observed level; the lower threshold is not a discharge target. A delayed charging sample never raises an existing hold target. On restart, an actual charge in progress continues toward the upper limit, while a paused battery inside the band remains paused.
+
+The daemon must be awake to update these requests. During sleep or after a crash, Apple retains the last native target and controls its own restart threshold. This software mapping does not program two hardware thresholds: delayed updates, native hysteresis and the full-charge override can still prevent charging from starting or stopping exactly at the configured percentages. The 50–55% transitions are covered by isolated tests; a complete physical 50–55% charge has not been verified.
+
 This backend does not cut adapter power. Apple firmware can still discharge a battery that is **above** the requested target, and [Apple's periodic full-charge maintenance](https://support.apple.com/en-mo/102338) still applies. It does not prevent that override or guarantee zero battery cycling. Run only one charge controller at a time.
 
 `batt` also offers an opt-in **adapter mode**, enabled at runtime with `sudo batt adapter-mode enable`. The adapter (wall-power) SMC key is not entitlement-gated, so `batt` runs the same ThinkPad-style hysteresis loop it uses in legacy mode, but toggles wall power instead of the charge state:
@@ -417,6 +421,8 @@ When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two 
 `batt` have similar features built-in. The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. To customize the lower limit, use `batt lower-limit-delta`.
 
 For example, if you want to set the lower limit to be 5% less than the upper limit, run `sudo batt lower-limit-delta 5`. So, if you have your charge (upper) limit set to 60%, the lower limit will be 55%.
+
+On macOS 27's exact-target native backend, the same settings drive asynchronous charge/hold requests as described [above](#macos-27-firmware-with-gated-charge-keys). Older slider-only native backends do not expose the lower-limit command.
 
 ### Control MagSafe LED
 

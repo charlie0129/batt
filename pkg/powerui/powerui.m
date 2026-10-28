@@ -240,8 +240,8 @@ int batt_powerui_enable(char **err) {
 
 int batt_powerui_write_preferences(int limit, char **err) {
     @autoreleasepool {
-        if (limit < 10 || limit >= 100) {
-            setError(err, @"native preference target must be 10 through 99"); return -1;
+        if (limit < 1 || limit >= 100) {
+            setError(err, @"native preference target must be 1 through 99"); return -1;
         }
         if (!checkPreferenceAccess(err)) return -1;
         // This is the root user's domain, matching the root PowerUIAgent.
