@@ -124,7 +124,7 @@ Intentional differences and limitations in adapter mode:
 - The limit is enforced only while `batt` is awake. Just before sleep `batt` restores/holds a safe state (charging is disabled pre-sleep by default) to avoid overcharging while asleep; the sleep options apply as in legacy mode.
 - In Clamshell mode (lid closed with an external display), cutting wall power makes the Mac sleep unless `batt prevent-sleep-on-adapter-disable` is enabled. This opt-in setting also applies to adapter mode; it prevents all system sleep while wall power is cut. See [Prevent sleep when adapter is disabled](#prevent-sleep-when-adapter-is-disabled) for safety warnings.
 - Because `batt` owns the adapter to enforce the limit, the manual `batt adapter` / GUI Force Discharge feature and auto-calibration are disabled in this mode.
-- MagSafe LED control is unavailable, because `batt` does not toggle the charge state directly.
+- MagSafe LED control follows wall power: orange while `batt` lets the Mac charge, green while it holds the limit.
 - Adapter mode is never selected automatically. Native control remains the default when direct charge keys are gated.
 
 `batt` selects the backend from usable SMC keys and services. The exact native preference path is restricted to macOS 27, whose schema has been checked; it is not assumed compatible with future versions.
@@ -438,7 +438,7 @@ This option makes the MagSafe LED reflect the charging state of your MacBook (or
 
 Note that you must have a MagSafe LED on your MacBook to use this feature.
 
-This also requires legacy direct charging control. It is unavailable on macOS 27 / 20xxx firmware even if the Mac has a physical MagSafe LED, because firmware owns the charging decision and `batt` cannot reliably mirror its state.
+This also requires `batt` to make the charging decision itself: legacy direct charging control, or adapter mode on gated macOS 27 firmware. It is unavailable with the firmware-managed limit on macOS 27 / 20xxx firmware even if the Mac has a physical MagSafe LED, because firmware owns the charging decision and `batt` cannot reliably mirror its state.
 
 To enable MagSafe LED control, run `sudo batt magsafe-led enable`.
 
