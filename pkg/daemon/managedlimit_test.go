@@ -152,6 +152,29 @@ func TestDetectCapabilitiesPrefersAdapterWhenOptedIn(t *testing.T) {
 	}
 }
 
+func TestDetectCapabilitiesAdapterModeOffersMagSafeLED(t *testing.T) {
+	adapter, err := gosmc.NewValue(smc.AdapterKey3, gosmc.TypeUInt8, []byte{0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	led, err := gosmc.NewValue(smc.MagSafeLedKey, gosmc.TypeUInt8, []byte{0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	useMockSMC(t, adapter, led)
+	file, _ := useTempConfig(t)
+	file.SetAdapterMode(true)
+	useFakeNativeLimit(t, &fakeNativeLimit{supported: true, limits: []int{80, 90, 100}})
+
+	got := detectCapabilities()
+	if got.ChargeControlMode != compatibility.ChargeControlAdapter {
+		t.Fatalf("mode = %+v, want adapter", got)
+	}
+	if !got.MagSafeLED {
+		t.Fatal("adapter mode owns the wall-power switch, so it can drive the MagSafe LED")
+	}
+}
+
 func TestDetectCapabilitiesRequiresAdapterOptIn(t *testing.T) {
 	gatedSMC(t)
 	useTempConfig(t) // AdapterMode defaults to false
