@@ -35,9 +35,9 @@ func detectCapabilities() compatibility.Capabilities {
 		// The legacy and adapter loops both run while awake and rely on the
 		// sleep hooks to avoid overcharging during sleep.
 		SleepHooks: active,
-		// LED state follows batt's direct charging state, which is only known
-		// when batt owns the charge-enable keys.
-		MagSafeLED: legacy && smcConn.CheckMagSafeExistence(),
+		// LED state follows the switch batt toggles: the charge-enable keys in
+		// legacy mode, wall power in adapter mode. Either way batt knows it.
+		MagSafeLED: active && smcConn.CheckMagSafeExistence(),
 		// In adapter mode batt owns the adapter to enforce the limit, so the
 		// manual adapter/force-discharge feature is hidden to avoid conflicts.
 		AdapterControl: adapter && mode != compatibility.ChargeControlAdapter,
