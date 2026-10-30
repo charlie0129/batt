@@ -476,9 +476,14 @@ func maintainManagedChargeLimit() bool {
 		logrus.Errorf("failed to reconcile %s charge limit: %v", getCapabilities().ChargeControlMode, err)
 		return false
 	}
-	if changed {
+	switch {
+	case changed && getCapabilities().NativeChargeBand:
+		// A native request can still be settling in powerd. The client checks
+		// registration on later passes; acceptance is not confirmation.
+		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Debug("requested native charge target; registration may still be pending")
+	case changed:
 		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Infof("reconciled %s charge limit", getCapabilities().ChargeControlMode)
-	} else {
+	default:
 		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Tracef("%s charge limit is correct", getCapabilities().ChargeControlMode)
 	}
 	maintainedChargingInProgress = false
@@ -517,7 +522,9 @@ func maintainManagedChargeOnce(target int) bool {
 		logrus.Errorf("failed to reconcile %s charge limit for a one-time charge: %v", mode, err)
 		return false
 	}
-	if changed {
+	if changed && caps.NativeChargeBand {
+		logrus.WithField("target", target).Debug("requested native one-time charge target; registration may still be pending")
+	} else if changed {
 		logrus.WithField("target", target).Infof("reconciled %s charge limit for a one-time charge", mode)
 	}
 	return true

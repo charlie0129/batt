@@ -1,6 +1,7 @@
 package powerui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -48,5 +49,31 @@ func TestManualLimitRegistration(t *testing.T) {
 				t.Fatalf("registered=%t err=%v", got, err)
 			}
 		})
+	}
+}
+
+func TestActiveManualTargets(t *testing.T) {
+	row := registrationRow.FindString(manualRegistration)
+	for _, tc := range []struct {
+		name, output string
+		want         []int
+	}{
+		{"empty", "No battery level limits set", nil},
+		{"manual", manualRegistration, []int{55}},
+		{"other policy", strings.ReplaceAll(manualRegistration, "manualChargeLimit", "otherOSPolicy"), nil},
+		{"terminated", strings.ReplaceAll(manualRegistration, "Terminated = 0", "Terminated = 1"), nil},
+		{"mirror", "Battery level limits: (" + row + "," + row + ")", []int{55, 55}},
+		{"stale mirror", "Battery level limits: (" + row + "," + strings.ReplaceAll(row, "Soc = 55", "Soc = 70") + ")", []int{55, 70}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := manualLimitTargets(tc.output, false)
+			if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatal(got, err)
+			}
+		})
+	}
+	// Release still sees terminated entries, preserving its conservative cleanup.
+	if registered, err := manualLimitRegistered(strings.ReplaceAll(manualRegistration, "Terminated = 0", "Terminated = 1")); err != nil || !registered {
+		t.Fatal(registered, err)
 	}
 }

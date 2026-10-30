@@ -13,44 +13,67 @@ import (
 
 // Read powerd's registrations independently of PowerUI's feature flag. Do not
 // treat a failed command or an unfamiliar output format as an empty policy list.
-func (nativeBridge) ManualLimitRegistered() (bool, error) {
+func readRegistrationOutput() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/usr/bin/pmset", "-g", "battlimit")
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	output, err := cmd.Output()
 	if err != nil {
-		return false, fmt.Errorf("read native charge registrations: %w", err)
+		return "", fmt.Errorf("read native charge registrations: %w", err)
 	}
-	return manualLimitRegistered(string(output))
+	return string(output), nil
+}
+
+// RegisteredManualLimits returns active manual limits only. Other policies cannot
+// confirm our request, and terminated registrations no longer enforce a target.
+func (nativeBridge) RegisteredManualLimits() ([]int, error) {
+	output, err := readRegistrationOutput()
+	if err != nil {
+		return nil, err
+	}
+	return manualLimitTargets(output, false)
+}
+
+func (nativeBridge) ManualLimitRegistered() (bool, error) {
+	output, err := readRegistrationOutput()
+	if err != nil {
+		return false, err
+	}
+	return manualLimitRegistered(output)
 }
 
 var registrationRow = regexp.MustCompile(`\{[^{}]*\}`)
 
 func manualLimitRegistered(output string) (bool, error) {
-	invalid := fmt.Errorf("unrecognized pmset battery-limit output; release cannot be confirmed")
+	limits, err := manualLimitTargets(output, true)
+	return len(limits) != 0, err
+}
+
+func manualLimitTargets(output string, includeTerminated bool) ([]int, error) {
+	invalid := fmt.Errorf("unrecognized pmset battery-limit output; registration cannot be confirmed")
 	if len(output) > 64*1024 {
-		return false, invalid
+		return nil, invalid
 	}
 	output = strings.TrimSpace(output)
 	if output == "No battery level limits set" {
-		return false, nil
+		return nil, nil
 	}
 	body, ok := strings.CutPrefix(output, "Battery level limits:")
 	if !ok {
-		return false, invalid
+		return nil, invalid
 	}
 	body = strings.TrimSpace(body)
 	if !strings.HasPrefix(body, "(") || !strings.HasSuffix(body, ")") {
-		return false, invalid
+		return nil, invalid
 	}
 	body = strings.TrimSpace(body[1 : len(body)-1])
 	if body == "" {
-		return false, nil
+		return nil, nil
 	}
 	rows := registrationRow.FindAllString(body, -1)
 	if len(rows) == 0 {
-		return false, invalid
+		return nil, invalid
 	}
 	for i, separator := range registrationRow.Split(body, -1) {
 		want := ","
@@ -58,10 +81,10 @@ func manualLimitRegistered(output string) (bool, error) {
 			want = ""
 		}
 		if strings.TrimSpace(separator) != want {
-			return false, invalid
+			return nil, invalid
 		}
 	}
-	manual := false
+	var limits []int
 	for _, row := range rows {
 		values := map[string]string{}
 		for _, field := range strings.Split(row[1:len(row)-1], ";") {
@@ -71,7 +94,7 @@ func manualLimitRegistered(output string) (bool, error) {
 			key, value, found := strings.Cut(field, "=")
 			key, value = strings.TrimSpace(key), strings.TrimSpace(value)
 			if !found || values[key] != "" || value == "" {
-				return false, invalid
+				return nil, invalid
 			}
 			values[key] = value
 		}
@@ -79,12 +102,12 @@ func manualLimitRegistered(output string) (bool, error) {
 			"chargeSocLimitIsEOC": 1, "chargeSocLimitNoChargeToFull": 1,
 			"chargeSocLimitOwner": 1<<31 - 1, "chargeSocLimitSoc": 100}
 		if len(values) != len(maxima)+1 {
-			return false, invalid
+			return nil, invalid
 		}
 		for key, maxValue := range maxima {
 			n, err := strconv.ParseUint(values[key], 10, 32)
 			if err != nil || n > maxValue || (key == "chargeSocLimitSoc" && n == 0) {
-				return false, invalid
+				return nil, invalid
 			}
 		}
 		reason := values["chargeSocLimitReason"]
@@ -92,13 +115,16 @@ func manualLimitRegistered(output string) (bool, error) {
 			var err error
 			reason, err = strconv.Unquote(reason)
 			if err != nil {
-				return false, invalid
+				return nil, invalid
 			}
 		}
 		if reason == "" {
-			return false, invalid
+			return nil, invalid
 		}
-		manual = manual || reason == "manualChargeLimit"
+		if reason == "manualChargeLimit" && (includeTerminated || values["Terminated"] == "0") {
+			target, _ := strconv.Atoi(values["chargeSocLimitSoc"])
+			limits = append(limits, target)
+		}
 	}
-	return manual, nil
+	return limits, nil
 }
