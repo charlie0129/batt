@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Controller is the subset of PowerUI charge control used by the daemon.
@@ -17,11 +20,13 @@ type Controller interface {
 	AvailableLimits() ([]int, error)
 	// SupportsChargeBand reports whether exact pause targets are available.
 	SupportsChargeBand() bool
-	// Limit reads the target and feature switch, not physical enforcement.
-	// A zero target with enabled=true means the agent and saved settings
-	// disagree; callers must reconcile rather than assume a disabled limiter.
+	// Limit checks the target, feature switch and (on macOS 27) powerd
+	// registration, not physical charging current.
+	// A zero target with enabled=true means the saved target, agent or
+	// registration disagree; callers must reconcile rather than assume a disabled limiter.
 	Limit() (limit int, enabled bool, err error)
-	// SetLimit requests a target; 100 releases the native limit.
+	// SetLimit requests a target; 100 releases the native limit. Repeating
+	// a pending request within its settle window succeeds without rewriting it.
 	SetLimit(limit int) error
 	// HoldAt requests an internal pause target, including levels below the
 	// user-facing 10% minimum. It requires the exact native preference path.
@@ -45,12 +50,26 @@ type operations interface {
 	WritePreferences(int) error
 	SetSliderLimit(int) error
 	ManualLimitRegistered() (bool, error)
+	RegisteredManualLimits() ([]int, error)
 }
+
+const nativeRegistrationSettleTime = 150 * time.Second
 
 // Client serializes access to the native charge-limit service.
 type Client struct {
 	mu  sync.Mutex
 	api operations
+	// Only the exact native preference path uses asynchronous reconciliation.
+	requestedTarget int
+	requestedAt     time.Time
+	now             func() time.Time
+}
+
+func (c *Client) currentTime() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
 }
 
 // New creates a client without probing or changing the system.
@@ -109,6 +128,23 @@ func (c *Client) customLimit() (int, bool, error) {
 		// existing registration while a new target is pending.
 		return 0, true, nil
 	}
+	if enabled && agentEnabled {
+		registered, err := c.api.RegisteredManualLimits()
+		if err != nil {
+			return 0, true, err
+		}
+		if len(registered) == 0 {
+			return 0, true, nil
+		}
+		for _, target := range registered {
+			if target != limit {
+				return 0, true, nil
+			}
+		}
+		// Once confirmed, a later drift needs repair rather than another grace
+		// period. Reading the state must never extend an outstanding deadline.
+		c.requestedTarget = 0
+	}
 	return limit, enabled && agentEnabled, nil
 }
 
@@ -147,6 +183,15 @@ func (c *Client) setLimit(limit int) error {
 	if enabled && current == limit {
 		return nil
 	}
+	if c.requestedTarget == limit && c.currentTime().Sub(c.requestedAt) < nativeRegistrationSettleTime {
+		// The daemon polls every ten seconds. Do not keep posting reloads while
+		// the same request is still waiting for Apple's evaluation. A different
+		// target bypasses this window, including a manual pause or release.
+		return nil
+	}
+	if c.requestedTarget == limit {
+		logrus.WithField("target", limit).Warn("native charge target is not confirmed after settling; retrying")
+	}
 	// customLimit returns a zero target when the agent has stale settings. That
 	// needs another preference notification, not an enable call that resets
 	// the target to 80% and can release a lower hold.
@@ -173,6 +218,8 @@ func (c *Client) setLimit(limit int) error {
 	if !enabled || current != limit {
 		return fmt.Errorf("native target did not retain %d%% (read %d%%, enabled=%t)", limit, current, enabled)
 	}
+	c.requestedTarget = limit
+	c.requestedAt = c.currentTime()
 	return nil
 }
 
@@ -194,6 +241,7 @@ func (c *Client) disable() error {
 				return err
 			}
 			if !savedEnabled && !registered {
+				c.requestedTarget = 0
 				return nil
 			}
 			if err := c.api.Enable(); err != nil {
@@ -221,6 +269,7 @@ func (c *Client) disable() error {
 			return errors.New("native charge limit release is not yet confirmed")
 		}
 	}
+	c.requestedTarget = 0
 	return nil
 }
 
