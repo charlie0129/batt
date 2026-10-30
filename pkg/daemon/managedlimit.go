@@ -31,6 +31,9 @@ func ensureManagedChargeLimit(lower, upper int) (bool, error) {
 	case compatibility.ChargeControlFirmware:
 		return smcConn.EnsureFirmwareChargeLimit(lower, upper)
 	case compatibility.ChargeControlNative:
+		if getCapabilities().NativeChargeBand {
+			return ensureNativeChargeBand(lower, upper)
+		}
 		return ensureNativeChargeLimit(upper)
 	default:
 		return false, smc.ErrNoChargingCapability
@@ -51,9 +54,9 @@ func ensureManagedChargeLimitDisabled() (bool, error) {
 }
 
 // ensureNativeChargeLimit keeps the macOS charge limit at the configured
-// upper limit. macOS only offers a fixed set of limits; the daemon persists a
-// supported value at startup, so this is only a safety net that never lowers
-// the limit below what the user configured.
+// upper limit. Older native backends only offer a fixed set of slider values;
+// macOS 27's preference path accepts exact percentages. The supported-value
+// check is a safety net that never lowers the user's requested target.
 func ensureNativeChargeLimit(upper int) (bool, error) {
 	caps := getCapabilities()
 	if !caps.SupportsLimit(upper) {
@@ -83,10 +86,16 @@ func ensureNativeChargeLimitDisabled() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if !enabled {
+	if !enabled && !nativeLimit.SupportsChargeBand() {
 		return false, nil
 	}
-	return true, nativeLimit.Disable()
+	// The agent can say disabled while powerd still has its registration.
+	// The client checks that independently and makes clean releases no-ops.
+	err = nativeLimit.Disable()
+	if err == nil {
+		resetNativeBand()
+	}
+	return enabled, err
 }
 
 // resetChargeControl restores the platform's default charging behavior. It is
@@ -102,4 +111,29 @@ func resetChargeControl() error {
 	default:
 		return smcConn.ResetChargeControl()
 	}
+}
+
+func releaseChargeControlOnExit() error {
+	caps := getCapabilities()
+	if caps.NativeChargeBand {
+		return stopChargeControl()
+	}
+	if caps.ChargingControl {
+		return resetChargeControl()
+	}
+	return nil
+}
+
+// stopChargeControl waits for an in-flight maintenance pass, prevents queued
+// passes from reapplying the limit, then releases charging for daemon shutdown.
+func stopChargeControl() error {
+	chargeControlTransitionMu.Lock()
+	defer chargeControlTransitionMu.Unlock()
+	maintainLoopInnerLock.Lock()
+	defer maintainLoopInnerLock.Unlock()
+	chargeControlStopped = true
+	if !getCapabilities().ChargingControl {
+		return nil
+	}
+	return resetChargeControl()
 }

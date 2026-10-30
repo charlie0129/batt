@@ -192,8 +192,14 @@ func NewStatusCommand() *cobra.Command {
 				cmd.Println("    The firmware decides when to charge and can continue enforcing the limit during sleep.")
 			case compatibility.ChargeControlNative:
 				cmd.Println("  Control mode: " + bold("native macOS charge limit"))
-				cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100))
-				cmd.Println("    batt sets the limit built into macOS (System Settings -> Battery -> Charge Limit). macOS decides when to charge and keeps enforcing the limit during sleep.")
+				if data.capabilities.NativeChargeBand {
+					cmd.Println("  Charge limit configured: " + bool2Text(cfg.UpperLimit() < 100))
+					cmd.Println("    macOS applies targets asynchronously; Changes may take up to 60 seconds.")
+					cmd.Println("    batt updates the target while awake; macOS keeps it during sleep.")
+				} else {
+					cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100))
+					cmd.Println("    batt sets the limit built into macOS (System Settings -> Battery -> Charge Limit). macOS decides when to charge and keeps enforcing the limit during sleep.")
+				}
 			case compatibility.ChargeControlAdapter:
 				cmd.Println("  Control mode: " + bold("adapter (wall power)"))
 				cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100))
@@ -276,7 +282,7 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Println(bold("Battery configuration:"))
 			if cfg.UpperLimit() < 100 {
 				cmd.Printf("  Upper limit: %s\n", bold("%d%%", cfg.UpperLimit()))
-				if data.capabilities.Supports(compatibility.FeatureLowerLimit) {
+				if data.capabilities.Supports(compatibility.FeatureLowerLimit) && data.capabilities.ChargeControlMode != compatibility.ChargeControlNative {
 					cmd.Printf("  Lower limit: %s\n", bold("%d%%", cfg.LowerLimit()))
 				}
 			} else {
@@ -315,7 +321,7 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Println()
 			cmd.Println(bold("Hardware compatibility:"))
 			cmd.Printf("  Charge control mode: %s\n", bold("%s", data.capabilities.ChargeControlMode))
-			if limits := data.capabilities.SupportedLimits; len(limits) > 0 {
+			if limits := data.capabilities.SupportedLimits; len(limits) > 0 && !data.capabilities.NativeChargeBand {
 				cmd.Printf("  Supported charge limits: %s\n", bold("%s", compatibility.FormatLimits(limits)))
 			}
 			cmd.Printf("  Sleep hooks: %s\n", bool2Text(data.capabilities.SleepHooks))

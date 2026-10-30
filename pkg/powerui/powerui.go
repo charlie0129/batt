@@ -1,135 +1,280 @@
-// Package powerui controls the manual charge limit built into macOS through
-// PowerUIAgent, the daemon behind System Settings -> Battery -> Charge Limit.
-//
-// On macOS 27 beta 4+ firmware the SMC charge-control keys can only be used by
-// processes holding an Apple-private entitlement. PowerUIAgent holds it and
-// exposes the limit over an XPC service that regular root processes may use,
-// so batt delegates to it. Apple decides when charging starts and stops and
-// only offers a fixed set of limits (80-100% at the time of writing).
+// Package powerui controls the manual charge limit through PowerUIAgent.
+// On macOS 27 its slider setter clamps sub-80 targets, so the root daemon
+// writes the agent's exact target preference and asks it to reload instead.
+// A saved preference is not proof that the battery has stopped charging.
 package powerui
-
-/*
-#cgo LDFLAGS: -framework Foundation
-#include <stdlib.h>
-#include "powerui.h"
-*/
-import "C"
 
 import (
 	"errors"
 	"fmt"
 	"sort"
 	"sync"
-	"unsafe"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
-// Controller is the subset of PowerUIAgent's smart-charge interface batt uses.
+// Controller is the subset of PowerUI charge control used by the daemon.
 type Controller interface {
-	// Supported reports whether the manual charge limit can be driven on this
-	// Mac. It is false when PowerUI is missing or reports no MCL support.
 	Supported() bool
-	// AvailableLimits returns the upper limits PowerUIAgent accepts, ascending.
 	AvailableLimits() ([]int, error)
-	// Limit returns the configured limit and whether it is currently enforced.
-	// A disabled limit reads as 100.
+	// SupportsChargeBand reports whether exact pause targets are available.
+	SupportsChargeBand() bool
+	// Limit checks the target, feature switch and (on macOS 27) powerd
+	// registration, not physical charging current.
+	// A zero target with enabled=true means the saved target, agent or
+	// registration disagree; callers must reconcile rather than assume a disabled limiter.
 	Limit() (limit int, enabled bool, err error)
-	// SetLimit enables the limit at the given percentage, which must be one of
-	// AvailableLimits. Setting 100 disables the limit.
+	// SetLimit requests a target; 100 releases the native limit. Repeating
+	// a pending request within its settle window succeeds without rewriting it.
 	SetLimit(limit int) error
-	// Disable turns the limit off. PowerUIAgent remembers the last limit.
+	// HoldAt requests an internal pause target, including levels below the
+	// user-facing 10% minimum. It requires the exact native preference path.
+	HoldAt(limit int) error
 	Disable() error
 }
 
-// ErrUnavailable is returned when PowerUI cannot be used on this Mac.
+// ErrUnavailable indicates that the native charge-limit service is unavailable.
 var ErrUnavailable = errors.New("PowerUI manual charge limit is unavailable")
 
-// Client talks to PowerUIAgent. It is safe for concurrent use.
+// The client chooses the preference path or the slider API. Tests replace
+// these operations without calling Apple services or changing preferences.
+type operations interface {
+	Supported() bool
+	AvailableLimits() ([]int, error)
+	Limit() (int, bool, error)
+	Disable() error
+	CustomLimits() bool
+	Preferences() (int, bool, error)
+	Enable() error
+	WritePreferences(int) error
+	SetSliderLimit(int) error
+	ManualLimitRegistered() (bool, error)
+	RegisteredManualLimits() ([]int, error)
+}
+
+const nativeRegistrationSettleTime = 150 * time.Second
+
+// Client serializes access to the native charge-limit service.
 type Client struct {
-	mu sync.Mutex
+	mu  sync.Mutex
+	api operations
+	// Only the exact native preference path uses asynchronous reconciliation.
+	requestedTarget int
+	requestedAt     time.Time
+	now             func() time.Time
 }
 
-// New returns a Client. Nothing is probed until the first call.
-func New() *Client {
-	return &Client{}
-}
-
-func takeError(cerr *C.char) error {
-	if cerr == nil {
-		return errors.New("unknown PowerUI error")
+func (c *Client) currentTime() time.Time {
+	if c.now != nil {
+		return c.now()
 	}
-	defer C.free(unsafe.Pointer(cerr))
-	return errors.New(C.GoString(cerr))
+	return time.Now()
 }
+
+// New creates a client without probing or changing the system.
+func New() *Client { return &Client{api: nativeBridge{}} }
 
 func (c *Client) Supported() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	supported := C.batt_powerui_supported() == 1
-	logrus.WithField("supported", supported).Trace("probed PowerUI manual charge limit")
-	return supported
+	return c.api.Supported()
+}
+
+func (c *Client) SupportsChargeBand() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.api.CustomLimits()
 }
 
 func (c *Client) AvailableLimits() ([]int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	const maxLimits = 32
-	var (
-		raw   [maxLimits]C.int
-		count C.int
-		cerr  *C.char
-	)
-	if C.batt_powerui_available_limits(&raw[0], maxLimits, &count, &cerr) != 0 { //nolint:gocritic // dupSubExpr false positive on cgo call
-		return nil, fmt.Errorf("get available charge limits: %w", takeError(cerr))
+	if c.api.CustomLimits() {
+		limits := make([]int, 91)
+		for i := range limits {
+			limits[i] = i + 10
+		}
+		return limits, nil
 	}
-	limits := make([]int, 0, int(count))
-	for i := 0; i < int(count); i++ {
-		limits = append(limits, int(raw[i]))
-	}
+	limits, err := c.api.AvailableLimits()
 	sort.Ints(limits)
-	return limits, nil
+	return limits, err
 }
 
 func (c *Client) Limit() (int, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	var (
-		limit, enabled C.int
-		cerr           *C.char
-	)
-	if C.batt_powerui_get_limit(&limit, &enabled, &cerr) != 0 { //nolint:gocritic // dupSubExpr false positive on cgo call
-		return 0, false, fmt.Errorf("get native charge limit: %w", takeError(cerr))
+	if c.api.CustomLimits() {
+		return c.customLimit()
 	}
-	logrus.WithFields(logrus.Fields{"limit": int(limit), "enabled": enabled == 1}).Trace("read native charge limit")
-	return int(limit), enabled == 1, nil
+	return c.api.Limit()
+}
+
+func (c *Client) customLimit() (int, bool, error) {
+	limit, enabled, err := c.api.Preferences()
+	if err != nil {
+		return 0, false, err
+	}
+	// A saved preference does not prove the agent has loaded it. Its getter
+	// reports exact sub-80 targets on macOS 27 (unlike its clamping setter).
+	// Keep retrying if the agent still has a previous target in memory.
+	agentLimit, agentEnabled, err := c.api.Limit()
+	if err != nil {
+		return 0, false, err
+	}
+	if agentEnabled && (!enabled || agentLimit != limit) {
+		// Preserve enabled=true so a request to disable still releases the
+		// existing registration while a new target is pending.
+		return 0, true, nil
+	}
+	if enabled && agentEnabled {
+		registered, err := c.api.RegisteredManualLimits()
+		if err != nil {
+			return 0, true, err
+		}
+		if len(registered) == 0 {
+			return 0, true, nil
+		}
+		for _, target := range registered {
+			if target != limit {
+				return 0, true, nil
+			}
+		}
+		// Once confirmed, a later drift needs repair rather than another grace
+		// period. Reading the state must never extend an outstanding deadline.
+		c.requestedTarget = 0
+	}
+	return limit, enabled && agentEnabled, nil
 }
 
 func (c *Client) SetLimit(limit int) error {
-	if limit < 0 || limit > 100 {
-		return fmt.Errorf("invalid native charge limit %d", limit)
+	if limit < 10 || limit > 100 {
+		return fmt.Errorf("invalid native charge limit %d: expected 10 through 100", limit)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.setLimit(limit)
+}
 
-	var cerr *C.char
-	if C.batt_powerui_set_limit(C.int(limit), &cerr) != 0 { //nolint:gocritic // dupSubExpr false positive on cgo call
-		return fmt.Errorf("set native charge limit to %d%%: %w", limit, takeError(cerr))
+func (c *Client) HoldAt(limit int) error {
+	if limit < 1 || limit >= 100 {
+		return fmt.Errorf("invalid native hold target %d: expected 1 through 99", limit)
 	}
-	logrus.WithField("limit", limit).Trace("set native charge limit")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.api.CustomLimits() {
+		return ErrUnavailable
+	}
+	return c.setLimit(limit)
+}
+
+func (c *Client) setLimit(limit int) error {
+	if limit == 100 {
+		return c.disable()
+	}
+	if !c.api.CustomLimits() {
+		return c.api.SetSliderLimit(limit)
+	}
+	current, enabled, err := c.customLimit()
+	if err != nil {
+		return fmt.Errorf("read native target before changing it: %w", err)
+	}
+	if enabled && current == limit {
+		return nil
+	}
+	if c.requestedTarget == limit && c.currentTime().Sub(c.requestedAt) < nativeRegistrationSettleTime {
+		// The daemon polls every ten seconds. Do not keep posting reloads while
+		// the same request is still waiting for Apple's evaluation. A different
+		// target bypasses this window, including a manual pause or release.
+		return nil
+	}
+	if c.requestedTarget == limit {
+		logrus.WithField("target", limit).Warn("native charge target is not confirmed after settling; retrying")
+	}
+	// customLimit returns a zero target when the agent has stale settings. That
+	// needs another preference notification, not an enable call that resets
+	// the target to 80% and can release a lower hold.
+	_, agentEnabled, err := c.api.Limit()
+	if err != nil {
+		return fmt.Errorf("read native feature state before changing it: %w", err)
+	}
+	// Explicitly re-engage the agent after a previous disable. A preference
+	// notification alone can leave it in its ChargingToFull state.
+	// enableMCL temporarily selects Apple's 80% default. Do not call it for
+	// an already-enabled controller: it would release an existing lower hold.
+	if !agentEnabled {
+		if err := c.api.Enable(); err != nil {
+			return fmt.Errorf("enable native charge control: %w", err)
+		}
+	}
+	if err := c.api.WritePreferences(limit); err != nil {
+		return fmt.Errorf("write native charge target: %w", err)
+	}
+	current, enabled, err = c.api.Preferences()
+	if err != nil {
+		return fmt.Errorf("verify native charge target: %w", err)
+	}
+	if !enabled || current != limit {
+		return fmt.Errorf("native target did not retain %d%% (read %d%%, enabled=%t)", limit, current, enabled)
+	}
+	c.requestedTarget = limit
+	c.requestedAt = c.currentTime()
+	return nil
+}
+
+func (c *Client) disable() error {
+	// A disabled preference may have left a registration behind. The agent
+	// only removes it through disableMCL while it believes it is enabled.
+	if c.api.CustomLimits() {
+		_, enabled, err := c.api.Limit()
+		if err != nil {
+			return err
+		}
+		if !enabled {
+			_, savedEnabled, err := c.api.Preferences()
+			if err != nil {
+				return err
+			}
+			registered, err := c.api.ManualLimitRegistered()
+			if err != nil {
+				return err
+			}
+			if !savedEnabled && !registered {
+				c.requestedTarget = 0
+				return nil
+			}
+			if err := c.api.Enable(); err != nil {
+				return err
+			}
+		}
+	}
+	if err := c.api.Disable(); err != nil {
+		return err
+	}
+	if c.api.CustomLimits() {
+		_, enabled, err := c.api.Limit()
+		if err != nil {
+			return err
+		}
+		_, savedEnabled, err := c.api.Preferences()
+		if err != nil {
+			return err
+		}
+		registered, err := c.api.ManualLimitRegistered()
+		if err != nil {
+			return err
+		}
+		if enabled || savedEnabled || registered {
+			return errors.New("native charge limit release is not yet confirmed")
+		}
+	}
+	c.requestedTarget = 0
 	return nil
 }
 
 func (c *Client) Disable() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	var cerr *C.char
-	if C.batt_powerui_disable(&cerr) != 0 { //nolint:gocritic // dupSubExpr false positive on cgo call
-		return fmt.Errorf("disable native charge limit: %w", takeError(cerr))
-	}
-	logrus.Trace("disabled native charge limit")
-	return nil
+	return c.disable()
 }

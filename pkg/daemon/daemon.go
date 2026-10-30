@@ -110,6 +110,10 @@ func removeStaleSocket(path string) error {
 }
 
 func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
+	maintainLoopInnerLock.Lock()
+	chargeControlStopped = false
+	resetNativeBand()
+	maintainLoopInnerLock.Unlock()
 	var err error
 	conf, err = config.NewFile(configPath)
 	if err != nil {
@@ -124,6 +128,10 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		return fmt.Errorf("open Apple SMC: %w", err)
 	}
 	caps := detectCapabilities()
+	if caps.NativeChargeBand && os.Geteuid() != 0 {
+		_ = smcConn.Close()
+		return fmt.Errorf("native macOS 27 charge control requires the root batt daemon")
+	}
 	setChargeControl(caps)
 	logrus.WithFields(capabilityLogFields(caps)).Info("detected hardware capabilities")
 	disableUnsupportedConfiguredFeatures()
@@ -275,6 +283,10 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 
 	logrus.Info("stopping listening notifications")
 	stopListeningNotifications()
+	nativeShutdown := getCapabilities().NativeChargeBand
+	if nativeShutdown {
+		scheduler.Stop()
+	}
 
 	if err := AllowSleepOnAC(); err != nil {
 		logrus.Errorf("failed to remove PM assertion before exiting: %v", err)
@@ -283,24 +295,28 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		logrus.Errorf("failed to remove calibration sleep assertion before exiting: %v", err)
 	}
 
-	exitCaps := getCapabilities()
-	if exitCaps.ChargingControl {
-		if err := resetChargeControl(); err != nil {
-			logrus.Errorf("failed to reset charge control before exiting: %v", err)
-		}
+	var cleanupErr error
+	if err := releaseChargeControlOnExit(); err != nil {
+		logrus.Errorf("failed to reset charge control before exiting: %v", err)
+		cleanupErr = errors.Join(cleanupErr, err)
 	}
 
 	if err := shutdownAdapterAndSleep(); err != nil {
 		logrus.Errorf("failed to restore adapter/sleep state before exiting: %v", err)
+		cleanupErr = errors.Join(cleanupErr, err)
 	}
 
 	logrus.Info("closing smc connection")
 	err = smcConn.Close()
 	if err != nil {
 		logrus.Errorf("failed to close smc connection: %v", err)
+		cleanupErr = errors.Join(cleanupErr, err)
 	}
 
 	logrus.Info("exiting")
+	if nativeShutdown {
+		return cleanupErr
+	}
 	return nil
 }
 

@@ -30,6 +30,7 @@ func detectCapabilities() compatibility.Capabilities {
 	return compatibility.Capabilities{
 		ChargingControl:   mode != compatibility.ChargeControlUnsupported,
 		ChargeControlMode: mode,
+		NativeChargeBand:  mode == compatibility.ChargeControlNative && nativeLimit.SupportsChargeBand(),
 		SupportedLimits:   supportedLimits,
 		// The legacy and adapter loops both run while awake and rely on the
 		// sleep hooks to avoid overcharging during sleep.
@@ -112,6 +113,7 @@ func capabilityLogFields(capabilities compatibility.Capabilities) logrus.Fields 
 	return logrus.Fields{
 		"chargingControl":   capabilities.ChargingControl,
 		"chargeControlMode": capabilities.ChargeControlMode,
+		"nativeChargeBand":  capabilities.NativeChargeBand,
 		"supportedLimits":   capabilities.SupportedLimits,
 		"sleepHooks":        capabilities.SleepHooks,
 		"magSafeLED":        capabilities.MagSafeLED,
@@ -191,7 +193,7 @@ func disableUnsupportedConfiguredFeatures() {
 		changed = true
 	}
 	if target := conf.ChargeOnceTarget(); target != 0 && (!caps.ChargingControl ||
-		(caps.ChargeControlMode == compatibility.ChargeControlNative && target < 100)) {
+		(caps.ChargeControlMode == compatibility.ChargeControlNative && !caps.NativeChargeBand && target < 100)) {
 		conf.ClearChargeOnceTarget()
 		changed = true
 	}

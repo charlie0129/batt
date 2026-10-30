@@ -274,6 +274,7 @@ func (c *menuController) updateChargeOnceControls() {
 	c.menu.setEnabled(itemChargeOnceLimit, canChargeOnceToLimit(
 		c.calibrationPhase, c.disableScheduled, c.adapterDisableScheduled, c.chargeOnceTarget,
 		c.upperLimit, c.currentCharge, c.capabilities.ChargeControlMode,
+		c.capabilities.NativeChargeBand,
 		c.capabilities.AdapterControl, c.adapterKnown, c.adapterEnabled))
 	c.menu.setEnabled(itemChargeOnceFull, canChargeOnceToFull(
 		c.calibrationPhase, c.disableScheduled, c.adapterDisableScheduled, c.chargeOnceTarget,
@@ -441,13 +442,14 @@ func canChargeOnceToLimit(
 	disableScheduled, adapterDisableScheduled bool,
 	chargeOnceTarget, upperLimit, currentCharge int,
 	chargeControlMode compatibility.ChargeControlMode,
+	nativeChargeBand bool,
 	adapterControl, adapterKnown, adapterEnabled bool,
 ) bool {
 	targetReached := currentCharge >= upperLimit
 	if upperLimit < 100 && chargeControlMode == compatibility.ChargeControlFirmware {
 		targetReached = currentCharge >= upperLimit-1
 	}
-	return chargeControlMode != compatibility.ChargeControlNative &&
+	return (chargeControlMode != compatibility.ChargeControlNative || nativeChargeBand) &&
 		canStartChargeOnce(phase, disableScheduled, adapterDisableScheduled, chargeOnceTarget,
 			adapterControl, adapterKnown, adapterEnabled) && chargeLimitActive(upperLimit) && !targetReached
 }
