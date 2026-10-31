@@ -1,18 +1,23 @@
 > [!TIP]
 > Feb 17, 2026 UPDATE: Finally, after more than 5 years, macOS 26.4 and later supports charge limiting natively (adjustable from 80% to 100%), so **`batt` is not needed if the built-in range meets your needs**. `batt` remains useful on older releases and when you want a limit below 80%. On macOS 27-era firmware, `batt` programs the firmware's charge-limit facility directly.
 
-Note: Use table of contents of quickly navigate to the section you want, e.g., `Installation`. 👆↗
+<img src="docs/assets/icon.png" alt="Batt Logo" width="128" />
 
-# batt
+# Batt
 
-[![Go Checks](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml)[![Buind Test Binary](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml)![GitHub Downloads](https://img.shields.io/github/downloads/charlie0129/batt/total)
+[![Go Checks](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml)
+[![Buind Test Binary](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml)
+![GitHub Downloads](https://img.shields.io/github/downloads/charlie0129/batt/total?style=flat&logo=github&logoColor=99A0A8&labelColor=373F46&label=Downloads&color=32CA55)
 
+<span style="font-size: 20px;">`batt` is a tool to control battery charging on Apple Silicon MacBooks.</span>
 
-`batt` is a tool to control battery charging on Apple Silicon MacBooks.
+<span style="font-size: 17px;">Full docs [here!](SITELINK_FOR_DOCS_HERE_THIS_IS_A_PLACEHOLDER)</span>
 
 ## Why do you need this?
 
-[This article](https://batteryuniversity.com/article/bu-808-how-to-prolong-lithium-based-batteries) might be helpful. TL;DR: keep your battery at 80% or lower when plugged in, and discharge it as shallowly as feasible.
+[This article](https://batteryuniversity.com/article/bu-808-how-to-prolong-lithium-based-batteries) might be helpful. 
+
+TL;DR: keep your battery at 80% or lower when plugged in, and discharge it as shallowly as feasible.
 
 Previously, before optimized battery charging is introduced, MacBooks are known to suffer from battery swelling when they are kept at 100% all the time, especially the 2015s. Even with optimized battery charging, the effect is not optimal (described [below](#but-macos-have-similar-features-built-in-is-it)).
 
