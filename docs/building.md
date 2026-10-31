@@ -8,7 +8,7 @@ You need to install command line developer tools (by running `xcode-select --ins
 make
 ```
 
-Simply running `make` in this repo should build the binary into `./bin/batt`. You can then follow [the upgrade guide](#how-to-upgrade) to install it (you just use the binary you have built, not downloading a new one, of course).
+Simply running `make` in this repo should build the binary into `./bin/batt`. You can then follow [the upgrade guide](faq.md#how-to-upgrade) to install it (you just use the binary you have built, not downloading a new one, of course).
 
 ### GUI
 

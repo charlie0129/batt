@@ -7,7 +7,7 @@
 # **Batt**
 
 [![Go Checks](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml)
-[![Buind Test Binary](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml)
+[![Build Test Binary](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml)
 ![GitHub Downloads](https://img.shields.io/github/downloads/charlie0129/batt/total?style=flat&logo=github&logoColor=99A0A8&labelColor=373F46&label=Downloads&color=32CA55)
 
 <span style="font-size: 20px;">`batt` is a tool to control battery charging on Apple Silicon MacBooks.</span>
@@ -19,7 +19,7 @@
 !!! note "TL;DR:" 
     keep your battery at 80% or lower when plugged in, and discharge it as shallowly as feasible.
 
-Previously, before optimized battery charging is introduced, MacBooks are known to suffer from battery swelling when they are kept at 100% all the time, especially the 2015s. Even with optimized battery charging, the effect is not optimal <span style="font-size: 13px;">(described [here](comparison.md/#but-macos-have-similar-features-built-in-is-it))</span>
+Previously, before optimized battery charging is introduced, MacBooks are known to suffer from battery swelling when they are kept at 100% all the time, especially the 2015s. Even with optimized battery charging, the effect is not optimal <span style="font-size: 13px;">(described [here](comparison.md#but-macos-have-similar-features-built-in-is-it))</span>
 
 `batt` can effectively alleviate this problem by limiting the battery charge level. It can be used to set a maximum charge level. For example, you can set it to 80%, and it will stop charging when the battery reaches 80%.
 
@@ -46,15 +46,15 @@ On older firmware, the computer then runs from wall power and the battery percen
 
 `batt` tried to keep as simple as possible. Charging limiting is the only thing to care about for most users:
 
-- Limit battery charge, with a lower and upper bound, like ThinkPads. [Docs](usage.md/#limit-battery-charge)
-- Charge to the limit or to 100% once, without changing the limit. [Docs](usage.md/#charge-once)
+- Limit battery charge, with a lower and upper bound, like ThinkPads. [Docs](usage.md#limit-battery-charge)
+- Charge to the limit or to 100% once, without changing the limit. [Docs](usage.md#charge-once)
 
 However, if you are nerdy and want to dive into the details, it does have some advanced features for power users. These are shown only when the current Mac's SMC keys support them.
 
-- Control MagSafe LED (if present) according to charge status. [Docs](usage.md/#control-magsafe-led)
-- Cut power from the wall (even if the adapter is physically plugged in) to use battery power. [Docs](usage.md/#enabledisable-power-adapter)
-- On firmware < `20xxx`, it solves common sleep-related issues when controlling charging. [Docs1](usage.md/#preventing-idle-sleep) [Docs2](usage.md/#disabling-charging-before-sleep)
-- Calibrate battery automatically. [Docs](usage.md/#auto-calibration-experimental)
+- Control MagSafe LED (if present) according to charge status. [Docs](usage.md#control-magsafe-led)
+- Cut power from the wall (even if the adapter is physically plugged in) to use battery power. [Docs](usage.md#enabledisable-power-adapter)
+- On firmware < `20xxx`, it solves common sleep-related issues when controlling charging. [Docs1](usage.md#preventing-idle-sleep) [Docs2](usage.md#disabling-charging-before-sleep)
+- Calibrate battery automatically. [Docs](usage.md#auto-calibration-experimental)
 
 ## Installation
 
@@ -72,7 +72,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 
 * Download `.dmg` file from [Releases](https://github.com/charlie0129/batt/releases) and open it (right-click open if macOS says it's damaged)
 * Drag `batt.app` to `Applications`
-* MacOS may say it's damaged when you try to run it, To fix it, run this in your Terminal: <br>
+* macOS may say it's damaged when you try to run it. To fix it, run this in your Terminal: <br>
 `sudo xattr -r -d com.apple.quarantine /Applications/batt.app`.
 * Run `batt.app` and Follow the MenuBar UI to install or upgrade.
 
@@ -125,8 +125,6 @@ batt help
 
 Enable with:
 
-bash
-
 ```bash
 sudo batt adapter-mode enable
 ```
@@ -136,7 +134,7 @@ sudo batt adapter-mode enable
 - Disables Force Discharge and auto-calibration.
 - Native macOS charge limits remain available at 80% and above.
 
-For release compatibility, see the [release page](<https://github.com/charlie0129/batt/releases>).
+For release compatibility, see the [release page](https://github.com/charlie0129/batt/releases).
 
 ## Usage
 
