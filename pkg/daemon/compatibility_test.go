@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,27 +39,34 @@ func TestDetectCapabilitiesForFirmwareControl(t *testing.T) {
 		}
 		return v
 	}
-	mock := smc.NewMockValues(
-		value(smc.FirmwareChargeLimitActivationKey, gosmc.TypeUInt8, 0),
-		value(smc.FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
-		value(smc.FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
-		value(smc.MagSafeLedKey, gosmc.TypeUInt8, 0),
-		value(smc.AdapterKey1, gosmc.TypeUInt8, 0),
-	)
-	if err := mock.Open(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = mock.Close() })
+	for _, withLED := range []bool{false, true} {
+		t.Run(fmt.Sprintf("LED present=%t", withLED), func(t *testing.T) {
+			values := []gosmc.Value{
+				value(smc.FirmwareChargeLimitActivationKey, gosmc.TypeUInt8, 0),
+				value(smc.FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
+				value(smc.FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
+				value(smc.AdapterKey1, gosmc.TypeUInt8, 0),
+			}
+			if withLED {
+				values = append(values, value(smc.MagSafeLedKey, gosmc.TypeUInt8, 0))
+			}
+			mock := smc.NewMockValues(values...)
+			if err := mock.Open(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = mock.Close() })
 
-	previous := smcConn
-	t.Cleanup(func() { smcConn = previous })
-	smcConn = mock
-	got := detectCapabilities()
-	if !got.ChargingControl || got.ChargeControlMode != compatibility.ChargeControlFirmware {
-		t.Fatalf("unexpected charge control capability: %+v", got)
-	}
-	if got.SleepHooks || got.MagSafeLED || !got.AdapterControl || !got.Calibration {
-		t.Fatalf("unexpected firmware-only capabilities: %+v", got)
+			previous := smcConn
+			t.Cleanup(func() { smcConn = previous })
+			smcConn = mock
+			got := detectCapabilities()
+			if !got.ChargingControl || got.ChargeControlMode != compatibility.ChargeControlFirmware {
+				t.Fatalf("unexpected charge control capability: %+v", got)
+			}
+			if got.SleepHooks || got.MagSafeLED != withLED || !got.AdapterControl || !got.Calibration {
+				t.Fatalf("unexpected firmware-only capabilities: %+v", got)
+			}
+		})
 	}
 }
 

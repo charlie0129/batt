@@ -89,7 +89,7 @@ On firmware exposing `bfF0`, `batt` writes the upper and lower percentages to `b
 This mode has several intentional differences and current limitations:
 
 - If the battery is above the upper limit, firmware can stop drawing wall power and use the battery to run the Mac. Unlike legacy control, the percentage may therefore fall.
-- MagSafe LED control is unavailable because `batt` no longer owns or reliably knows the charging-enabled state.
+- MagSafe LED control follows the actual charging state reported by macOS. Green means the battery is not charging, which can happen for reasons other than reaching the limit.
 - Legacy sleep options are unavailable and unnecessary. Incompatible values left in the configuration after an upgrade are disabled by the daemon.
 
 The daemon reports these capabilities to current CLI and GUI clients. Older daemons that do not provide detailed compatibility data retain the previous permissive client behavior.
@@ -412,13 +412,13 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 
 This option makes the MagSafe LED reflect the charging state of your MacBook (or force it off).
 
-- Green: charge limit is reached and charging is stopped.
+- Green: charging is stopped.
 - Orange: charging is in progress.
-- Off: just woken up from sleep, charing is disabled and batt is waiting before controlling charging.
+- Off: forced off, or temporarily after wake with active charging control.
 
 Note that you must have a MagSafe LED on your MacBook to use this feature.
 
-This also requires `batt` to make the charging decision itself: legacy direct charging control, or adapter mode on gated macOS 27 firmware. It is unavailable with the firmware-managed limit on macOS 27 / 20xxx firmware even if the Mac has a physical MagSafe LED, because firmware owns the charging decision and `batt` cannot reliably mirror its state.
+With firmware-managed charging, `batt` uses the charging state reported by macOS. While the Mac is asleep, the LED is updated after it wakes. Legacy direct charging and adapter modes continue to use the charging state controlled by `batt`; the native macOS limit does not support LED control.
 
 To enable MagSafe LED control, run `sudo batt magsafe-led enable`.
 
