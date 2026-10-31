@@ -2,9 +2,9 @@ name: deploy-pages
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
+  # push: UNCOMMENT THIS SECTION IN PRODUCTION
+    # branches:
+      # - master
 
 permissions:
   contents: write
