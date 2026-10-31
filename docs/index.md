@@ -78,17 +78,22 @@ However, if you are nerdy and want to dive into the details, it does have some a
 
 ### Installing the CLI
 
-You can quickly install batt via Homebrew:
-```
-brew install batt
-```
-If you want to install batt via the installation script:
-```bash
-bash <(curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh)
-```
+=== "Homebrew"
+
+    ```bash
+    brew install batt
+    sudo brew services start batt
+    ```
+
+=== "Installation Script"
+
+    ```bash
+    bash <(curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh)
+    ```
 
 After installation run the following command to ensure that the installation succeeded:
-```
+
+```bash
 batt help
 ```
 
