@@ -421,7 +421,11 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 	defer maintainLoopInnerLock.Unlock()
 
 	switch getCapabilities().ChargeControlMode {
-	case compatibility.ChargeControlFirmware, compatibility.ChargeControlNative:
+	case compatibility.ChargeControlFirmware:
+		ok := maintainManagedChargeLimit()
+		maintainFirmwareMagSafeLED()
+		return ok
+	case compatibility.ChargeControlNative:
 		return maintainManagedChargeLimit()
 	case compatibility.ChargeControlLegacy, compatibility.ChargeControlAdapter:
 		return maintainActiveCharging(ignoreMissedLoops)
@@ -432,9 +436,7 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 }
 
 // maintainManagedChargeLimit delegates hysteresis enforcement to Apple (the
-// firmware or macOS's built-in limit). It deliberately does not read
-// battery/charging state or interact with sleep, MagSafe, adapter, or
-// calibration features.
+// firmware or macOS's built-in limit).
 func maintainManagedChargeLimit() bool {
 	if calibrationNeedsMaintainLoop() {
 		batteryCharge, err := smcConn.GetBatteryCharge()
