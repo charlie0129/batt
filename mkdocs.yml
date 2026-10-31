@@ -1,0 +1,67 @@
+site_name: Batt
+site_description: Batt Docs
+site_author: charlie0129
+repo_url: https://github.com/charlie0129/batt
+
+nav:
+  - Home: 
+    - Batt: index.md
+    - Compatibility: compatibility.md
+    - Installation: installation.md
+    - Usage: usage.md
+    - Bulding: building.md
+    - FAQ: faq.md
+    - Comparison: comparison.md
+  - Docs:
+    - Compatibility: compatibility.md
+    - Installation: installation.md
+    - Usage: usage.md
+    - Auto Calibration: auto-calibration.md
+    - Building: building.md
+
+theme:
+  name: "material"
+  language: en
+  logo: assets/icon.png
+  favicon: assets/icon.png
+  font:
+    text: Roboto
+    code: Roboto Mono
+  palette:
+    - media: "(prefers-color-scheme)"
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      primary: custom
+      accent: custom
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      primary: custom
+      accent: custom
+      scheme: batt
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - toc:
+      permalink: true
+  - footnotes

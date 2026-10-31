@@ -1,0 +1,64 @@
+/* Header */
+:root {
+    --batt-primary: #536462;
+    --md-primary-fg-color: var(--batt-primary);
+    --md-primary-fg-color--dark: var(--batt-primary);
+    --md-primary-fg-color--light: var(--batt-primary);
+}
+
+
+/* Batt color scheme */
+[data-md-color-scheme="batt"] {
+    --md-default-bg-color: #222222;
+    --md-default-bg-color--light: #222222;
+    --md-default-bg-color--lighter: #222222;
+
+    --md-default-fg-color: #ffffff;
+    --md-default-fg-color--light: #eeeeee;
+    --md-typeset-color: #ffffff;
+    --md-typeset-a-color: #62aeff;
+
+    --md-code-bg-color: #2e2e2e;
+    --md-code-fg-color: #ffffff;
+
+    --md-primary-bg-color: #ffffff;
+    --md-primary-fg-color: var(--batt-primary);
+}
+
+/* Headings */
+[data-md-color-scheme="batt"] .md-typeset h1,
+[data-md-color-scheme="batt"] .md-typeset h2,
+[data-md-color-scheme="batt"] .md-typeset h3 {
+    color: #ffffff;
+}
+
+/* Table of contents */
+[data-md-color-scheme="batt"] .md-nav--secondary .md-nav__title {
+    color: #ffffff;
+}
+
+/* Admonitions */
+[data-md-color-scheme="batt"] .md-typeset .admonition-title::before {
+    background-color: #ffffff;
+}
+[data-md-color-scheme="batt"] .md-typeset .admonition,
+[data-md-color-scheme="batt"] .md-typeset details {
+    border-color: var(--batt-primary) !important;
+    background-color: #2e2e2e;
+    color: #ffffff;
+    border-width: 0;
+    border-left-width: 0px;
+}
+
+/* Admonition title backgrounds */
+[data-md-color-scheme="batt"] .md-typeset .admonition-title {
+    color: #ffffff;
+}
+
+[data-md-color-scheme="batt"] .admonition.note > .admonition-title { background: var(--batt-primary); }
+[data-md-color-scheme="batt"] .admonition.info > .admonition-title { background: #54585c; }
+[data-md-color-scheme="batt"] .admonition.tip > .admonition-title { background: #2e9e62; }
+[data-md-color-scheme="batt"] .admonition.warning > .admonition-title { background: #dd841e; }
+[data-md-color-scheme="batt"] .admonition.danger > .admonition-title { background: #b71c1c; }
+[data-md-color-scheme="batt"] .admonition.example > .admonition-title { background: #1b639a; }
+[data-md-color-scheme="batt"] .admonition.quote > .admonition-title { background: #455a64; }
