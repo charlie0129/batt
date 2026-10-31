@@ -222,7 +222,7 @@ The GUI also exposes this setting under **Advanced → Prevent Sleep when Adapte
 
 When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
 
-`batt` have similar features built-in. The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. To customize the lower limit, use `batt lower-limit-delta`.
+`batt` has similar features built-in. The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. To customize the lower limit, use `batt lower-limit-delta`.
 
 For example, if you want to set the lower limit to be 5% less than the upper limit, run `sudo batt lower-limit-delta 5`. So, if you have your charge (upper) limit set to 60%, the lower limit will be 55%.
 
@@ -234,7 +234,7 @@ This option makes the MagSafe LED reflect the charging state of your MacBook (or
 
 - Green: charge limit is reached and charging is stopped.
 - Orange: charging is in progress.
-- Off: just woken up from sleep, charing is disabled and batt is waiting before controlling charging.
+- Off: just woken up from sleep, charging is disabled and batt is waiting before controlling charging.
 
 Note that you must have a MagSafe LED on your MacBook to use this feature.
 

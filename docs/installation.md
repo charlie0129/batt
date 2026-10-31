@@ -33,7 +33,7 @@ You can choose either one. Please do not use both at the same time to avoid conf
 ### Homebrew
 
 !!! warning "Important"
-    If you previously ran `batt` v0.7.3 or earlier with `sudo brew services`, follow the [one-time service-label migration](#homebrew-service-label-migration) before starting the service. When the Homebrew formula moved from v0.7.3 to v0.7.5, its service label changed from `cc.chlc.batt` to `homebrew.mxcl.batt`.
+    If you previously ran `batt` v0.7.3 or earlier with `sudo brew services`, follow the [one-time service-label migration](faq.md#homebrew-service-label-migration) before starting the service. When the Homebrew formula moved from v0.7.3 to v0.7.5, its service label changed from `cc.chlc.batt` to `homebrew.mxcl.batt`.
 
 1. `brew install batt`
 2. `sudo brew services start batt`
@@ -47,9 +47,9 @@ You can choose either one. Please do not use both at the same time to avoid conf
 <details>
 <summary>Manual installation steps</summary>
 
-2. Get the binary. For _stable_ and _beta_ releases, you can find the download link in the [release page](https://github.com/charlie0129/batt/releases). If you want development versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months and you need to `chmod +x batt` after extracting the archive) or [build it yourself](#building) .
+2. Get the binary. For _stable_ and _beta_ releases, you can find the download link in the [release page](https://github.com/charlie0129/batt/releases). If you want development versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months and you need to `chmod +x batt` after extracting the archive) or [build it yourself](building.md) .
 3. Put the binary somewhere safe. You don't want to move it after installation :). It is recommended to save it in your `$PATH`, e.g., `/usr/local/bin`, so you can directly call `batt` on the command-line. In this case, the binary location will be `/usr/local/bin/batt`.
-4. Install daemon using `sudo batt install`. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. To uninstall: please refer to [How to uninstall?](#how-to-uninstall)
+4. Install daemon using `sudo batt install`. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. To uninstall: please refer to [How to uninstall?](faq.md#how-to-uninstall)
 </details>
 
 5. In case you have GateKeeper turned on, you will see something like _"batt is can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. If you don't see it, you can skip this step. To solve this, you can either 1. (recommended) Go to *System Settings* -> *Privacy & Security* --scroll-down--> *Security* -> *Open Anyway*; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
@@ -60,8 +60,8 @@ You can choose either one. Please do not use both at the same time to avoid conf
 - Time to customize. By default `batt` will set a charge limit to 60%. For example, to set the charge limit to 80%, run `sudo batt limit 80`.
 - As said before, it is _highly_ recommended to disable macOS's optimized charging when using `batt`. To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`. Built-in charge limit also need to be disabled if you are on macOS 26.4 or later.
 - If your current charge is above the limit, behavior depends on the detected backend. Firmwares < `20xxx` stops charging and keeps running from the wall, so the percentage stays steady. `20xxx` firmware may run from the battery until it falls back into the configured range.
-- You can refer to [Usage](#usage) for additional configurations. Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
+- You can refer to [Usage](usage.md) for additional configurations. Don't know what a command does? Run `batt help` to see all available commands. To see help for a specific command, run `batt help <command>`.
 - To disable the charge limit, run `batt disable` or `batt limit 100`.
-- [How to uninstall?](#how-to-uninstall) [How to upgrade?](#how-to-upgrade)
+- [How to uninstall?](faq.md#how-to-uninstall) [How to upgrade?](faq.md#how-to-upgrade)
 
 > if you find `batt` helpful, stars ⭐️ are much appreciated!

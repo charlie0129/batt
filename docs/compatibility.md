@@ -58,7 +58,7 @@ This accepts any upper limit from 10 to 100 and supports the lower-limit delta, 
 Intentional differences and limitations in adapter mode:
 
 - The limit is enforced only while `batt` is awake. Just before sleep `batt` restores/holds a safe state (charging is disabled pre-sleep by default) to avoid overcharging while asleep; the sleep options apply as in legacy mode.
-- In Clamshell mode (lid closed with an external display), cutting wall power makes the Mac sleep unless `batt prevent-sleep-on-adapter-disable` is enabled. This opt-in setting also applies to adapter mode; it prevents all system sleep while wall power is cut. See [Prevent sleep when adapter is disabled](#prevent-sleep-when-adapter-is-disabled) for safety warnings.
+- In Clamshell mode (lid closed with an external display), cutting wall power makes the Mac sleep unless `batt prevent-sleep-on-adapter-disable` is enabled. This opt-in setting also applies to adapter mode; it prevents all system sleep while wall power is cut. See [Prevent sleep when adapter is disabled](usage.md#prevent-sleep-when-adapter-is-disabled) for safety warnings.
 - Because `batt` owns the adapter to enforce the limit, the manual `batt adapter` / GUI Force Discharge feature and auto-calibration are disabled in this mode.
 - MagSafe LED control follows wall power: orange while `batt` lets the Mac charge, green while it holds the limit.
 - If the SMC charge keys are gated **and** the adapter key is unavailable, `batt` uses the native macOS limit instead (80% and above only), driven through PowerUIAgent.
