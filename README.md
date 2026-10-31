@@ -44,7 +44,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 
 **It is light-weight.** No electron GUIs hogging your system resources like some other tools. You can use batt on the command-line, or use the native macOS menubar app if you prefer a GUI. The GUI is written using native macOS APIs, so it is light-weight and fast.
 
-## But macOS have similar features built-in, is it?
+## But macOS has similar features built-in, is it?
 
 Yes, macOS have optimized battery charging. It will try to find out your charging and working schedule and prohibits charging above 80% for a couple of hours overnight. However, if you have an un-regular schedule, this will simply not work. Also, you lose predictability (which I value a lot) about your computer's behavior, i.e., by letting macOS decide for you, you, the one who knows your schedule the best, cannot control when to charge or when not to charge.
 
@@ -402,7 +402,7 @@ The GUI also exposes this setting under **Advanced → Prevent Sleep when Adapte
 
 When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
 
-`batt` have similar features built-in. The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. To customize the lower limit, use `batt lower-limit-delta`.
+`batt` has similar features built-in. The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. To customize the lower limit, use `batt lower-limit-delta`.
 
 For example, if you want to set the lower limit to be 5% less than the upper limit, run `sudo batt lower-limit-delta 5`. So, if you have your charge (upper) limit set to 60%, the lower limit will be 55%.
 
@@ -414,7 +414,7 @@ This option makes the MagSafe LED reflect the charging state of your MacBook (or
 
 - Green: charge limit is reached and charging is stopped.
 - Orange: charging is in progress.
-- Off: just woken up from sleep, charing is disabled and batt is waiting before controlling charging.
+- Off: just woken up from sleep, charging is disabled and batt is waiting before controlling charging.
 
 Note that you must have a MagSafe LED on your MacBook to use this feature.
 
@@ -544,7 +544,7 @@ sudo brew services start batt
 
 1. Run `sudo batt uninstall` to remove the old daemon.
 2. Download the new binary. For _stable_ and _beta_ releases, you can find the download link in the [release page](https://github.com/charlie0129/batt/releases). If you want development versions with the latest features and bug fixes, you can download prebuilt binaries from [GitHub Actions](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml) (has a retention period of 3 months and you need to `chmod +x batt` after extracting the archive) or [build it yourself](#building) .
-3. Replace the old `batt` binary with the downloaded new one. `sudo cp ./batt $(where batt)`
+3. Replace the old `batt` binary with the downloaded new one. `sudo cp ./batt $(which batt)`
 4. Run `sudo batt install` to install the daemon again. Although most config is preserved, some security related config is intentionally reset during re-installation. For example, if you used `--allow-non-root-access` when installing previously, you will need to use it again like this `sudo batt install --allow-non-root-access`.
 
 ### Why is it Apple Silicon only?
@@ -564,7 +564,7 @@ Probably not. `batt` was made Apple-Silicon-only after some early development. I
 > [!NOTE]
 > This FAQ applies only to older firmware < `20xxx` using direct charging control. On `20xxx` firmware, the charge limit persists through sleep and `batt` does not disable charging before sleep.
 
-TL,DR; This is intended, and is the default behavior. It is described [here](#disabling-charging-before-sleep). You can turn this feature off by running `sudo batt disable-charging-pre-sleep disable` (not recommended, keep reading).
+TL;DR: This is intended, and is the default behavior. It is described [here](#disabling-charging-before-sleep). You can turn this feature off by running `sudo batt disable-charging-pre-sleep disable` (not recommended, keep reading).
 
 But it is suggested to keep the default behavior to make your charge limit work as intended. Why? Because when you close the lid, your MacBook will go into **forced sleep**, and `batt` will be paused by macOS. As a result, `batt` can no longer control battery charging. It will be whatever state it was before you close the lid. This is the problem. Let's say, if you close the lid when your MacBook is charging, since `batt` is paused by macOS, it will keep charging, ignoring the charge limit you have set. There is no way to prevent **forced sleep**. Therefore, the only way to solve this problem is to disable charging before sleep. This is what `batt` does. It will disable charging just before your MacBook goes to sleep, and re-enable it when it wakes up. This way, your Mac will not overcharge during sleep.
 
@@ -572,9 +572,9 @@ Not that you will encounter this **forced sleep** only if you, the user, forced 
 
 So it is suggested to keep this feature on. But _What if I MUST let my Mac charge during a **forced sleep** without turing off `disable-charging-pre-sleep`, even if it may charge beyond the charge limit?_ This is simple, just disable charge limit `batt disable`. This way, when you DO want to enable charge limit again, `disable-charging-pre-sleep` will still be there to prevent overcharging. The rationale is: when you want to charge during a **forced sleep**, you actually want heavy use of your battery and don't want ANY charge limit at all, e.g. when you are on a long outside-event, and you want to charge your Mac when it is sitting in your bag, lid closed. Setting the charge limit to 100% is equivalent to disabling charge limit. Therefore, most `batt` features will be turned off and your Mac can charge as if `batt` is not installed.
 
-### Why does it require root privilege?
+### Why does it require root privileges?
 
-It writes to SMC to control battery charging. This does changes to your hardware, and is a highly privileged operation. Therefore, it requires root privilege.
+It writes to SMC to control battery charging. This changes your hardware, and is a highly privileged operation. Therefore, it requires root privileges.
 
 If you are concerned about security, you can check the source code [here](https://github.com/charlie0129/batt) to make sure it does not do anything funny.
 
@@ -607,7 +607,7 @@ This is expected. batt will prevent your Mac from charging temporarily if your M
 
 If you absolutely need to charge your Mac _immediately_ after waking up from sleep, you can disable this feature by running `sudo batt disable-charging-pre-sleep disable`. However, this is not recommended (see [Disabling charging before sleep](#disabling-charging-before-sleep)).
 
-### Why does my Mac starts charging after entering sleep?
+### Why does my Mac start charging after entering sleep?
 
 > [!NOTE]
 > This FAQ applies only to older firmware < `20xxx` using legacy direct charging control. `20xxx` firmware continues enforcing the configured range during sleep.
