@@ -1,5 +1,5 @@
 site_name: Batt
-site_description: Batt Docs
+site_description: Control and limit battery charging on Apple Silicon MacBooks.
 site_author: charlie0129
 repo_url: https://github.com/charlie0129/batt
 
