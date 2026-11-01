@@ -12,6 +12,8 @@
 
 <span style="font-size: 20px;">`batt` is a tool to control battery charging on Apple Silicon MacBooks.</span>
 
+<img src="assets/screenshot.png" alt="Batt Screenshot" width="256" />
+
 ## Why do you need this?
 
 [This article](https://batteryuniversity.com/article/bu-808-how-to-prolong-lithium-based-batteries) might be helpful. 
@@ -27,20 +29,21 @@ On older firmware, the computer then runs from wall power and the battery percen
 
 ### Guides
 
-[Installation Guide](installation.md){ .md-button .md-button--primary }
-[Compatibility](compatibility.md){ .md-button .md-button--primary }
-[Usage](usage.md){ .md-button .md-button--primary }
-[Building](building.md){ .md-button .md-button--primary }
+[:fontawesome-solid-book-bookmark: Installation](installation.md){ .md-button .md-button--primary }
+[:fontawesome-solid-book-bookmark: Compatibility](compatibility.md){ .md-button .md-button--primary }
+[:fontawesome-solid-book-bookmark: Usage](usage.md){ .md-button .md-button--primary }
+[:fontawesome-solid-book-bookmark: Building](building.md){ .md-button .md-button--primary }
 
 ### Other
 
-[FAQ](faq.md){ .md-button .md-button--primary }
-[Comparison](comparison.md){ .md-button .md-button--primary }
+[:fontawesome-solid-circle-question: FAQ](faq.md){ .md-button .md-button--primary }
+[:fontawesome-solid-face-grin-stars: Comparison](comparison.md){ .md-button .md-button--primary }
 
 ### Links
 
-[Releases](https://github.com/charlie0129/batt/releases/latest){ .md-button .md-button--primary }
-[Homebrew](https://formulae.brew.sh/formula/batt#default){ .md-button .md-button--primary }
+[:fontawesome-solid-download: Releases](https://github.com/charlie0129/batt/releases/latest){ .md-button .md-button--primary }
+[:fontawesome-solid-beer-mug-empty: Homebrew](https://formulae.brew.sh/formula/batt#default){ .md-button .md-button--primary }
+[:fontawesome-brands-github: GitHub](https://github.com/charlie0129/batt){: .md-button .md-button--primary } 
 
 ## Features
 
@@ -61,7 +64,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 !!! note
     This is a quick and short overview,
 
-[Full Installation Guide](installation.md){ .md-button .md-button--primary }
+[:fontawesome-solid-book-bookmark: Full Installation Guide](installation.md){ .md-button .md-button--primary }
 
 ### Installing the GUI
 
@@ -102,7 +105,7 @@ batt help
 !!! note
     This is a quick and short overview,
 
-[Full Compatibility Guide](compatibility.md){ .md-button .md-button--primary }
+[:fontawesome-solid-book-bookmark: Full Compatibility Guide](compatibility.md){ .md-button .md-button--primary }
 
 | macOS Version | GUI | CLI (Prebuilt) | CLI (Build from Source) |
 | --- | --- | --- | --- |
@@ -143,7 +146,7 @@ For release compatibility, see the [release page](https://github.com/charlie0129
 
 ## Usage
 
-[See the usage Guide here](usage.md){ .md-button .md-button--primary }
+[:fontawesome-solid-book-bookmark: See the usage Guide here :fontawesome-solid-exclamation:](usage.md){ .md-button .md-button--primary }
 
 ## Architecture
 

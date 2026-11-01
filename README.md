@@ -1,5 +1,6 @@
-> [!TIP]
-> Feb 17, 2026 UPDATE: Finally, after more than 5 years, macOS 26.4 and later supports charge limiting natively (adjustable from 80% to 100%), so **`batt` is not needed if the built-in range meets your needs**. `batt` remains useful on older releases and when you want a limit below 80%. On macOS 27-era firmware, `batt` programs the firmware's charge-limit facility directly.
+> [!NOTE]
+> **Feb 17, 2026 UPDATE:** <br>
+> Finally, after more than 5 years, macOS 26.4 and later supports charge limiting natively (adjustable from 80% to 100%), so ***`batt` is not needed if the built-in range meets your needs***. `batt` remains useful on older releases and when you want a limit below 80%. On macOS 27-era firmware, `batt` programs the firmware's charge-limit facility directly.
 
 <img src="docs/assets/icon.png" alt="Batt Logo" width="128" />
 
@@ -11,7 +12,9 @@
 
 <span style="font-size: 20px;">`batt` is a tool to control battery charging on Apple Silicon MacBooks.</span>
 
-<span style="font-size: 17px;">Full docs [here!](SITELINK_FOR_DOCS_HERE_THIS_IS_A_PLACEHOLDER)</span>
+<span style="font-size: 19px;">Full docs [here!](SITELINK_FOR_DOCS_HERE_THIS_IS_A_PLACEHOLDER)</span>
+
+<img src="docs/assets/screenshot.png" alt="Batt Screenshot" width="256" />
 
 ## Why do you need this?
 
