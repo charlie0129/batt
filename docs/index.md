@@ -79,6 +79,8 @@ However, if you are nerdy and want to dive into the details, it does have some a
 `sudo xattr -r -d com.apple.quarantine /Applications/batt.app`.
 * Run `batt.app` and Follow the MenuBar UI to install or upgrade.
 
+<img src="docs/assets/screenshot-gui-setup.png" alt="Screenshot GUI Setup" width="320" />
+
 ### Installing the CLI
 
 === "Homebrew"
