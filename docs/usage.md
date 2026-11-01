@@ -13,7 +13,7 @@ Setting the limit to 10-99 will enable the battery charge limit, limiting the ma
 
 By default, `batt` will set a 60% charge limit.
 
-To customize charge limit, see `batt limit`. For example,to set the limit to 80%, run `batt limit 80`. To disable the limit, run `batt disable` or `batt limit 100`.
+To customize charge limit, see `batt limit`. For example, to set the limit to 80%, run `batt limit 80`. To disable the limit, run `batt disable` or `batt limit 100`.
 
 To disable the limit only temporarily, use `batt disable --for=1d`. Your current limit is restored automatically once the duration has elapsed, even if your Mac reboots in the meantime. Durations accept minutes, hours, days and weeks, e.g. `30m`, `2h`, `1d`, `1w`. Setting a limit with `batt limit` before the duration elapses cancels the scheduled restore. `batt status` shows when the limit will be restored.
 
@@ -151,7 +151,7 @@ Due to macOS limitations, `batt` will be paused when your computer goes to sleep
 
 This option tells macOS NOT to go to sleep when the computer is in a charging session, so batt can continue to work until charging is finished. Note that it will only prevent **idle** sleep, when 1) charging is active 2) battery charge limit is enabled. So your computer can go to sleep as soon as a charging session is completed.
 
-However, this options does not prevent manual sleep (limitation of macOS). For example, if you manually put your computer to sleep (by choosing the Sleep option in the top-left Apple menu) or close the lid, batt will still be paused and the issue mentioned above will still happen. This is where disable-charging-pre-sleep comes in. See [Disabling charging before sleep](#disabling-charging-before-sleep).
+However, this option does not prevent manual sleep (limitation of macOS). For example, if you manually put your computer to sleep (by choosing the Sleep option in the top-left Apple menu) or close the lid, batt will still be paused and the issue mentioned above will still happen. This is where disable-charging-pre-sleep comes in. See [Disabling charging before sleep](#disabling-charging-before-sleep).
 
 To enable this feature, run `sudo batt prevent-idle-sleep enable`. To disable, run `sudo batt prevent-idle-sleep disable`.
 

@@ -7,7 +7,7 @@
 # Batt
 
 [![Go Checks](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml)
-[![Buind Test Binary](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml)
+[![Build Test Binary](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml)
 ![GitHub Downloads](https://img.shields.io/github/downloads/charlie0129/batt/total?style=flat&logo=github&logoColor=99A0A8&labelColor=373F46&label=Downloads&color=32CA55)
 
 <span style="font-size: 20px;">`batt` is a tool to control battery charging on Apple Silicon MacBooks.</span>

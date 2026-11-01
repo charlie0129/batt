@@ -89,7 +89,7 @@ However, on Apple Silicon, the way how charging is controlled changed. There is 
 
 ### Will there be an Intel version?
 
-Probably not. `batt` was made Apple-Silicon-only after some early development. I have tested batt on Intel during development (you can probably find some traces from the code :). Even though some features in batt are known to work on Intel, some are not. Development and testing on Intel requires additional effort, especially those feature that are not working. Considering the fact that Intel MacBooks are going to be obsolete in a few years and some similar tools already exist (without some advanced features), I don't think it is worth the effort.
+Probably not. `batt` was made Apple-Silicon-only after some early development. I have tested batt on Intel during development (you can probably find some traces from the code :). Even though some features in batt are known to work on Intel, some are not. Development and testing on Intel requires additional effort, especially the features that are not working. Considering the fact that Intel MacBooks are going to be obsolete in a few years and some similar tools already exist (without some advanced features), I don't think it is worth the effort.
 
 ### Why does my MacBook stop charging after I close the lid?
 
@@ -102,7 +102,7 @@ But it is suggested to keep the default behavior to make your charge limit work 
 
 Not that you will encounter this **forced sleep** only if you, the user, forced the Mac to sleep, either by closing the lid or selecting the Sleep option in the Apple menu. If your Mac decide to sleep by itself, called **idle sleep**, i.e. when it is idle for a while, in this case, you will not experience this stop-charging-before-sleep situation.
 
-So it is suggested to keep this feature on. But _What if I MUST let my Mac charge during a **forced sleep** without turing off `disable-charging-pre-sleep`, even if it may charge beyond the charge limit?_ This is simple, just disable charge limit `batt disable`. This way, when you DO want to enable charge limit again, `disable-charging-pre-sleep` will still be there to prevent overcharging. The rationale is: when you want to charge during a **forced sleep**, you actually want heavy use of your battery and don't want ANY charge limit at all, e.g. when you are on a long outside-event, and you want to charge your Mac when it is sitting in your bag, lid closed. Setting the charge limit to 100% is equivalent to disabling charge limit. Therefore, most `batt` features will be turned off and your Mac can charge as if `batt` is not installed.
+So it is suggested to keep this feature on. But _What if I MUST let my Mac charge during a **forced sleep** without turning off `disable-charging-pre-sleep`, even if it may charge beyond the charge limit?_ This is simple, just disable charge limit `batt disable`. This way, when you DO want to enable charge limit again, `disable-charging-pre-sleep` will still be there to prevent overcharging. The rationale is: when you want to charge during a **forced sleep**, you actually want heavy use of your battery and don't want ANY charge limit at all, e.g. when you are on a long outside-event, and you want to charge your Mac when it is sitting in your bag, lid closed. Setting the charge limit to 100% is equivalent to disabling charge limit. Therefore, most `batt` features will be turned off and your Mac can charge as if `batt` is not installed.
 
 ### Why does it require root privileges?
 
@@ -112,7 +112,7 @@ If you are concerned about security, you can check the source code [here](https:
 
 ### Why is it written in Go and C?
 
-Since it is a hobby project, I want to balance effort and the final outcome. Go seems a good choice for me. However, C is required to register sleep and wake notifications using Apple's IOKit framework. Also, Go don't have any library to r/w SMC, so I have to write it myself ([charlie0129/gosmc](https://github.com/charlie0129/gosmc)). This part is also mainly written in C as it interacts with the hardware and uses OS capabilities. Thankfully, writing a library didn't slow down development too much.
+Since it is a hobby project, I want to balance effort and the final outcome. Go seems a good choice for me. However, C is required to register sleep and wake notifications using Apple's IOKit framework. Also, Go doesn't have any library to r/w SMC, so I have to write it myself ([charlie0129/gosmc](https://github.com/charlie0129/gosmc)). This part is also mainly written in C as it interacts with the hardware and uses OS capabilities. Thankfully, writing a library didn't slow down development too much.
 
 ### Why are there so many logs?
 

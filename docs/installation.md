@@ -52,7 +52,7 @@ You can choose either one. Please do not use both at the same time to avoid conf
 4. Install daemon using `sudo batt install`. If you do not want to use `sudo` every time after installation, add the `--allow-non-root-access` flag: `sudo batt install --allow-non-root-access`. To uninstall: please refer to [How to uninstall?](faq.md#how-to-uninstall)
 </details>
 
-5. In case you have GateKeeper turned on, you will see something like _"batt is can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. If you don't see it, you can skip this step. To solve this, you can either 1. (recommended) Go to *System Settings* -> *Privacy & Security* --scroll-down--> *Security* -> *Open Anyway*; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
+5. In case you have GateKeeper turned on, you will see something like _"batt can't be opened because it was not downloaded from the App Store"_ or _"batt cannot be opened because the developer cannot be verified"_. If you don't see it, you can skip this step. To solve this, you can either 1. (recommended) Go to *System Settings* -> *Privacy & Security* --scroll-down--> *Security* -> *Open Anyway*; or 2. run `sudo spctl --master-disable` to disable GateKeeper entirely.
 
 ### Notes
 
