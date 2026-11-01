@@ -151,7 +151,26 @@ For release compatibility, see the [release page](https://github.com/charlie0129
 
 ## Usage
 
-[![See-the-usage-Guide-here](https://img.shields.io/badge/See_the_usage_Guide_here-View-2196F3?style=for-the-badge&logo=bookstack&logoColor=white)](docs/usage.md)
+[![See-the-full-usage-Guide-here](https://img.shields.io/badge/See_the_full_usage_Guide_here-View-2196F3?style=for-the-badge&logo=bookstack&logoColor=white)](docs/usage.md)
+
+## Building
+
+> [!NOTE]
+> This is a quick and short overview,
+
+[![Full-Building-Guide](https://img.shields.io/badge/Full_Building_Guide-View-2196F3?style=for-the-badge&logo=bookstack&logoColor=white)](docs/building.md)
+
+### Building the CLI
+
+```bash
+make
+```
+
+### Building the GUI
+
+```bash
+make app
+```
 
 ## Architecture
 

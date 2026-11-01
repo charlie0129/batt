@@ -79,7 +79,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 `sudo xattr -r -d com.apple.quarantine /Applications/batt.app`.
 * Run `batt.app` and Follow the MenuBar UI to install or upgrade.
 
-<img src="docs/assets/screenshot-gui-setup.png" alt="Screenshot GUI Setup" width="320" />
+<img src="assets/screenshot-gui-setup.png" alt="Screenshot GUI Setup" width="320" />
 
 ### Installing the CLI
 
@@ -93,7 +93,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 === "Installation Script"
 
     ```bash
-    bash <(curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh)
+    curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh
     ```
 
 After installation run the following command to ensure that the installation succeeded:
@@ -148,7 +148,26 @@ For release compatibility, see the [release page](https://github.com/charlie0129
 
 ## Usage
 
-[:fontawesome-solid-book-bookmark: See the usage Guide here :fontawesome-solid-exclamation:](usage.md){ .md-button .md-button--primary }
+[:fontawesome-solid-book-bookmark: See the full usage Guide here :fontawesome-solid-exclamation:](usage.md){ .md-button .md-button--primary }
+
+## Building
+
+!!! note
+    This is a quick and short overview,
+
+[:fontawesome-solid-hammer: Full Building Guide](building.md){ .md-button .md-button--primary }
+
+### Building the CLI
+
+```bash
+make
+```
+
+### Building the GUI
+
+```bash
+make app
+```
 
 ## Architecture
 
