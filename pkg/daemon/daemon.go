@@ -112,7 +112,6 @@ func removeStaleSocket(path string) error {
 func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	maintainLoopInnerLock.Lock()
 	chargeControlStopped = false
-	resetNativeBand()
 	maintainLoopInnerLock.Unlock()
 	var err error
 	conf, err = config.NewFile(configPath)
@@ -128,7 +127,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		return fmt.Errorf("open Apple SMC: %w", err)
 	}
 	caps := detectCapabilities()
-	if caps.NativeChargeBand && os.Geteuid() != 0 {
+	if caps.NativeExactTargets && os.Geteuid() != 0 {
 		_ = smcConn.Close()
 		return fmt.Errorf("native macOS 27 charge control requires the root batt daemon")
 	}
@@ -283,7 +282,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 
 	logrus.Info("stopping listening notifications")
 	stopListeningNotifications()
-	nativeShutdown := getCapabilities().NativeChargeBand
+	nativeShutdown := getCapabilities().NativeExactTargets
 	if nativeShutdown {
 		scheduler.Stop()
 	}

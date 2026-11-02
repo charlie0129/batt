@@ -100,7 +100,7 @@ Starting with macOS 27 Developer Beta 4 (firmware `20457.0.125.0.2`+, also shipp
 
 By default, `batt` uses PowerUIAgent's native charge limit when direct SMC control is unavailable. On macOS 27, the System Settings slider API clamps targets below 80%. The root `batt` daemon instead writes the agent's exact target preference and posts its reload notification, accepting **10–100%**, including `batt limit 69`. It re-engages the agent after a previous disable and verifies the saved target. On other macOS versions, the native backend continues to use the values offered by the slider API. This preference mechanism is documented in [Ampere's native limit implementation](https://github.com/az-code-lab/ampere/blob/v0.0.71/Sources/Shared/NativeChargeLimit.swift).
 
-This is an automatic compatibility path for the existing commands and settings; there is no new mode to enable. It is selected only on macOS 27 when direct charge control is unavailable and PowerUI supports it. Earlier versions keep their existing charge-control paths. Upper/lower limits, disable and temporary disable, and the existing one-time charge actions are supported. Adapter controls, calibration and scheduling remain available when the adapter control is usable. Native mode does not provide direct MagSafe LED control or the legacy sleep controls, and this change does not claim hardware validation of every feature.
+This is an automatic compatibility path for the existing commands and settings; there is no new mode to enable. It is selected only on macOS 27 when direct charge control is unavailable and PowerUI supports it. Earlier versions keep their existing charge-control paths. A single upper limit, disable and temporary disable, and the existing one-time charge actions are supported. The lower-limit delta is not supported in native mode. Adapter controls, calibration and scheduling remain available when the adapter control is usable. Native mode does not provide direct MagSafe LED control or the legacy sleep controls, and this change does not claim hardware validation of every feature.
 
 Native updates are asynchronous and can take several minutes after re-enabling the feature. Changing an already-enabled target avoids re-enabling the agent, which would temporarily reset it to Apple's 80% default. A successful command means the request was accepted and its settings checked; it does **not** prove charging has stopped. Check `batt status`, `pmset -g battlimit`, and actual battery current.
 
@@ -108,9 +108,9 @@ On macOS 27, the daemon checks both PowerUIAgent's loaded target and active `man
 
 Software tests cover exact targets from 10–99%, including 55%, with isolated preferences and mocked Apple services. Live tests on an M4 Mac running macOS 27.0.1 confirmed a 70% hold and a delayed 69% request that overshot to 70%. This does not establish immediate enforcement at every target.
 
-On macOS 27, `batt` also uses the configured lower limit to decide when to request a charge. For example, `batt limit 55` with `batt lower-limit-delta 5` requests charging toward 55% below 50%, keeps that request through the band, and requests a pause at the upper limit. While paused it holds the observed percentage, following natural downward drift until the lower threshold is crossed. An already-above-limit battery is initially held at its observed level; the lower threshold is not a discharge target. A delayed charging sample never raises an existing hold target. On restart, an actual charge in progress continues toward the upper limit, while a paused battery inside the band remains paused.
+In native mode, `batt` always requests the configured upper limit as a single target, regardless of the current charge or whether the Mac is plugged in. For example, `batt limit 55` requests 55% even at 100% charge. macOS controls charging and can discharge an above-target battery toward that target. `batt` does not emulate a lower threshold or follow the battery percentage with temporary hold targets; `batt lower-limit-delta` is unavailable in native mode.
 
-The daemon must be awake to update these requests. During sleep or after a crash, Apple retains the last native target and controls its own restart threshold. This software mapping does not program two hardware thresholds: delayed updates, native hysteresis and the full-charge override can still prevent charging from starting or stopping exactly at the configured percentages. The 50–55% transitions are covered by isolated tests; a complete physical 50–55% charge has not been verified.
+macOS retains the native target during sleep or after a daemon crash. The daemon reconciles the same configured target when it runs again. Apple's asynchronous updates and periodic full-charge maintenance still apply.
 
 This backend does not cut adapter power. Apple firmware can still discharge a battery that is **above** the requested target, and [Apple's periodic full-charge maintenance](https://support.apple.com/en-mo/102338) still applies. It does not prevent that override or guarantee zero battery cycling. Run only one charge controller at a time.
 
@@ -223,7 +223,7 @@ To disable the limit only temporarily, use `batt disable --for=1d`. Your current
 
 Charge the battery once without changing your charge limit.
 
-- `batt charge now` starts charging right away and stops at your upper limit. Normally `batt` waits until the charge drops below the lower limit, so this is how you top up from inside that gap.
+- `batt charge now` starts charging right away and stops at your upper limit. In modes with a lower limit, this lets you top up from inside that gap. Native mode already maintains the upper target continuously.
 - `batt charge full` charges to 100% once. Your limit applies again as soon as the battery is full.
 - `batt charge cancel` stops a running one-time charge.
 
@@ -233,7 +233,7 @@ A one-time charge and a disabled power adapter exclude each other, because cutti
 
 On `20xxx` firmware, `batt charge now` hands the firmware the narrowest range that ends at your limit, and the firmware does not start charging from the top of that range. A one-time charge to the limit can therefore finish one percent short of it. `batt charge full` is exact, because it deactivates the limit instead of narrowing it.
 
-On macOS 27, `batt charge now` requests the configured upper target even from inside the band; macOS applies it asynchronously. Older slider-only native backends cannot request that action. `batt charge full` temporarily disables the native limit, then restores the band at 100%. In adapter mode, both one-time actions use the adapter to control charging.
+On macOS 27, `batt charge now` reapplies the configured upper target; macOS applies it asynchronously. Older slider-only native backends cannot request that action. `batt charge full` temporarily disables the native limit, then restores the configured upper target at 100%. In adapter mode, both one-time actions use the adapter to control charging.
 
 The GUI exposes the same actions in the menubar as **Charge to 70% Now** and **Charge to Full Once**, with the current progress and a **Cancel One-Time Charge** item while one is running.
 
@@ -422,11 +422,13 @@ The GUI also exposes this setting under **Advanced → Prevent Sleep when Adapte
 
 When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
 
+Native macOS mode uses one target and does not support a lower limit. The following applies to legacy, firmware-managed and adapter modes.
+
 `batt` have similar features built-in. The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. To customize the lower limit, use `batt lower-limit-delta`.
 
 For example, if you want to set the lower limit to be 5% less than the upper limit, run `sudo batt lower-limit-delta 5`. So, if you have your charge (upper) limit set to 60%, the lower limit will be 55%.
 
-On macOS 27's exact-target native backend, the same settings drive asynchronous charge/hold requests as described [above](#macos-27-firmware-with-gated-charge-keys). Older slider-only native backends do not expose the lower-limit command.
+All native macOS backends leave charging decisions to Apple and ignore any saved lower-limit delta. See [native charge control](#macos-27-firmware-with-gated-charge-keys).
 
 ### Control MagSafe LED
 

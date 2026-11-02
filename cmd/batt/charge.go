@@ -31,7 +31,7 @@ Your charge limit and lower-limit delta stay as they are, so normal behavior res
 			Short: "Charge to the configured limit now",
 			Long: `Charge to the configured upper limit now.
 
-Normally batt waits for the charge to fall below the lower limit before it charges again. This starts charging right away, even when the charge sits between the lower and the upper limit, and stops at the upper limit. The lower limit is not changed.`,
+In modes with a lower limit, this starts charging without waiting for the charge to fall below that threshold. The lower limit is not changed. Native macOS mode already maintains the upper target continuously; this action reapplies that target. macOS decides when charging starts.`,
 			Args: cobra.NoArgs,
 			RunE: func(_ *cobra.Command, _ []string) error {
 				return runChargeOnce(

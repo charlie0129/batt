@@ -262,8 +262,8 @@ func TestNativeLimitsAndOlderSystemFallback(t *testing.T) {
 	for _, custom := range []bool{true, false} {
 		f := &fakeOperations{custom: custom}
 		c := &Client{api: f}
-		if c.SupportsChargeBand() != custom {
-			t.Fatal("charge bands require exact native targets")
+		if c.SupportsExactTargets() != custom {
+			t.Fatal("exact native targets require the preference path")
 		}
 		limits, err := c.AvailableLimits()
 		if err != nil {
@@ -288,28 +288,6 @@ func TestNativeLimitsAndOlderSystemFallback(t *testing.T) {
 			if err := c.SetLimit(target); err == nil {
 				t.Fatalf("accepted %d", target)
 			}
-		}
-	}
-}
-
-func TestNativePauseTargets(t *testing.T) {
-	for _, target := range []int{1, 8, 9, 52, 70, 99} {
-		f := &fakeOperations{custom: true, target: 100}
-		c := &Client{api: f}
-		if err := c.HoldAt(target); err != nil {
-			t.Fatal(err)
-		}
-		if got, on, err := c.Limit(); err != nil || !on || got != target {
-			t.Fatalf("hold %d: %d %t %v", target, got, on, err)
-		}
-	}
-	f := &fakeOperations{}
-	if err := (&Client{api: f}).HoldAt(52); err == nil || len(f.sliderTargets) != 0 {
-		t.Fatal("slider-only native path accepted a pause target")
-	}
-	for _, target := range []int{-1, 0, 100, 101} {
-		if err := (&Client{api: &fakeOperations{custom: true}}).HoldAt(target); err == nil {
-			t.Fatalf("invalid pause %d accepted", target)
 		}
 	}
 }
@@ -386,7 +364,7 @@ func TestNativeRegistrationSettlesThenRepairs(t *testing.T) {
 			if target, on, err := c.Limit(); err != nil || !on || target != 0 {
 				t.Fatalf("agent agreement concealed missing/stale powerd limit: %d %t %v", target, on, err)
 			}
-			if err := c.HoldAt(55); err != nil {
+			if err := c.SetLimit(55); err != nil {
 				t.Fatal(err)
 			}
 			for range 14 {
@@ -394,7 +372,7 @@ func TestNativeRegistrationSettlesThenRepairs(t *testing.T) {
 				if target, on, err := c.Limit(); err != nil || !on || target != 0 {
 					t.Fatalf("pending registration reported confirmed: %d %t %v", target, on, err)
 				}
-				if err := c.HoldAt(55); err != nil {
+				if err := c.SetLimit(55); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -402,26 +380,26 @@ func TestNativeRegistrationSettlesThenRepairs(t *testing.T) {
 				t.Fatalf("reloaded while settling: %v", f.calls)
 			}
 			now = now.Add(10 * time.Second)
-			if err := c.HoldAt(55); err != nil {
+			if err := c.SetLimit(55); err != nil {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(f.calls, []string{"write", "write"}) {
 				t.Fatalf("did not repair at original deadline without resetting enabled agent: %v", f.calls)
 			}
 			// A repair gets its own bounded wait, rather than retrying every poll.
-			if err := c.HoldAt(55); err != nil || len(f.calls) != 2 {
+			if err := c.SetLimit(55); err != nil || len(f.calls) != 2 {
 				t.Fatalf("repair did not settle: %v %v", f.calls, err)
 			}
 			f.registeredTargets = []int{55, 55}
 			if target, on, err := c.Limit(); err != nil || !on || target != 55 {
 				t.Fatalf("matching agent and mirror not confirmed: %d %t %v", target, on, err)
 			}
-			if err := c.HoldAt(55); err != nil || len(f.calls) != 2 {
+			if err := c.SetLimit(55); err != nil || len(f.calls) != 2 {
 				t.Fatal(f.calls, err)
 			}
 			// Drift after confirmation repairs immediately, with no leftover grace.
 			f.registeredTargets = []int{}
-			if err := c.HoldAt(55); err != nil || len(f.calls) != 3 {
+			if err := c.SetLimit(55); err != nil || len(f.calls) != 3 {
 				t.Fatal(f.calls, err)
 			}
 		})
@@ -435,7 +413,7 @@ func TestNativePendingTargetCanChangeOrReleaseImmediately(t *testing.T) {
 	if err := c.SetLimit(55); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.HoldAt(52); err != nil {
+	if err := c.SetLimit(52); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(f.writeTargets, []int{55, 52}) {

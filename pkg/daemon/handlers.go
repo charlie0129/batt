@@ -67,21 +67,19 @@ func setLimit(c *gin.Context) {
 		return
 	}
 
-	minimumLower := 11
-	if caps.NativeChargeBand {
-		minimumLower = 1
-	}
-	if delta := conf.UpperLimit() - conf.LowerLimit(); l-delta < minimumLower {
-		err := fmt.Errorf("upper limit %d%% cannot retain delta %d%%: lower limit must be at least %d%%", l, delta, minimumLower)
-		if !caps.NativeChargeBand {
-			err = fmt.Errorf("upper limit must be greater than lower limit + 10, got %d", l-delta)
-		}
+	previousLimit, previousLower := conf.UpperLimit(), conf.LowerLimit()
+	delta := previousLimit - previousLower
+	if caps.ChargeControlMode != compatibility.ChargeControlNative && l-delta < 11 {
+		err := fmt.Errorf("upper limit must be greater than lower limit + 10, got %d", l-delta)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-
-	previousLimit := conf.UpperLimit()
+	// Native control ignores the saved delta, but the shared config still
+	// requires a nonnegative lower limit when changing the upper limit.
+	if caps.ChargeControlMode == compatibility.ChargeControlNative && l < delta {
+		conf.SetLowerLimit(previousLimit - (l - 1))
+	}
 	previousUntil, previousPreLimit := conf.DisableUntil(), conf.PreDisableLimit()
 	conf.SetUpperLimit(l)
 	// An explicit limit change overrides any pending scheduled re-enabling.
@@ -89,6 +87,9 @@ func setLimit(c *gin.Context) {
 	superseded := supersedeChargeOnce()
 	if err := conf.Save(); err != nil {
 		conf.SetUpperLimit(previousLimit)
+		if conf.LowerLimit() != previousLower {
+			conf.SetLowerLimit(previousLower)
+		}
 		if previousUntil.IsZero() {
 			conf.ClearDisableTimer()
 		} else {
@@ -109,17 +110,14 @@ func setLimit(c *gin.Context) {
 	var msg string
 	charge, err := smcConn.GetBatteryCharge()
 	switch {
-	case caps.NativeChargeBand:
-		msg = fmt.Sprintf("requested native charging limit %d%%", l)
-		if caps.NativeChargeBand {
-			msg = fmt.Sprintf("requested native upper/lower charging limits %d%%/%d%%", l, conf.LowerLimit())
-		}
+	case caps.ChargeControlMode == compatibility.ChargeControlNative:
+		// shortcut: assume Apple's five-point gap below 80%; revise if measured thresholds differ.
+		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", l, l-5)
 		if err == nil {
 			msg += fmt.Sprintf(", current charge: %d%%", charge)
 		}
-		msg += ". macOS applies the target asynchronously; check batt status to confirm charging stopped."
-		if err == nil && charge > l && !caps.NativeChargeBand {
-			msg += " Current charge is above the limit; macOS may discharge the battery toward the target."
+		if err == nil && charge > l {
+			msg += ". Current charge is above the limit; macOS may use battery power until it falls within the configured range."
 		}
 	case err != nil:
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", conf.UpperLimit(), conf.LowerLimit())
@@ -142,7 +140,7 @@ func setLimit(c *gin.Context) {
 	}
 
 	// Immediate single maintain loop, to avoid waiting for the next loop
-	if applied := maintainLoopForced(); !applied && caps.NativeChargeBand {
+	if applied := maintainLoopForced(); !applied && caps.NativeExactTargets {
 		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -243,7 +241,7 @@ func setDisableFor(c *gin.Context) {
 		"prevLimit": prevLimit,
 	}).Infof("disabled batt temporarily")
 
-	if applied := maintainLoopForced(); !applied && getCapabilities().NativeChargeBand {
+	if applied := maintainLoopForced(); !applied && getCapabilities().NativeExactTargets {
 		err := fmt.Errorf("temporary disable was saved, but releasing charge control failed; the daemon will retry")
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -606,29 +604,14 @@ func setLowerLimitDelta(c *gin.Context) {
 		return
 	}
 
-	nativeBandCapable := getCapabilities().NativeChargeBand
-	if d < 0 || (nativeBandCapable && d == 0) {
+	if d < 0 {
 		err := fmt.Errorf("lower limit delta must be positive, got %d", d)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-
-	minimumLower := 10
-	if nativeBandCapable {
-		chargeControlTransitionMu.Lock()
-		defer chargeControlTransitionMu.Unlock()
-		minimumLower = 1
-	}
-	upper := conf.UpperLimit()
-	if nativeBandCapable && !conf.DisableUntil().IsZero() {
-		upper = conf.PreDisableLimit()
-	}
-	if upper-d < minimumLower {
-		err := fmt.Errorf("lower limit must be at least %d%% with upper limit %d%%, got delta %d", minimumLower, upper, d)
-		if !nativeBandCapable {
-			err = fmt.Errorf("lower limit delta must be less than limit - 10, got %d", d)
-		}
+	if conf.UpperLimit()-d < 10 {
+		err := fmt.Errorf("lower limit delta must be less than limit - 10, got %d", d)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -644,12 +627,7 @@ func setLowerLimitDelta(c *gin.Context) {
 
 	ret := fmt.Sprintf("set lower limit delta to %d, current upper/lower limit is %d%%/%d%%", d, conf.UpperLimit(), conf.LowerLimit())
 	logrus.Info(ret)
-	if applied := maintainLoopForced(); !applied && nativeBandCapable {
-		err := fmt.Errorf("lower limit delta was saved, but applying the charge band failed; the daemon will retry")
-		c.IndentedJSON(http.StatusInternalServerError, err.Error())
-		_ = c.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
+	maintainLoopForced()
 
 	c.IndentedJSON(http.StatusCreated, ret)
 }
@@ -922,7 +900,7 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 		return
 	}
 	mode := getCapabilities().ChargeControlMode
-	if !full && mode == compatibility.ChargeControlNative && !getCapabilities().NativeChargeBand {
+	if !full && mode == compatibility.ChargeControlNative && !getCapabilities().NativeExactTargets {
 		c.IndentedJSON(http.StatusConflict, ErrNativeChargeNow.Error())
 		_ = c.AbortWithError(http.StatusConflict, ErrNativeChargeNow)
 		return

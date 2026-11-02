@@ -242,6 +242,8 @@ func NewLowerLimitDeltaCommand() *cobra.Command {
 		GroupID: gAdvanced,
 		Long: `Set the delta between lower and upper charge limit.
 
+Native macOS mode uses a single target and does not support a lower limit.
+
 When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
 
 batt have similar features. The charge limit you have set (using 'batt limit') will be used as the upper limit. By default, The lower limit will be set to 2% less than the upper limit. Same as using 'batt lower-limit-delta 2'. To customize the lower limit, use 'batt lower-limit-delta'.

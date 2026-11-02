@@ -14,7 +14,7 @@ import (
 
 func TestNativeDisableReleasesStaleRegistration(t *testing.T) {
 	useNativeCapabilities(t, 55, 100)
-	f := &fakeNativeLimit{limit: 100, registered: true, band: true}
+	f := &fakeNativeLimit{limit: 100, registered: true, exact: true}
 	useFakeNativeLimit(t, f)
 	if _, err := ensureNativeChargeLimitDisabled(); err != nil || f.registered || f.disables != 1 {
 		t.Fatalf("disabled feature concealed a stale policy: %v %+v", err, f)
@@ -59,7 +59,7 @@ func TestNativeTemporaryDisableReportsReleaseFailure(t *testing.T) {
 	gatedSMCNoAdapter(t)
 	file, _ := useTempConfig(t)
 	file.SetUpperLimit(55)
-	f, _ := useNativeBand(t, nativeBatteryState{charge: 55, plugged: true})
+	f := useExactNativeTargets(t)
 	f.limit, f.enabled, f.err = 55, true, errors.New("release failed")
 	r := httptest.NewRecorder()
 	setupRoutes().ServeHTTP(r, httptest.NewRequest(http.MethodPut, "/disable", strings.NewReader(`"1h"`)))
@@ -86,7 +86,7 @@ func (b *blockingNativeController) Limit() (int, bool, error) {
 func TestNativeShutdownDoesNotReapplyLimit(t *testing.T) {
 	file, _ := useTempConfig(t)
 	file.SetUpperLimit(55)
-	f, _ := useNativeBand(t, nativeBatteryState{charge: 49, plugged: true})
+	f := useExactNativeTargets(t)
 	b := &blockingNativeController{fakeNativeLimit: f, entered: make(chan struct{}), proceed: make(chan struct{})}
 	nativeLimit = b
 	previous := chargeControlStopped

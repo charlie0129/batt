@@ -31,9 +31,6 @@ func ensureManagedChargeLimit(lower, upper int) (bool, error) {
 	case compatibility.ChargeControlFirmware:
 		return smcConn.EnsureFirmwareChargeLimit(lower, upper)
 	case compatibility.ChargeControlNative:
-		if getCapabilities().NativeChargeBand {
-			return ensureNativeChargeBand(lower, upper)
-		}
 		return ensureNativeChargeLimit(upper)
 	default:
 		return false, smc.ErrNoChargingCapability
@@ -86,16 +83,12 @@ func ensureNativeChargeLimitDisabled() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if !enabled && !nativeLimit.SupportsChargeBand() {
+	if !enabled && !nativeLimit.SupportsExactTargets() {
 		return false, nil
 	}
 	// The agent can say disabled while powerd still has its registration.
 	// The client checks that independently and makes clean releases no-ops.
-	err = nativeLimit.Disable()
-	if err == nil {
-		resetNativeBand()
-	}
-	return enabled, err
+	return enabled, nativeLimit.Disable()
 }
 
 // resetChargeControl restores the platform's default charging behavior. It is
@@ -115,7 +108,7 @@ func resetChargeControl() error {
 
 func releaseChargeControlOnExit() error {
 	caps := getCapabilities()
-	if caps.NativeChargeBand {
+	if caps.NativeExactTargets {
 		return stopChargeControl()
 	}
 	if caps.ChargingControl {

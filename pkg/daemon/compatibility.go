@@ -28,10 +28,10 @@ func detectCapabilities() compatibility.Capabilities {
 	legacy := mode == compatibility.ChargeControlLegacy
 	active := legacy || mode == compatibility.ChargeControlAdapter
 	return compatibility.Capabilities{
-		ChargingControl:   mode != compatibility.ChargeControlUnsupported,
-		ChargeControlMode: mode,
-		NativeChargeBand:  mode == compatibility.ChargeControlNative && nativeLimit.SupportsChargeBand(),
-		SupportedLimits:   supportedLimits,
+		ChargingControl:    mode != compatibility.ChargeControlUnsupported,
+		ChargeControlMode:  mode,
+		NativeExactTargets: mode == compatibility.ChargeControlNative && nativeLimit.SupportsExactTargets(),
+		SupportedLimits:    supportedLimits,
 		// The legacy and adapter loops both run while awake and rely on the
 		// sleep hooks to avoid overcharging during sleep.
 		SleepHooks: active,
@@ -111,14 +111,14 @@ func detectNativeChargeControl() (compatibility.ChargeControlMode, []int) {
 
 func capabilityLogFields(capabilities compatibility.Capabilities) logrus.Fields {
 	return logrus.Fields{
-		"chargingControl":   capabilities.ChargingControl,
-		"chargeControlMode": capabilities.ChargeControlMode,
-		"nativeChargeBand":  capabilities.NativeChargeBand,
-		"supportedLimits":   capabilities.SupportedLimits,
-		"sleepHooks":        capabilities.SleepHooks,
-		"magSafeLED":        capabilities.MagSafeLED,
-		"adapterControl":    capabilities.AdapterControl,
-		"calibration":       capabilities.Calibration,
+		"chargingControl":    capabilities.ChargingControl,
+		"chargeControlMode":  capabilities.ChargeControlMode,
+		"nativeExactTargets": capabilities.NativeExactTargets,
+		"supportedLimits":    capabilities.SupportedLimits,
+		"sleepHooks":         capabilities.SleepHooks,
+		"magSafeLED":         capabilities.MagSafeLED,
+		"adapterControl":     capabilities.AdapterControl,
+		"calibration":        capabilities.Calibration,
 	}
 }
 
@@ -193,7 +193,7 @@ func disableUnsupportedConfiguredFeatures() {
 		changed = true
 	}
 	if target := conf.ChargeOnceTarget(); target != 0 && (!caps.ChargingControl ||
-		(caps.ChargeControlMode == compatibility.ChargeControlNative && !caps.NativeChargeBand && target < 100)) {
+		(caps.ChargeControlMode == compatibility.ChargeControlNative && !caps.NativeExactTargets && target < 100)) {
 		conf.ClearChargeOnceTarget()
 		changed = true
 	}

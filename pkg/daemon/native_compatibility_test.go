@@ -10,17 +10,25 @@ import (
 	"github.com/charlie0129/batt/pkg/compatibility"
 )
 
-func TestNativeBandChargeNowUsesExistingRoute(t *testing.T) {
+func useExactNativeTargets(t *testing.T) *fakeNativeLimit {
+	t.Helper()
+	gatedSMCNoAdapter(t)
+	useNativeCapabilities(t)
+	capabilities.NativeExactTargets = true
+	fake := &fakeNativeLimit{limit: 100, exact: true}
+	useFakeNativeLimit(t, fake)
+	return fake
+}
+
+func TestNativeChargeNowUsesExistingRoute(t *testing.T) {
 	file, _ := useTempConfig(t)
 	file.SetUpperLimit(55)
 	file.SetLowerLimit(50)
-	fake, battery := useNativeBand(t, nativeBatteryState{charge: 52, plugged: true})
+	fake := useExactNativeTargets(t)
 	stubAdapter(t, true)
-	// Simulate the API's SMC percentage separately from the read-only IOKit
-	// snapshot used by band control. No hardware is read or written.
 	stubBatteryCharge(t, 52)
-	if !maintainLoopForced() || fake.limit != 52 {
-		t.Fatal("initial paused state not established")
+	if !maintainLoopForced() || fake.limit != 55 {
+		t.Fatal("configured target not applied")
 	}
 	response := httptest.NewRecorder()
 	setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/charge-once/limit", nil))
@@ -28,36 +36,30 @@ func TestNativeBandChargeNowUsesExistingRoute(t *testing.T) {
 		t.Fatalf("existing charge-now action did not request 55%%: %d %s", response.Code, response.Body.String())
 	}
 	if file.UpperLimit() != 55 || file.LowerLimit() != 50 {
-		t.Fatal("one-time charge changed the configured band")
+		t.Fatal("one-time charge changed the configured limits")
 	}
 	disableUnsupportedConfiguredFeatures()
-	if file.ChargeOnceTarget() != 55 {
+	if file.ChargeOnceTarget() != 55 || !maintainLoopForced() || fake.limit != 55 {
 		t.Fatal("restart recovery discarded a supported one-time charge")
 	}
-	resetNativeBand()
-	if !maintainLoopForced() || fake.limit != 55 {
-		t.Fatal("persisted one-time charge did not survive band-state restart")
-	}
-	battery.charge = 55
 	stubBatteryCharge(t, 55)
 	if !completeChargeOnce(file) || !maintainLoopForced() || fake.limit != 55 {
-		t.Fatal("completion restored a stale pause target instead of the upper limit")
+		t.Fatal("completion did not retain the configured target")
 	}
-	battery.charge = 54
-	if !maintainLoopForced() || fake.limit != 54 {
-		t.Fatal("completion did not return to the configured band")
+	stubBatteryCharge(t, 54)
+	if !maintainLoopForced() || fake.limit != 55 {
+		t.Fatal("completion resumed following the battery percentage")
 	}
 }
 
-func TestNativeBandChargeNowFailurePreservesPausedIntent(t *testing.T) {
+func TestNativeChargeNowFailurePreservesTarget(t *testing.T) {
 	file, _ := useTempConfig(t)
 	file.SetUpperLimit(55)
-	file.SetLowerLimit(50)
-	fake, _ := useNativeBand(t, nativeBatteryState{charge: 52, plugged: true})
+	fake := useExactNativeTargets(t)
 	stubAdapter(t, true)
 	stubBatteryCharge(t, 52)
 	if !maintainLoopForced() {
-		t.Fatal("initial hold failed")
+		t.Fatal("initial target failed")
 	}
 	fake.err = errors.New("native request failed")
 	response := httptest.NewRecorder()
@@ -66,22 +68,34 @@ func TestNativeBandChargeNowFailurePreservesPausedIntent(t *testing.T) {
 		t.Fatalf("failed one-time action was accepted or persisted: %d %s", response.Code, response.Body.String())
 	}
 	fake.err = nil
-	if !maintainLoopForced() || fake.limit != 52 {
-		t.Fatal("failed one-time request lost the previous paused intent")
+	if !maintainLoopForced() || fake.limit != 55 {
+		t.Fatal("failed one-time request lost the configured target")
+	}
+}
+
+func TestNativeFullChargeRestoresTargetAt100Percent(t *testing.T) {
+	file, _ := useTempConfig(t)
+	file.SetUpperLimit(55)
+	fake := useExactNativeTargets(t)
+	stubAdapter(t, true)
+	stubBatteryCharge(t, 52)
+	response := httptest.NewRecorder()
+	setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/charge-once/full", nil))
+	if response.Code != http.StatusCreated || file.ChargeOnceTarget() != 100 || fake.enabled {
+		t.Fatalf("full charge failed: %d %s", response.Code, response.Body.String())
+	}
+	stubBatteryCharge(t, 100)
+	if !completeChargeOnce(file) || !maintainLoopForced() || !fake.enabled || fake.limit != 55 {
+		t.Fatal("reaching 100% did not restore the configured target")
 	}
 }
 
 func TestEarlierNativeBackendKeepsPreviousPaths(t *testing.T) {
 	file, _ := useTempConfig(t)
+	gatedSMCNoAdapter(t)
 	useNativeCapabilities(t, 80, 85, 90, 95, 100)
 	fake := &fakeNativeLimit{limit: 100}
 	useFakeNativeLimit(t, fake)
-	previousRead := readNativeBatteryState
-	t.Cleanup(func() { readNativeBatteryState = previousRead })
-	readNativeBatteryState = func() (nativeBatteryState, error) {
-		t.Fatal("earlier native backend entered macOS 27 band control")
-		return nativeBatteryState{}, nil
-	}
 	file.SetUpperLimit(80)
 	if !maintainLoopForced() || fake.limit != 80 {
 		t.Fatal("earlier native backend did not use its slider target")
@@ -98,13 +112,13 @@ func TestEarlierNativeBackendKeepsPreviousPaths(t *testing.T) {
 	}
 }
 
-func TestNativeBandFeatureCompatibility(t *testing.T) {
+func TestNativeFeatureCompatibility(t *testing.T) {
 	caps := compatibility.Capabilities{
 		ChargingControl: true, ChargeControlMode: compatibility.ChargeControlNative,
-		NativeChargeBand: true, AdapterControl: true, Calibration: true,
+		NativeExactTargets: true, AdapterControl: true, Calibration: true,
 	}
 	for feature, want := range map[compatibility.Feature]bool{
-		compatibility.FeatureChargingControl: true, compatibility.FeatureLowerLimit: true,
+		compatibility.FeatureChargingControl: true, compatibility.FeatureLowerLimit: false,
 		compatibility.FeatureAdapterControl: true, compatibility.FeatureCalibration: true,
 		compatibility.FeatureSleepHooks: false, compatibility.FeatureMagSafeLED: false,
 	} {
