@@ -16,6 +16,7 @@ import (
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
+	"github.com/charlie0129/batt/pkg/powerui"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
@@ -588,6 +589,13 @@ func getBatteryInfo(c *gin.Context) {
 		MaxCapacity:    info.IOKit.Battery.MaxCapacity,
 		ChargeRate:     chargeRateMilliW,
 		DesignVoltage:  info.IOKit.Battery.Voltage,
+	}
+	if getCapabilities().ChargeControlMode == compatibility.ChargeControlNative {
+		if active, err := powerui.FullChargeOverride(); err == nil {
+			resp.ChargingToFullOverride = &active
+		} else {
+			logrus.WithError(err).Debug("Full-charge override state unavailable")
+		}
 	}
 
 	c.IndentedJSON(http.StatusOK, resp)

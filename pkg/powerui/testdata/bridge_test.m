@@ -8,6 +8,9 @@ static NSMutableDictionary *prefs;
 static int writes, notifications;
 static BOOL flushOK=YES, notifyOK=YES;
 static uid_t fakeUID=0;
+static uint64_t overrideState;
+static BOOL registerOK=YES, readStateOK=YES;
+static int overrideReads, overrideCancels;
 static NSInteger fakeMajor=27;
 @interface FakeProcessInfo : NSObject
 + (instancetype)processInfo;
@@ -38,11 +41,26 @@ static uint32_t test_notify(const char *name) {
     assert(strcmp(name,"com.apple.smartcharging.defaultschanged")==0);
     notifications++; return notifyOK ? NOTIFY_STATUS_OK : NOTIFY_STATUS_FAILED;
 }
+static uint32_t test_register_check(const char *name, int *token) {
+    assert(strcmp(name,"com.apple.system.powersources.chargingtofulloverride")==0);
+    *token=42;
+    return registerOK ? NOTIFY_STATUS_OK : NOTIFY_STATUS_FAILED;
+}
+static uint32_t test_get_state(int token, uint64_t *state) {
+    assert(token==42); overrideReads++; *state=overrideState;
+    return readStateOK ? NOTIFY_STATUS_OK : NOTIFY_STATUS_FAILED;
+}
+static uint32_t test_cancel(int token) {
+    assert(token==42); overrideCancels++; return NOTIFY_STATUS_OK;
+}
 #define geteuid test_geteuid
 #define CFPreferencesSynchronize test_sync
 #define CFPreferencesCopyValue test_copy
 #define CFPreferencesSetValue test_set
 #define notify_post test_notify
+#define notify_register_check test_register_check
+#define notify_get_state test_get_state
+#define notify_cancel test_cancel
 #define NSProcessInfo FakeProcessInfo
 #include "../powerui.m"
 #undef NSProcessInfo
@@ -65,6 +83,20 @@ int main(void) { @autoreleasepool {
     prefs=[NSMutableDictionary dictionary];
     FakeClient *fake=[FakeClient new]; gClient=fake; gClientProbed=YES;
     char *error=NULL; int target=0,enabled=0;
+    int active=-1;
+    for(uint64_t state=0;state<=1;state++) {
+        overrideState=state;
+        assert(batt_powerui_full_charge_override(&active,&error)==0 && active==(int)state);
+    }
+    readStateOK=NO;
+    assert(batt_powerui_full_charge_override(&active,&error)==-1);
+    free(error); error=NULL;
+    assert(overrideReads==3 && overrideCancels==3);
+    registerOK=NO;
+    assert(batt_powerui_full_charge_override(&active,&error)==-1);
+    free(error); error=NULL;
+    assert(overrideReads==3 && overrideCancels==3);
+    assert(writes==0 && notifications==0);
     for(NSNumber *major in @[@13,@15,@26,@27,@28]) {
         fakeMajor=major.integerValue;
         assert(batt_powerui_custom_limits()==(fakeMajor==27));

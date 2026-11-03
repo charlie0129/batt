@@ -24,6 +24,20 @@ type Battery struct {
 	MaxCapacity    int          `json:"MaxCapacity"`
 	ChargeRate     int          `json:"ChargeRate"`
 	DesignVoltage  float64      `json:"DesignVoltage"`
+
+	// Nil when unavailable, including responses from older daemons.
+	ChargingToFullOverride *bool `json:"ChargingToFullOverride,omitempty"`
+}
+
+const FullChargeOverrideNotice = "macOS full-charge override active; charge limit paused to allow charging to 100%."
+const FullChargeOverrideAtFullNotice = "Battery full; charge limit paused until macOS clears the override."
+
+func (b *Battery) FullChargeOverrideActive() bool {
+	return b.ChargingToFullOverride != nil && *b.ChargingToFullOverride
+}
+
+func (b *Battery) FullChargeOverrideAtFull(currentCharge int) bool {
+	return b.FullChargeOverrideActive() && (b.State == Full || currentCharge >= 100)
 }
 
 // PowerTelemetry holds a simplified snapshot used by the GUI.

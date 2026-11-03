@@ -17,6 +17,17 @@ import (
 
 type nativeBridge struct{}
 
+// FullChargeOverride reads powerd's current override, including a flag that
+// remains set after charging finishes. It never changes the charging policy.
+func FullChargeOverride() (bool, error) {
+	var active C.int
+	var cerr *C.char
+	if C.batt_powerui_full_charge_override(&active, &cerr) != 0 { //nolint:gocritic
+		return false, takeError(cerr)
+	}
+	return active == 1, nil
+}
+
 func takeError(cerr *C.char) error {
 	if cerr == nil {
 		return errors.New("unknown PowerUI error")

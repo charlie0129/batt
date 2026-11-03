@@ -39,6 +39,9 @@ func chargeTarget(cfg *config.File) (int, bool) {
 // is reached. Returns nil when not applicable (not charging, no target, charge
 // already at/above the target, or result is zero).
 func computeTimeToLimit(data *statusData, cfg *config.File) *int {
+	if data.batteryInfo.FullChargeOverrideActive() {
+		return nil
+	}
 	target, ok := chargeTarget(cfg)
 	if !ok || data.batteryInfo.State != powerinfo.Charging || data.currentCharge >= target {
 		return nil
@@ -195,10 +198,17 @@ func NewStatusCommand() *cobra.Command {
 				if data.capabilities.NativeExactTargets {
 					cmd.Println("  Charge limit configured: " + bool2Text(cfg.UpperLimit() < 100))
 					cmd.Println("    macOS applies the configured target asynchronously; changes can take several minutes.")
-					cmd.Println("    macOS decides when to charge and keeps enforcing the target during sleep.")
+					cmd.Println("    macOS decides when to charge and retains the target during sleep.")
 				} else {
-					cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100))
-					cmd.Println("    batt sets the limit built into macOS (System Settings -> Battery -> Charge Limit). macOS decides when to charge and keeps enforcing the limit during sleep.")
+					cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100 && !data.batteryInfo.FullChargeOverrideActive()))
+					cmd.Println("    batt sets the limit built into macOS (System Settings -> Battery -> Charge Limit). macOS decides when to charge and retains the limit during sleep.")
+				}
+				if cfg.UpperLimit() < 100 && data.batteryInfo.FullChargeOverrideActive() {
+					notice := powerinfo.FullChargeOverrideNotice
+					if data.batteryInfo.FullChargeOverrideAtFull(data.currentCharge) {
+						notice = powerinfo.FullChargeOverrideAtFullNotice
+					}
+					cmd.Println("  Notice: " + notice)
 				}
 			case compatibility.ChargeControlAdapter:
 				cmd.Println("  Control mode: " + bold("adapter (wall power)"))

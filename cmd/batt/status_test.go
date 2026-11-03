@@ -3,11 +3,17 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
+	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
@@ -101,6 +107,139 @@ func TestChargeTarget(t *testing.T) {
 			got, ok := chargeTarget(statusConfig(tt.limit, 2, tt.chargeOnceTarget))
 			if got != tt.want || ok != tt.wantOK {
 				t.Fatalf("chargeTarget() = %d, %v, want %d, %v", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestStatusFullChargeOverride(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "batt-status-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "daemon.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var battery *powerinfo.Battery
+	var currentCharge int
+	var cfg *config.File
+	var caps compatibility.Capabilities
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("status attempted to change state: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var response interface{}
+		switch r.URL.Path {
+		case "/compatibility":
+			response = caps
+		case "/plugged-in":
+			response = true
+		case "/current-charge":
+			response = currentCharge
+		case "/battery-info":
+			response = battery
+		case "/config":
+			response, _ = config.NewRawFileConfigFromConfig(cfg)
+		case "/telemetry":
+			response = struct{}{}
+		default:
+			t.Errorf("unexpected status request: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		payload, err := json.Marshal(response)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if _, err := w.Write(payload); err != nil {
+			t.Error(err)
+		}
+	})}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+	previousClient := apiClient
+	apiClient = client.NewClient(socket)
+	t.Cleanup(func() { apiClient = previousClient })
+
+	for _, tt := range []struct {
+		name    string
+		flag    *bool
+		full    bool
+		charge  int
+		exact   bool
+		limit   int
+		notice  bool
+		waiting bool
+	}{
+		{name: "native slider override", flag: ptr.To(true), limit: 80, notice: true},
+		{name: "native exact override", flag: ptr.To(true), exact: true, limit: 80, notice: true},
+		{name: "override remains after full charge", flag: ptr.To(true), full: true, charge: 100, limit: 80, notice: true, waiting: true},
+		{name: "full signal before rounded percentage reaches 100", flag: ptr.To(true), full: true, charge: 99, limit: 80, notice: true, waiting: true},
+		{name: "100 percent before full signal", flag: ptr.To(true), charge: 100, limit: 80, notice: true, waiting: true},
+		{name: "cleared override", flag: ptr.To(false), limit: 80},
+		{name: "cleared override while full", flag: ptr.To(false), full: true, charge: 100, limit: 80},
+		{name: "older daemon or unavailable flag", limit: 80},
+		{name: "no limit to suspend", flag: ptr.To(true), limit: 100},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			battery = chargingBattery()
+			currentCharge = 70
+			if tt.charge > 0 {
+				currentCharge = tt.charge
+			}
+			battery.ChargingToFullOverride = tt.flag
+			if tt.full {
+				battery.State = powerinfo.Full
+			}
+			cfg = statusConfig(tt.limit, 2, 0)
+			caps = compatibility.Capabilities{ChargeControlMode: compatibility.ChargeControlNative, NativeExactTargets: tt.exact}
+			cmd := NewStatusCommand()
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			if err := cmd.RunE(cmd, nil); err != nil {
+				t.Fatal(err)
+			}
+			for _, notice := range []struct {
+				text string
+				want bool
+			}{
+				{powerinfo.FullChargeOverrideNotice, tt.notice && !tt.waiting},
+				{powerinfo.FullChargeOverrideAtFullNotice, tt.notice && tt.waiting},
+			} {
+				if got := strings.Contains(output.String(), notice.text); got != notice.want {
+					t.Fatalf("notice %q = %t, want %t:\n%s", notice.text, got, notice.want, &output)
+				}
+			}
+			if tt.notice && strings.Contains(output.String(), "Time to limit") {
+				t.Fatalf("suspended limit has a time estimate:\n%s", &output)
+			}
+			if !tt.notice && tt.limit < 100 && currentCharge < tt.limit && !strings.Contains(output.String(), "Time to limit") {
+				t.Fatalf("configured limit lost its time estimate:\n%s", &output)
+			}
+
+			output.Reset()
+			if err := cmd.Flags().Set("json", "true"); err != nil {
+				t.Fatal(err)
+			}
+			if err := cmd.RunE(cmd, nil); err != nil {
+				t.Fatal(err)
+			}
+			var parsed struct {
+				Charging map[string]json.RawMessage `json:"charging"`
+			}
+			if err := json.Unmarshal(output.Bytes(), &parsed); err != nil {
+				t.Fatal(err)
+			}
+			flag, exists := parsed.Charging["chargingToFullOverride"]
+			if exists != (tt.flag != nil) || (exists && string(flag) != strconv.FormatBool(*tt.flag)) {
+				t.Fatalf("JSON override = %s, present = %t; want %v", flag, exists, tt.flag)
 			}
 		})
 	}

@@ -42,6 +42,23 @@ static void setNSError(char **err, NSError *error, NSString *fallback) {
     setError(err, error != nil ? [error description] : fallback);
 }
 
+int batt_powerui_full_charge_override(int *active, char **err) {
+    int token;
+    if (notify_register_check("com.apple.system.powersources.chargingtofulloverride", &token) != NOTIFY_STATUS_OK) {
+        setError(err, @"could not register for the macOS full-charge override state");
+        return -1;
+    }
+    uint64_t state = 0;
+    uint32_t status = notify_get_state(token, &state);
+    uint32_t cancelStatus = notify_cancel(token);
+    if (status != NOTIFY_STATUS_OK || cancelStatus != NOTIFY_STATUS_OK) {
+        setError(err, @"could not read the macOS full-charge override state");
+        return -1;
+    }
+    *active = state != 0;
+    return 0;
+}
+
 static BOOL responds(id obj, const char *sel) {
     return obj != nil && [obj respondsToSelector:sel_registerName(sel)];
 }

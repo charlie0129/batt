@@ -21,3 +21,6 @@ int batt_powerui_custom_limits(void);
 int batt_powerui_get_preferences(int *limit, int *enabled, char **err);
 int batt_powerui_enable(char **err);
 int batt_powerui_write_preferences(int limit, char **err);
+
+// Read powerd's full-charge override without changing charging policy.
+int batt_powerui_full_charge_override(int *active, char **err);
