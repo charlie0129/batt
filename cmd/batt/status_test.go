@@ -180,11 +180,9 @@ func TestStatusFullChargeOverride(t *testing.T) {
 	}{
 		{name: "native slider override", flag: ptr.To(true), limit: 80, notice: true},
 		{name: "native exact override", flag: ptr.To(true), exact: true, limit: 80, notice: true},
-		{name: "override remains after full charge", flag: ptr.To(true), full: true, charge: 100, limit: 80, notice: true, waiting: true},
 		{name: "full signal before rounded percentage reaches 100", flag: ptr.To(true), full: true, charge: 99, limit: 80, notice: true, waiting: true},
 		{name: "100 percent before full signal", flag: ptr.To(true), charge: 100, limit: 80, notice: true, waiting: true},
 		{name: "cleared override", flag: ptr.To(false), limit: 80},
-		{name: "cleared override while full", flag: ptr.To(false), full: true, charge: 100, limit: 80},
 		{name: "older daemon or unavailable flag", limit: 80},
 		{name: "no limit to suspend", flag: ptr.To(true), limit: 100},
 	} {

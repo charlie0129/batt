@@ -183,7 +183,7 @@ func TestChargeOnceMenuAvailability(t *testing.T) {
 			chargeControlMode: compatibility.ChargeControlNative, wantLimit: false, wantFull: true,
 		},
 		{
-			name: "macOS 27 requests the one-time native target", upperLimit: 55, currentCharge: 52,
+			name: "macOS 27 can reapply the native limit", upperLimit: 55, currentCharge: 52,
 			chargeControlMode: compatibility.ChargeControlNative, nativeExactTargets: true, wantLimit: true, wantFull: true,
 		},
 		{

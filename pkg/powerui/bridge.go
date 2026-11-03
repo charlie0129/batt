@@ -97,26 +97,26 @@ func (b nativeBridge) CustomLimits() bool {
 	return C.batt_powerui_custom_limits() == 1
 }
 
-func (b nativeBridge) Preferences() (int, bool, error) {
+func (b nativeBridge) Policy() (int, bool, error) {
 	var limit, enabled C.int
 	var cerr *C.char
-	if C.batt_powerui_get_preferences(&limit, &enabled, &cerr) != 0 { //nolint:gocritic
+	if C.batt_powerui_get_policy(&limit, &enabled, &cerr) != 0 { //nolint:gocritic
 		return 0, false, takeError(cerr)
 	}
 	return int(limit), enabled == 1, nil
 }
 
-func (b nativeBridge) Enable() error {
+func (b nativeBridge) SetPolicy(limit int) error {
 	var cerr *C.char
-	if C.batt_powerui_enable(&cerr) != 0 { //nolint:gocritic
+	if C.batt_powerui_set_policy(C.int(limit), &cerr) != 0 { //nolint:gocritic
 		return takeError(cerr)
 	}
 	return nil
 }
 
-func (b nativeBridge) WritePreferences(limit int) error {
+func (b nativeBridge) RefreshBattery() error {
 	var cerr *C.char
-	if C.batt_powerui_write_preferences(C.int(limit), &cerr) != 0 { //nolint:gocritic
+	if C.batt_powerui_refresh_battery(&cerr) != 0 { //nolint:gocritic
 		return takeError(cerr)
 	}
 	return nil

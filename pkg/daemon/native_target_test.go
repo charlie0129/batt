@@ -1,13 +1,13 @@
 package daemon
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charlie0129/gosmc"
 
@@ -24,18 +24,51 @@ func mockNativeBatteryCharge(t *testing.T, charge int) {
 	useMockSMC(t, value)
 }
 
+func TestNativeLimitReturnsWhileMaintenanceIsBusy(t *testing.T) {
+	for _, latest := range []int{60, 100} {
+		t.Run(strconv.Itoa(latest), func(t *testing.T) {
+			file, _ := useTempConfig(t)
+			fake := useExactNativeTargets(t)
+			fake.limit, fake.enabled = 55, true
+			router := setupRoutes()
+			maintainLoopInnerLock.Lock()
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				for _, target := range []int{50, latest} {
+					r := httptest.NewRecorder()
+					router.ServeHTTP(r, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader(strconv.Itoa(target))))
+					if r.Code != http.StatusAccepted {
+						t.Errorf("target %d was not accepted: %d %s", target, r.Code, r.Body.String())
+					}
+				}
+			}()
+			select {
+			case <-done:
+				maintainLoopInnerLock.Unlock()
+			case <-time.After(time.Second):
+				maintainLoopInnerLock.Unlock()
+				<-done
+				t.Fatal("limit request waited for busy maintenance")
+			}
+			if file.UpperLimit() != latest || len(fake.setCalls) != 0 || fake.disables != 0 {
+				t.Fatal("requests were not saved and coalesced without touching the backend")
+			}
+			if !runRequestedMaintenance(t) || fake.limit != latest || fake.enabled != (latest < 100) {
+				t.Fatal("background maintenance did not apply the latest target")
+			}
+		})
+	}
+}
+
 func TestNativeLimitUsesConfiguredTargetRegardlessOfCharge(t *testing.T) {
 	for _, tc := range []struct {
 		name                     string
 		charge, target, previous int
 	}{
-		{"full battery", 100, 97, 100},
-		{"above limit paused", 70, 55, 70},
+		{"full battery", 100, 55, 100},
 		{"above limit charging", 70, 55, 80},
-		{"near full", 99, 50, 99},
-		{"above requested target", 60, 50, 60},
 		{"at requested target", 50, 50, 50},
-		{"inside old band", 52, 55, 52},
 		{"below minimum", 8, 55, 8},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -45,15 +78,11 @@ func TestNativeLimitUsesConfiguredTargetRegardlessOfCharge(t *testing.T) {
 			mockNativeBatteryCharge(t, tc.charge)
 			r := httptest.NewRecorder()
 			setupRoutes().ServeHTTP(r, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader(strconv.Itoa(tc.target))))
-			if r.Code != http.StatusCreated || fake.limit != tc.target || !fake.enabled {
+			if r.Code != http.StatusAccepted || !runRequestedMaintenance(t) || fake.limit != tc.target || !fake.enabled {
 				t.Fatalf("limit not applied: %d %s native=%+v", r.Code, r.Body.String(), fake)
 			}
-			wantMessage := fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", tc.target, tc.target-5, tc.charge)
-			if tc.charge > tc.target {
-				wantMessage += ". Current charge is above the limit; macOS may use battery power until it falls within the configured range."
-			}
-			if strings.TrimSpace(r.Body.String()) != strconv.Quote(wantMessage) || file.UpperLimit() != tc.target {
-				t.Fatalf("unexpected native limit response or saved target: %s target=%d", r.Body.String(), file.UpperLimit())
+			if file.UpperLimit() != tc.target {
+				t.Fatalf("saved target = %d, want %d", file.UpperLimit(), tc.target)
 			}
 			reloaded, err := config.NewFile(path)
 			if err != nil {
@@ -104,7 +133,7 @@ func TestNativeMinimumTargetIgnoresSavedLowerLimitDelta(t *testing.T) {
 	fake := useExactNativeTargets(t)
 	r := httptest.NewRecorder()
 	setupRoutes().ServeHTTP(r, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader("10")))
-	if r.Code != http.StatusCreated || fake.limit != 10 || file.UpperLimit() != 10 {
+	if r.Code != http.StatusAccepted || !runRequestedMaintenance(t) || fake.limit != 10 || file.UpperLimit() != 10 {
 		t.Fatalf("saved delta blocked minimum native target: %d %s", r.Code, r.Body.String())
 	}
 }

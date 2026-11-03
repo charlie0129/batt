@@ -130,7 +130,7 @@ func chargeOnceStartedMessage(target, charge, limit int) string {
 
 // startChargeOnce persists a one-time charge to target. Callers hold
 // chargeControlTransitionMu and have already resolved conflicts.
-func startChargeOnce(target, charge int) error {
+func startChargeOnce(target int) error {
 	conf.SetChargeOnceTarget(target)
 	if err := conf.Save(); err != nil {
 		conf.ClearChargeOnceTarget()
@@ -138,6 +138,36 @@ func startChargeOnce(target, charge int) error {
 	}
 
 	return nil
+}
+
+// reapplyNativeChargeOnce resumes charging by reapplying the native target.
+func reapplyNativeChargeOnce(target int) error {
+	if target <= 0 || target >= 100 || !getCapabilities().NativeExactTargets {
+		return nil
+	}
+	maintainLoopInnerLock.Lock()
+	defer maintainLoopInnerLock.Unlock()
+	if chargeControlStopped {
+		return errors.New("charge control has stopped")
+	}
+	charge, err := smcGetBatteryCharge()
+	if err != nil {
+		return fmt.Errorf("read battery charge before restarting one-time charge: %w", err)
+	}
+	if charge >= target {
+		return nil
+	}
+	return nativeLimit.SetLimit(target)
+}
+
+func resumeNativeChargeOnce() {
+	if !getCapabilities().NativeExactTargets {
+		return
+	}
+	completeChargeOnce(conf)
+	if err := reapplyNativeChargeOnce(activeChargeOnceTarget()); err != nil {
+		logrus.WithError(err).Error("failed to resume native one-time charge after restart")
+	}
 }
 
 // reportChargeOnceStarted runs only after the immediate enforcement succeeds.

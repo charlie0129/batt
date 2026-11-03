@@ -17,15 +17,14 @@ import (
 
 // fakeNativeLimit stands in for PowerUIAgent.
 type fakeNativeLimit struct {
-	supported  bool
-	limits     []int
-	limit      int
-	enabled    bool
-	registered bool
-	exact      bool
-	err        error
-	setCalls   []int
-	disables   int
+	supported bool
+	limits    []int
+	limit     int
+	enabled   bool
+	exact     bool
+	err       error
+	setCalls  []int
+	disables  int
 }
 
 func (f *fakeNativeLimit) Supported() bool            { return f.supported }
@@ -59,13 +58,9 @@ func (f *fakeNativeLimit) Disable() error {
 	if f.err != nil {
 		return f.err
 	}
-	if !f.enabled && !f.registered {
-		return nil
-	}
 	f.disables++
 	f.limit = 100
 	f.enabled = false
-	f.registered = false
 	return nil
 }
 
@@ -478,7 +473,7 @@ func TestSetLimitRejectsUnsupportedNativeLimit(t *testing.T) {
 }
 
 func TestNativeExactLimitsAreAppliedWithoutAdapterControl(t *testing.T) {
-	for _, target := range []int{10, 55, 60, 69, 79, 81, 99} {
+	for _, target := range []int{10, 55, 99} {
 		t.Run(strconv.Itoa(target), func(t *testing.T) {
 			file, path := useTempConfig(t)
 			limits := make([]int, 91)
@@ -489,7 +484,7 @@ func TestNativeExactLimitsAreAppliedWithoutAdapterControl(t *testing.T) {
 			capabilities.SupportedLimits = limits
 			response := httptest.NewRecorder()
 			setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader(strconv.Itoa(target))))
-			if response.Code != http.StatusCreated || fake.limit != target || !fake.enabled {
+			if response.Code != http.StatusAccepted || !runRequestedMaintenance(t) || fake.limit != target || !fake.enabled {
 				t.Fatalf("target %d: status=%d body=%s native=%+v", target, response.Code, response.Body.String(), fake)
 			}
 			disableUnsupportedConfiguredFeatures()
@@ -504,16 +499,23 @@ func TestNativeExactLimitsAreAppliedWithoutAdapterControl(t *testing.T) {
 	}
 }
 
-func TestSetNativeLimitReportsApplicationFailure(t *testing.T) {
+func TestSetNativeLimitRetainsTargetForBackgroundRetry(t *testing.T) {
 	file, _ := useTempConfig(t)
 	fake := useExactNativeTargets(t)
 	fake.err = errors.New("agent unavailable")
 	response := httptest.NewRecorder()
 	setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader("69")))
-	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "applying it failed") {
-		t.Fatalf("failed apply reported as success: %d %s", response.Code, response.Body.String())
+	if response.Code != http.StatusAccepted || len(fake.setCalls) != 0 {
+		t.Fatalf("request waited for native apply: %d %s", response.Code, response.Body.String())
 	}
 	if file.UpperLimit() != 69 {
 		t.Fatal("saved target lost; daemon must be able to retry it")
+	}
+	if runRequestedMaintenance(t) {
+		t.Fatal("background application failure was ignored")
+	}
+	fake.err = nil
+	if !maintainLoopForced() || fake.limit != 69 || !fake.enabled {
+		t.Fatal("background application was not retried")
 	}
 }

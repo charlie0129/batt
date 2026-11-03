@@ -12,28 +12,16 @@ import (
 	"github.com/charlie0129/batt/pkg/config"
 )
 
-func TestNativeDisableReleasesStaleRegistration(t *testing.T) {
-	useNativeCapabilities(t, 55, 100)
-	f := &fakeNativeLimit{limit: 100, registered: true, exact: true}
-	useFakeNativeLimit(t, f)
-	if _, err := ensureNativeChargeLimitDisabled(); err != nil || f.registered || f.disables != 1 {
-		t.Fatalf("disabled feature concealed a stale policy: %v %+v", err, f)
-	}
-	if _, err := ensureNativeChargeLimitDisabled(); err != nil || f.disables != 1 {
-		t.Fatalf("clean release was not idempotent: %v %+v", err, f)
-	}
-}
-
 func TestNativeTemporaryDisableLifecycle(t *testing.T) {
 	gatedSMCNoAdapter(t)
 	file, path := useTempConfig(t)
 	file.SetUpperLimit(55)
 	useNativeCapabilities(t, 55, 100)
-	f := &fakeNativeLimit{limit: 55, enabled: true, registered: true}
+	f := &fakeNativeLimit{limit: 55, enabled: true}
 	useFakeNativeLimit(t, f)
 	r := httptest.NewRecorder()
 	setupRoutes().ServeHTTP(r, httptest.NewRequest(http.MethodPut, "/disable", strings.NewReader(`"1h"`)))
-	if r.Code != http.StatusCreated || f.enabled || f.registered || file.UpperLimit() != 100 {
+	if r.Code != http.StatusCreated || f.enabled || file.UpperLimit() != 100 {
 		t.Fatalf("temporary release failed: %d %s %+v", r.Code, r.Body.String(), f)
 	}
 	reloaded, err := config.NewFile(path)

@@ -15,12 +15,15 @@ int batt_powerui_get_limit(int *limit, int *enabled, char **err);
 int batt_powerui_set_limit(int limit, char **err);
 int batt_powerui_disable(char **err);
 
-// macOS 27's slider setter clamps targets below 80%. The agent's root-owned
-// preferences accept the actual target, followed by its reload notification.
+// macOS 27 supports the exact no-drain policy schema used by this bridge.
 int batt_powerui_custom_limits(void);
-int batt_powerui_get_preferences(int *limit, int *enabled, char **err);
-int batt_powerui_enable(char **err);
-int batt_powerui_write_preferences(int limit, char **err);
 
 // Read powerd's full-charge override without changing charging policy.
 int batt_powerui_full_charge_override(int *active, char **err);
+
+// Request a fresh hardware sample asynchronously; charging policy is untouched.
+int batt_powerui_refresh_battery(char **err);
+
+// macOS 27 ceiling policy: no forced discharge, no calibration suppression.
+int batt_powerui_get_policy(int *limit, int *enabled, char **err);
+int batt_powerui_set_policy(int limit, char **err);

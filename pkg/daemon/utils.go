@@ -211,15 +211,6 @@ func (r *TimeSeriesRecorder) GetLastRecords(last time.Duration) []time.Time {
 	return records
 }
 
-//nolint:unused // .
-func formatTimes(times []time.Time) []string {
-	var timesString []string
-	for _, t := range times {
-		timesString = append(timesString, t.Format(time.RFC3339))
-	}
-	return timesString
-}
-
 func formatRelativeTimes(times []time.Time) []string {
 	var timesString []string
 	for _, t := range times {

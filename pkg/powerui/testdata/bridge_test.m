@@ -3,15 +3,27 @@
 #include <notify.h>
 #include <unistd.h>
 #include <assert.h>
+#include <dlfcn.h>
 
-static NSMutableDictionary *prefs;
-static int writes, notifications;
-static BOOL flushOK=YES, notifyOK=YES;
-static uid_t fakeUID=0;
 static uint64_t overrideState;
 static BOOL registerOK=YES, readStateOK=YES;
 static int overrideReads, overrideCancels;
 static NSInteger fakeMajor=27;
+static BOOL refreshAvailable=YES;
+static uint32_t refreshResult;
+static int refreshes;
+static uint32_t test_request_update(int kind) {
+    assert(kind==2); refreshes++; return refreshResult;
+}
+static void *test_dlopen(const char *path, int flags) {
+    assert(strcmp(path,"/System/Library/Frameworks/IOKit.framework/IOKit")==0 && flags==RTLD_NOW);
+    return (void *)42;
+}
+static void *test_dlsym(void *handle, const char *name) {
+    assert(handle==(void *)42 && strcmp(name,"IOPSRequestBatteryUpdate")==0);
+    return refreshAvailable ? test_request_update : NULL;
+}
+static int test_dlclose(void *handle) { assert(handle==(void *)42); return 0; }
 @interface FakeProcessInfo : NSObject
 + (instancetype)processInfo;
 - (NSOperatingSystemVersion)operatingSystemVersion;
@@ -22,25 +34,6 @@ static NSInteger fakeMajor=27;
     return (NSOperatingSystemVersion){fakeMajor, 0, 0};
 }
 @end
-static uid_t test_geteuid(void) { return fakeUID; }
-static void checkDomain(CFStringRef domain, CFStringRef user, CFStringRef host) {
-    assert(CFEqual(domain,CFSTR("com.apple.smartcharging.topoffprotection")));
-    assert(CFEqual(user,kCFPreferencesCurrentUser));
-    assert(CFEqual(host,kCFPreferencesAnyHost));
-}
-static Boolean test_sync(CFStringRef domain, CFStringRef user, CFStringRef host) {
-    checkDomain(domain,user,host); return flushOK;
-}
-static CFPropertyListRef test_copy(CFStringRef key, CFStringRef domain, CFStringRef user, CFStringRef host) {
-    checkDomain(domain,user,host); return (CFPropertyListRef)[prefs[(NSString *)key] retain];
-}
-static void test_set(CFStringRef key, CFPropertyListRef value, CFStringRef domain, CFStringRef user, CFStringRef host) {
-    checkDomain(domain,user,host); writes++; prefs[(NSString *)key]=(id)value;
-}
-static uint32_t test_notify(const char *name) {
-    assert(strcmp(name,"com.apple.smartcharging.defaultschanged")==0);
-    notifications++; return notifyOK ? NOTIFY_STATUS_OK : NOTIFY_STATUS_FAILED;
-}
 static uint32_t test_register_check(const char *name, int *token) {
     assert(strcmp(name,"com.apple.system.powersources.chargingtofulloverride")==0);
     *token=42;
@@ -53,15 +46,13 @@ static uint32_t test_get_state(int token, uint64_t *state) {
 static uint32_t test_cancel(int token) {
     assert(token==42); overrideCancels++; return NOTIFY_STATUS_OK;
 }
-#define geteuid test_geteuid
-#define CFPreferencesSynchronize test_sync
-#define CFPreferencesCopyValue test_copy
-#define CFPreferencesSetValue test_set
-#define notify_post test_notify
 #define notify_register_check test_register_check
 #define notify_get_state test_get_state
 #define notify_cancel test_cancel
 #define NSProcessInfo FakeProcessInfo
+#define dlopen test_dlopen
+#define dlsym test_dlsym
+#define dlclose test_dlclose
 #include "../powerui.m"
 #undef NSProcessInfo
 
@@ -69,6 +60,11 @@ static uint32_t test_cancel(int token) {
 @property BOOL fail;
 @end
 @implementation FakeClient
+- (unsigned char)getMCLLimitWithError:(NSError **)error {
+    if(self.fail) *error=[NSError errorWithDomain:@"test" code:1 userInfo:nil];
+    return 55;
+}
+- (unsigned long long)isMCLCurrentlyEnabled:(NSError **)error { (void)error;return 1; }
 - (BOOL)enableMCL:(NSError **)error {
     if(self.fail) *error=[NSError errorWithDomain:@"test" code:1 userInfo:nil];
     return YES;
@@ -80,7 +76,6 @@ static uint32_t test_cancel(int token) {
 @end
 
 int main(void) { @autoreleasepool {
-    prefs=[NSMutableDictionary dictionary];
     FakeClient *fake=[FakeClient new]; gClient=fake; gClientProbed=YES;
     char *error=NULL; int target=0,enabled=0;
     int active=-1;
@@ -96,60 +91,23 @@ int main(void) { @autoreleasepool {
     assert(batt_powerui_full_charge_override(&active,&error)==-1);
     free(error); error=NULL;
     assert(overrideReads==3 && overrideCancels==3);
-    assert(writes==0 && notifications==0);
-    for(NSNumber *major in @[@13,@15,@26,@27,@28]) {
+    for(NSNumber *major in @[@26,@27,@28]) {
         fakeMajor=major.integerValue;
         assert(batt_powerui_custom_limits()==(fakeMajor==27));
-        if(fakeMajor!=27) {
-            assert(batt_powerui_write_preferences(55,&error)==-1);
-            free(error); error=NULL;
-            assert(writes==0 && notifications==0);
-        }
     }
     fakeMajor=27;
-    id unsupported=[NSObject new];
-    gClient=unsupported;
-    assert(!batt_powerui_custom_limits());
-    assert(batt_powerui_write_preferences(55,&error)==-1);
-    free(error); error=NULL;
-    assert(writes==0 && notifications==0);
-    gClient=fake; [unsupported release];
-    assert(batt_powerui_get_preferences(&target,&enabled,&error)==0 && target==100 && !enabled);
-    assert(batt_powerui_write_preferences(69,&error)==0);
-    assert(writes==2 && notifications==1);
-    assert(batt_powerui_get_preferences(&target,&enabled,&error)==0 && target==69 && enabled);
-    // Exercise the actual ObjC bridge for all advertised exact targets,
-    // including 55%, while keeping every OS side effect stubbed out.
-    for(int requested=1;requested<100;requested++) {
-        int beforeWrites=writes, beforeNotifications=notifications;
-        assert(batt_powerui_write_preferences(requested,&error)==0);
-        assert(writes==beforeWrites+2 && notifications==beforeNotifications+1);
-        assert(batt_powerui_get_preferences(&target,&enabled,&error)==0);
-        assert(enabled && target==requested);
-    }
-    for(id invalid in @[@69.5,@101,@0,@"69"]) {
-        prefs[@"mclLimitValue"]=invalid;
-        assert(batt_powerui_get_preferences(&target,&enabled,&error)==-1); free(error); error=NULL;
-    }
-    prefs[@"mclLimitValue"]=@69; prefs[@"MCLFeatureState"]=@2;
-    assert(batt_powerui_get_preferences(&target,&enabled,&error)==-1); free(error); error=NULL;
-    prefs[@"MCLFeatureState"]=@1; [prefs removeObjectForKey:@"mclLimitValue"];
-    assert(batt_powerui_get_preferences(&target,&enabled,&error)==-1); free(error); error=NULL;
-    fakeUID=501; int before=writes;
-    assert(batt_powerui_write_preferences(60,&error)==-1 && writes==before); free(error); error=NULL;
-    assert(batt_powerui_get_preferences(&target,&enabled,&error)==-1); free(error); error=NULL;
-    fakeUID=0; flushOK=NO;
-    assert(batt_powerui_write_preferences(60,&error)==-1 && writes==before); free(error); error=NULL;
-    flushOK=YES; notifyOK=NO;
-    assert(batt_powerui_write_preferences(60,&error)==-1); free(error); error=NULL;
-    for(int n=0;n<=100;n+=100) {
-        before=writes;
-        assert(batt_powerui_write_preferences(n,&error)==-1 && writes==before); free(error); error=NULL;
-    }
+    id unsupported=[NSObject new];gClient=unsupported;
+    assert(!batt_powerui_custom_limits());gClient=fake;[unsupported release];
+    assert(batt_powerui_get_limit(&target,&enabled,&error)==0 && target==55 && enabled);
     fake.fail=YES;
-    assert(batt_powerui_enable(&error)==-1); free(error); error=NULL;
+    assert(batt_powerui_get_limit(&target,&enabled,&error)==-1); free(error); error=NULL;
     assert(batt_powerui_disable(&error)==-1); free(error); error=NULL;
     assert(batt_powerui_set_limit(80,&error)==-1); free(error); error=NULL;
+    assert(batt_powerui_refresh_battery(&error)==0 && refreshes==1);
+    refreshResult=0xe00002c2;
+    assert(batt_powerui_refresh_battery(&error)==-1 && refreshes==2); free(error); error=NULL;
+    refreshAvailable=NO;
+    assert(batt_powerui_refresh_battery(&error)==-1 && refreshes==2); free(error); error=NULL;
     [fake release];
-    puts("PASS: all exact targets 10-99, root domain, invalid preferences, notification failure, and XPC errors");
+    puts("PASS: override reads, macOS capability gate, PowerUI reads, and XPC errors");
 } return 0; }

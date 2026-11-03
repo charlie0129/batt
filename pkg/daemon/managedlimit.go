@@ -52,7 +52,7 @@ func ensureManagedChargeLimitDisabled() (bool, error) {
 
 // ensureNativeChargeLimit keeps the macOS charge limit at the configured
 // upper limit. Older native backends only offer a fixed set of slider values;
-// macOS 27's preference path accepts exact percentages. The supported-value
+// macOS 27's ceiling policy accepts exact percentages. The supported-value
 // check is a safety net that never lowers the user's requested target.
 func ensureNativeChargeLimit(upper int) (bool, error) {
 	caps := getCapabilities()
@@ -83,11 +83,9 @@ func ensureNativeChargeLimitDisabled() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if !enabled && !nativeLimit.SupportsExactTargets() {
+	if !enabled {
 		return false, nil
 	}
-	// The agent can say disabled while powerd still has its registration.
-	// The client checks that independently and makes clean releases no-ops.
 	return enabled, nativeLimit.Disable()
 }
 

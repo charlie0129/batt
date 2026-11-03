@@ -14,6 +14,7 @@ import (
 
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/daemon"
+	"github.com/charlie0129/batt/pkg/powerui"
 	"github.com/charlie0129/batt/pkg/smc"
 	daemonutils "github.com/charlie0129/batt/pkg/utils/daemon"
 )
@@ -135,11 +136,21 @@ You must run this command as root.`,
 				return fmt.Errorf("failed to uninstall daemon: %v", err)
 			}
 
+			// A crashed daemon can leave a native policy behind even though the
+			// SMC charge keys are unavailable. Release it during uninstall too.
+			var nativeResetErr error
+			if !noResetCharging {
+				native := powerui.New()
+				if native.SupportsExactTargets() {
+					nativeResetErr = native.Disable()
+				}
+			}
+
 			// Wall power must be restored before recovering SleepDisabled, even
 			// when --no-reset-charging skips the charge-limit reset.
 			smcC := smc.New()
 			if err := smcC.Open(); err != nil {
-				return fmt.Errorf("failed to open SMC: %w", err)
+				return errors.Join(nativeResetErr, fmt.Errorf("failed to open SMC: %w", err))
 			}
 			defer func() { _ = smcC.Close() }()
 
@@ -150,8 +161,8 @@ You must run this command as root.`,
 			err = restoreUninstallState(smcC, !noResetCharging, func() error {
 				return daemon.RecoverSleepDisabled(sleepStatePath)
 			})
-			if err != nil {
-				return err
+			if err != nil || nativeResetErr != nil {
+				return errors.Join(nativeResetErr, err)
 			}
 
 			fmt.Println("successfully uninstalled")
