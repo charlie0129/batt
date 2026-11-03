@@ -98,12 +98,7 @@ func manualLimitTargets(output string, includeTerminated bool) ([]int, error) {
 			}
 			values[key] = value
 		}
-		maxima := map[string]uint64{"Terminated": 1, "chargeSocLimitDrain": 1,
-			"chargeSocLimitIsEOC": 1, "chargeSocLimitNoChargeToFull": 1,
-			"chargeSocLimitOwner": 1<<31 - 1, "chargeSocLimitSoc": 100}
-		if len(values) != len(maxima)+1 {
-			return nil, invalid
-		}
+		maxima := map[string]uint64{"Terminated": 1, "chargeSocLimitSoc": 100}
 		for key, maxValue := range maxima {
 			n, err := strconv.ParseUint(values[key], 10, 32)
 			if err != nil || n > maxValue || (key == "chargeSocLimitSoc" && n == 0) {

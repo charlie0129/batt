@@ -20,6 +20,10 @@ const manualRegistration = `Battery level limits:
 )
 `
 
+const minimalRegistration = `Battery level limits: (
+    { Terminated = 0; chargeSocLimitReason = manualChargeLimit; chargeSocLimitSoc = 55; }
+)`
+
 func TestManualLimitRegistration(t *testing.T) {
 	for _, test := range []struct {
 		name, output string
@@ -31,6 +35,8 @@ func TestManualLimitRegistration(t *testing.T) {
 		{"leading comma", strings.Replace(manualRegistration, "(\n", "(,\n", 1), false, true},
 		{"trailing comma", strings.Replace(manualRegistration, "    }\n)", "    },\n)", 1), false, true},
 		{"manual", manualRegistration, true, false},
+		{"required fields only", minimalRegistration, true, false},
+		{"additional field", strings.ReplaceAll(manualRegistration, "Terminated = 0;", "Terminated = 0; futureField = futureValue;"), true, false},
 		{"multiple policies", strings.Replace(manualRegistration, "    }\n)", "    },\n"+registrationRow.FindString(strings.ReplaceAll(manualRegistration, "manualChargeLimit", "otherOSPolicy"))+"\n)", 1), true, false},
 		{"quoted reason", strings.ReplaceAll(manualRegistration, "manualChargeLimit", `"manualChargeLimit"`), true, false},
 		{"other policy", strings.ReplaceAll(manualRegistration, "manualChargeLimit", "otherOSPolicy"), false, false},
@@ -38,9 +44,14 @@ func TestManualLimitRegistration(t *testing.T) {
 		{"unsupported command", "Usage: pmset", false, true},
 		{"truncated", strings.TrimSuffix(manualRegistration, ")\n"), false, true},
 		{"missing reason", strings.ReplaceAll(manualRegistration, "chargeSocLimitReason = manualChargeLimit;", ""), false, true},
+		{"missing terminated", strings.ReplaceAll(manualRegistration, "Terminated = 0;", ""), false, true},
+		{"missing target", strings.ReplaceAll(manualRegistration, "chargeSocLimitSoc = 55;", ""), false, true},
 		{"duplicate", strings.ReplaceAll(manualRegistration, "Terminated = 0;", "Terminated = 0; Terminated = 0;"), false, true},
-		{"unknown flag", strings.ReplaceAll(manualRegistration, "chargeSocLimitDrain = 1", "chargeSocLimitDrain = 2"), false, true},
-		{"invalid owner", strings.ReplaceAll(manualRegistration, "chargeSocLimitOwner = 123", "chargeSocLimitOwner = -1"), false, true},
+		{"invalid terminated", strings.ReplaceAll(manualRegistration, "Terminated = 0", "Terminated = 2"), false, true},
+		{"zero target", strings.ReplaceAll(manualRegistration, "chargeSocLimitSoc = 55", "chargeSocLimitSoc = 0"), false, true},
+		{"invalid target", strings.ReplaceAll(manualRegistration, "chargeSocLimitSoc = 55", "chargeSocLimitSoc = 101"), false, true},
+		{"unknown flag", strings.ReplaceAll(manualRegistration, "chargeSocLimitDrain = 1", "chargeSocLimitDrain = 2"), true, false},
+		{"unknown owner", strings.ReplaceAll(manualRegistration, "chargeSocLimitOwner = 123", "chargeSocLimitOwner = -1"), true, false},
 		{"unexpected structure", "Battery level limits:\n(garbage)", false, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -60,6 +71,8 @@ func TestActiveManualTargets(t *testing.T) {
 	}{
 		{"empty", "No battery level limits set", nil},
 		{"manual", manualRegistration, []int{55}},
+		{"required fields only", minimalRegistration, []int{55}},
+		{"additional field", strings.ReplaceAll(manualRegistration, "Terminated = 0;", "Terminated = 0; futureField = futureValue;"), []int{55}},
 		{"other policy", strings.ReplaceAll(manualRegistration, "manualChargeLimit", "otherOSPolicy"), nil},
 		{"terminated", strings.ReplaceAll(manualRegistration, "Terminated = 0", "Terminated = 1"), nil},
 		{"mirror", "Battery level limits: (" + row + "," + row + ")", []int{55, 55}},
