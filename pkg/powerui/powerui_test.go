@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
-	"time"
 )
 
 type fakeOperations struct {
@@ -23,13 +23,14 @@ type fakeOperations struct {
 	registeredTargets             []int
 	ignoreRegistration            bool
 	registrationReads             int
+	registrationDelay             int
 }
 
 func (f *fakeOperations) Supported() bool                 { return true }
 func (f *fakeOperations) CustomLimits() bool              { return f.custom }
 func (f *fakeOperations) AvailableLimits() ([]int, error) { return []int{100, 80, 90}, nil }
 func (f *fakeOperations) Limit() (int, bool, error) {
-	if f.fail == "agent" {
+	if f.fail == "agent" || (f.fail == "agentReadback" && len(f.writeTargets) > 0) {
 		return 0, false, errors.New("XPC unavailable")
 	}
 	return f.agentTarget, f.agentEnabled, nil
@@ -94,8 +95,12 @@ func (f *fakeOperations) ManualLimitRegistered() (bool, error) {
 
 func (f *fakeOperations) RegisteredManualLimits() ([]int, error) {
 	f.registrationReads++
-	if f.fail == "registration" {
+	if f.fail == "registration" || (f.fail == "registrationReadback" && len(f.writeTargets) > 0) {
 		return nil, errors.New("registration read failed")
+	}
+	if len(f.writeTargets) > 0 && f.registrationDelay > 0 {
+		f.registrationDelay--
+		return nil, nil
 	}
 	if f.registeredTargets != nil {
 		return f.registeredTargets, nil
@@ -153,16 +158,14 @@ func TestNativeStaleEnabledPreferenceReengagesAgent(t *testing.T) {
 func TestNativeStaleAgentTargetIsRetriedWithoutResettingHold(t *testing.T) {
 	f := &fakeOperations{custom: true, target: 55, enabled: true,
 		agentTarget: 70, agentEnabled: true, ignoreReload: true}
-	now := time.Unix(1000, 0)
-	c := &Client{api: f, now: func() time.Time { return now }}
+	c := &Client{api: f}
 	for range 2 {
 		if target, enabled, err := c.Limit(); err != nil || !enabled || target != 0 {
 			t.Fatalf("pending target must remain enabled and require reconciliation: target=%d enabled=%t err=%v", target, enabled, err)
 		}
-		if err := c.SetLimit(55); err != nil {
-			t.Fatal(err)
+		if err := c.SetLimit(55); err == nil || !strings.Contains(err.Error(), "not confirmed") {
+			t.Fatalf("stale agent reported success: %v", err)
 		}
-		now = now.Add(nativeRegistrationSettleTime)
 	}
 	if !reflect.DeepEqual(f.calls, []string{"write", "write"}) || f.agentTarget != 70 {
 		t.Fatalf("pending target was not retried or existing hold was reset: %+v", f)
@@ -225,7 +228,7 @@ func TestEveryExactNativeTarget(t *testing.T) {
 }
 
 func TestNativeWriteFailuresAreNotSuccess(t *testing.T) {
-	for _, stage := range []string{"read", "agent", "enable", "write", "readback", "ignored"} {
+	for _, stage := range []string{"read", "agent", "enable", "write", "readback", "ignored", "agentReadback", "registrationReadback"} {
 		t.Run(stage, func(t *testing.T) {
 			f := &fakeOperations{custom: true, target: 100, fail: stage, ignoreWrite: stage == "ignored"}
 			if err := (&Client{api: f}).SetLimit(69); err == nil {
@@ -346,7 +349,7 @@ func TestNativeDisableDoesNotClaimUnconfirmedRelease(t *testing.T) {
 	}
 }
 
-func TestNativeRegistrationSettlesThenRepairs(t *testing.T) {
+func TestNativeRegistrationRetriesUntilConfirmed(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		registered []int
@@ -359,47 +362,34 @@ func TestNativeRegistrationSettlesThenRepairs(t *testing.T) {
 			f := &fakeOperations{custom: true, target: 55, enabled: true,
 				agentTarget: 55, agentEnabled: true, registeredTargets: tc.registered,
 				ignoreRegistration: true}
-			now := time.Unix(1000, 0)
-			c := &Client{api: f, now: func() time.Time { return now }}
+			c := &Client{api: f}
 			if target, on, err := c.Limit(); err != nil || !on || target != 0 {
 				t.Fatalf("agent agreement concealed missing/stale powerd limit: %d %t %v", target, on, err)
 			}
-			if err := c.SetLimit(55); err != nil {
-				t.Fatal(err)
+			if err := c.SetLimit(55); err == nil || !strings.Contains(err.Error(), "not confirmed") {
+				t.Fatalf("unconfirmed registration reported success: %v", err)
 			}
-			for range 14 {
-				now = now.Add(10 * time.Second)
+			for range 2 {
 				if target, on, err := c.Limit(); err != nil || !on || target != 0 {
 					t.Fatalf("pending registration reported confirmed: %d %t %v", target, on, err)
 				}
-				if err := c.SetLimit(55); err != nil {
-					t.Fatal(err)
+				if err := c.SetLimit(55); err == nil || !strings.Contains(err.Error(), "not confirmed") {
+					t.Fatalf("unconfirmed registration reported success: %v", err)
 				}
 			}
-			if len(f.writeTargets) != 1 {
-				t.Fatalf("reloaded while settling: %v", f.calls)
-			}
-			now = now.Add(10 * time.Second)
-			if err := c.SetLimit(55); err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(f.calls, []string{"write", "write"}) {
-				t.Fatalf("did not repair at original deadline without resetting enabled agent: %v", f.calls)
-			}
-			// A repair gets its own bounded wait, rather than retrying every poll.
-			if err := c.SetLimit(55); err != nil || len(f.calls) != 2 {
-				t.Fatalf("repair did not settle: %v %v", f.calls, err)
+			if !reflect.DeepEqual(f.calls, []string{"write", "write", "write"}) {
+				t.Fatalf("unconfirmed target was not retried on every call: %v", f.calls)
 			}
 			f.registeredTargets = []int{55, 55}
 			if target, on, err := c.Limit(); err != nil || !on || target != 55 {
 				t.Fatalf("matching agent and mirror not confirmed: %d %t %v", target, on, err)
 			}
-			if err := c.SetLimit(55); err != nil || len(f.calls) != 2 {
+			if err := c.SetLimit(55); err != nil || len(f.calls) != 3 {
 				t.Fatal(f.calls, err)
 			}
-			// Drift after confirmation repairs immediately, with no leftover grace.
+			// Drift after confirmation also repairs immediately.
 			f.registeredTargets = []int{}
-			if err := c.SetLimit(55); err != nil || len(f.calls) != 3 {
+			if err := c.SetLimit(55); err == nil || len(f.calls) != 4 {
 				t.Fatal(f.calls, err)
 			}
 		})
@@ -410,11 +400,11 @@ func TestNativePendingTargetCanChangeOrReleaseImmediately(t *testing.T) {
 	f := &fakeOperations{custom: true, target: 55, enabled: true,
 		agentTarget: 55, agentEnabled: true, registeredTargets: []int{}, ignoreRegistration: true}
 	c := &Client{api: f}
-	if err := c.SetLimit(55); err != nil {
-		t.Fatal(err)
+	if err := c.SetLimit(55); err == nil {
+		t.Fatal("unconfirmed registration reported success")
 	}
-	if err := c.SetLimit(52); err != nil {
-		t.Fatal(err)
+	if err := c.SetLimit(52); err == nil {
+		t.Fatal("unconfirmed registration reported success")
 	}
 	if !reflect.DeepEqual(f.writeTargets, []int{55, 52}) {
 		t.Fatal(f.writeTargets)
@@ -422,14 +412,25 @@ func TestNativePendingTargetCanChangeOrReleaseImmediately(t *testing.T) {
 	if err := c.Disable(); err != nil {
 		t.Fatal(err)
 	}
-	if c.requestedTarget != 0 {
-		t.Fatal("release retained pending request")
-	}
-	if err := c.SetLimit(52); err != nil {
-		t.Fatal(err)
+	if err := c.SetLimit(52); err == nil {
+		t.Fatal("unconfirmed registration reported success")
 	}
 	if !reflect.DeepEqual(f.calls, []string{"write", "write", "disable", "enable", "write"}) {
 		t.Fatal(f.calls)
+	}
+}
+
+func TestNativeWriteConfirmsRegistrationBeforeReturning(t *testing.T) {
+	for _, delay := range []int{0, 2} {
+		t.Run(fmt.Sprintf("registrationDelay=%d", delay), func(t *testing.T) {
+			f := &fakeOperations{custom: true, target: 100, registrationDelay: delay}
+			if err := (&Client{api: f}).SetLimit(55); err != nil {
+				t.Fatal(err)
+			}
+			if f.registrationReads != delay+1 || !reflect.DeepEqual(f.writeTargets, []int{55}) {
+				t.Fatalf("write returned without confirming registration or rewrote while waiting: %+v", f)
+			}
+		})
 	}
 }
 
@@ -445,7 +446,7 @@ func TestNativeRegistrationReadFailureIsNotConfirmation(t *testing.T) {
 	}
 }
 
-func TestSliderNativeDoesNotUseRegistrationOrSettling(t *testing.T) {
+func TestSliderNativeDoesNotUseRegistration(t *testing.T) {
 	f := &fakeOperations{agentTarget: 80, agentEnabled: true, fail: "registration"}
 	c := &Client{api: f}
 	if target, on, err := c.Limit(); err != nil || !on || target != 80 {

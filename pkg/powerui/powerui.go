@@ -10,8 +10,6 @@ import (
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 // Controller is the subset of PowerUI charge control used by the daemon.
@@ -25,14 +23,12 @@ type Controller interface {
 	// A zero target with enabled=true means the saved target, agent or
 	// registration disagree; callers must reconcile rather than assume a disabled limiter.
 	Limit() (limit int, enabled bool, err error)
-	// SetLimit requests a target; 100 releases the native limit. Repeating
-	// a pending request within its settle window succeeds without rewriting it.
+	// SetLimit requests a target and confirms its registration; 100 releases
+	// the native limit. An unconfirmed target returns an error and is retried
+	// on the next call. Slider-only backends verify through their setter.
 	SetLimit(limit int) error
 	Disable() error
 }
-
-// ErrUnavailable indicates that the native charge-limit service is unavailable.
-var ErrUnavailable = errors.New("PowerUI manual charge limit is unavailable")
 
 // The client chooses the preference path or the slider API. Tests replace
 // these operations without calling Apple services or changing preferences.
@@ -50,23 +46,10 @@ type operations interface {
 	RegisteredManualLimits() ([]int, error)
 }
 
-const nativeRegistrationSettleTime = 150 * time.Second
-
 // Client serializes access to the native charge-limit service.
 type Client struct {
 	mu  sync.Mutex
 	api operations
-	// Only the exact native preference path uses asynchronous reconciliation.
-	requestedTarget int
-	requestedAt     time.Time
-	now             func() time.Time
-}
-
-func (c *Client) currentTime() time.Time {
-	if c.now != nil {
-		return c.now()
-	}
-	return time.Now()
 }
 
 // New creates a client without probing or changing the system.
@@ -138,9 +121,6 @@ func (c *Client) customLimit() (int, bool, error) {
 				return 0, true, nil
 			}
 		}
-		// Once confirmed, a later drift needs repair rather than another grace
-		// period. Reading the state must never extend an outstanding deadline.
-		c.requestedTarget = 0
 	}
 	return limit, enabled && agentEnabled, nil
 }
@@ -151,10 +131,6 @@ func (c *Client) SetLimit(limit int) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.setLimit(limit)
-}
-
-func (c *Client) setLimit(limit int) error {
 	if limit == 100 {
 		return c.disable()
 	}
@@ -167,15 +143,6 @@ func (c *Client) setLimit(limit int) error {
 	}
 	if enabled && current == limit {
 		return nil
-	}
-	if c.requestedTarget == limit && c.currentTime().Sub(c.requestedAt) < nativeRegistrationSettleTime {
-		// The daemon polls every ten seconds. Do not keep posting reloads while
-		// the same request is still waiting for Apple's evaluation. A different
-		// target bypasses this window, including a manual pause or release.
-		return nil
-	}
-	if c.requestedTarget == limit {
-		logrus.WithField("target", limit).Warn("native charge target is not confirmed after settling; retrying")
 	}
 	// customLimit returns a zero target when the agent has stale settings. That
 	// needs another preference notification, not an enable call that resets
@@ -203,9 +170,21 @@ func (c *Client) setLimit(limit int) error {
 	if !enabled || current != limit {
 		return fmt.Errorf("native target did not retain %d%% (read %d%%, enabled=%t)", limit, current, enabled)
 	}
-	c.requestedTarget = limit
-	c.requestedAt = c.currentTime()
-	return nil
+	// Allow the reload notification to reach the agent before confirming
+	// registration. This checks policy, not the battery's physical response.
+	for attempt := 0; attempt < 10; attempt++ {
+		if attempt > 0 {
+			time.Sleep(100 * time.Millisecond)
+		}
+		current, enabled, err = c.customLimit()
+		if err != nil {
+			return fmt.Errorf("verify native charge registration: %w", err)
+		}
+		if enabled && current == limit {
+			return nil
+		}
+	}
+	return fmt.Errorf("native charge target %d%% registration is not confirmed; batt will retry", limit)
 }
 
 func (c *Client) disable() error {
@@ -226,7 +205,6 @@ func (c *Client) disable() error {
 				return err
 			}
 			if !savedEnabled && !registered {
-				c.requestedTarget = 0
 				return nil
 			}
 			if err := c.api.Enable(); err != nil {
@@ -254,7 +232,6 @@ func (c *Client) disable() error {
 			return errors.New("native charge limit release is not yet confirmed")
 		}
 	}
-	c.requestedTarget = 0
 	return nil
 }
 
