@@ -94,7 +94,7 @@ Probably not. `batt` was made Apple-Silicon-only after some early development. I
 ### Why does my MacBook stop charging after I close the lid?
 
 !!! note
-    This FAQ applies only to older firmware < `20xxx` using direct charging control. On `20xxx` firmware, the charge limit persists through sleep and `batt` does not disable charging before sleep.
+    This FAQ applies to legacy and adapter modes. Firmware-managed and native modes retain their range or target during sleep; `batt` does not disable charging before sleep in those modes.
 
 TL;DR: This is intended, and is the default behavior. It is described [here](usage.md#disabling-charging-before-sleep). You can turn this feature off by running `sudo batt disable-charging-pre-sleep disable` (not recommended, keep reading).
 
@@ -162,4 +162,4 @@ The reason behind this is that the GUI app does not do the actual battery charge
 
 ### Will batt work after shutdown?
 
-No. batt only works when macOS is running. After shutdown, there is no way to control battery charging until macOS boots up again.
+The legacy loop requires macOS to be running. Native limits can survive a daemon crash, but `batt` releases them on graceful daemon shutdown. Behavior across a full shutdown has not been verified.

@@ -3,17 +3,19 @@
 !!! tip
     It is _highly_ recommended to disable macOS's optimized charging when using `batt`. <br>
     To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`. <br>
-    Built-in charge limit also needs to be disabled if you are on macOS 26.4 or later.
+    Disable the built-in charge limit when using direct SMC control. In native mode, `batt` manages that setting itself.
     
 ### Limit battery charge
 
-Make sure your computer doesn't charge beyond what you said.
+Set a maximum charge target. In native mode, macOS controls enforcement timing and full-charge overrides.
 
 Setting the limit to 10-99 will enable the battery charge limit, limiting the maximum charge to _somewhere around_ your setting. However, setting the limit to 100 will disable the battery charge limit.
 
 By default, `batt` will set a 60% charge limit.
 
 To customize charge limit, see `batt limit`. For example, to set the limit to 80%, run `batt limit 80`. To disable the limit, run `batt disable` or `batt limit 100`.
+
+In native mode, disabling releases the limit and leaves charging to macOS; it does not restore earlier Apple charge-limit settings.
 
 To disable the limit only temporarily, use `batt disable --for=1d`. Your current limit is restored automatically once the duration has elapsed, even if your Mac reboots in the meantime. Durations accept minutes, hours, days and weeks, e.g. `30m`, `2h`, `1d`, `1w`. Setting a limit with `batt limit` before the duration elapses cancels the scheduled restore. `batt status` shows when the limit will be restored.
 
@@ -29,9 +31,9 @@ Your charge limit and lower-limit delta stay as they are, so normal behavior res
 
 A one-time charge and a disabled power adapter exclude each other, because cutting power stops the charge. `batt` refuses to start one while the other is active and names the conflict.
 
-On `20xxx` firmware, `batt charge now` hands the firmware the narrowest range that ends at your limit, and the firmware does not start charging from the top of that range. A one-time charge to the limit can therefore finish one percent short of it. `batt charge full` is exact, because it deactivates the limit instead of narrowing it.
+In firmware-managed mode, `batt charge now` hands the firmware the narrowest range that ends at your limit, and the firmware does not start charging from the top of that range. A one-time charge to the limit can therefore finish one percent short of it. `batt charge full` is exact, because it deactivates the limit instead of narrowing it.
 
-When macOS controls the charge limit natively, it decides when charging starts. `batt charge now` is unavailable in that mode; `batt charge full` temporarily disables the native limit, then restores it at 100%. In adapter mode, both one-time actions use the adapter to control charging.
+Native mode does not support `batt charge now`, because macOS controls when charging resumes. `batt charge full` temporarily releases the native limit, then restores it at 100%. In adapter mode, both one-time actions use the adapter to control charging.
 
 The GUI exposes the same actions in the menubar as **Charge to 70% Now** and **Charge to Full Once**, with the current progress and a **Cancel One-Time Charge** item while one is running.
 
@@ -222,6 +224,8 @@ The GUI also exposes this setting under **Advanced → Prevent Sleep when Adapte
 
 When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
 
+Native mode uses only the upper target and ignores any saved lower-limit delta. The following applies to legacy, firmware-managed and adapter modes.
+
 `batt` has similar features built-in. The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, the lower limit will be set to 2% less than the upper limit. To customize the lower limit, use `batt lower-limit-delta`.
 
 For example, if you want to set the lower limit to be 5% less than the upper limit, run `sudo batt lower-limit-delta 5`. So, if you have your charge (upper) limit set to 60%, the lower limit will be 55%.
@@ -238,7 +242,7 @@ This option makes the MagSafe LED reflect the charging state of your MacBook (or
 
 Note that you must have a MagSafe LED on your MacBook to use this feature.
 
-This also requires `batt` to make the charging decision itself: legacy direct charging control, or adapter mode on gated macOS 27 firmware. It is unavailable with the firmware-managed limit on macOS 27 / 20xxx firmware even if the Mac has a physical MagSafe LED, because firmware owns the charging decision and `batt` cannot reliably mirror its state.
+This also requires legacy direct charging control. It is unavailable on macOS 27 / 20xxx firmware even if the Mac has a physical MagSafe LED, because firmware owns the charging decision and `batt` cannot reliably mirror its state.
 
 To enable MagSafe LED control, run `sudo batt magsafe-led enable`.
 

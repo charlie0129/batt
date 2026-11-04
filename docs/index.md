@@ -69,7 +69,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 !!! tip
     It is _highly_ recommended to disable macOS's optimized charging when using `batt`. <br>
     To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`. <br>
-    Built-in charge limit also needs to be disabled if you are on macOS 26.4 or later.
+    Disable the built-in charge limit when using direct SMC control. In native mode, `batt` manages that setting itself.
 
 * Download `.dmg` file from [Releases](https://github.com/charlie0129/batt/releases) and open it (right-click open if macOS says it's damaged)
 * Drag `batt.app` to `Applications`
