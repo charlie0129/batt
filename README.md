@@ -217,7 +217,7 @@ A one-time charge and a disabled power adapter exclude each other, because cutti
 
 In firmware-managed mode, `batt charge now` hands the firmware the narrowest range that ends at your limit, and the firmware does not start charging from the top of that range. A one-time charge to the limit can therefore finish one percent short of it. `batt charge full` is exact, because it deactivates the limit instead of narrowing it.
 
-In macOS 27 native mode, `batt charge now` reapplies the upper target asynchronously. Older native backends do not support it. `batt charge full` temporarily releases the native limit, then restores it at 100%. In adapter mode, both one-time actions use the adapter to control charging.
+Native mode does not support `batt charge now`, because macOS controls when charging resumes. `batt charge full` temporarily releases the native limit, then restores it at 100%. In adapter mode, both one-time actions use the adapter to control charging.
 
 The GUI exposes the same actions in the menubar as **Charge to 70% Now** and **Charge to Full Once**, with the current progress and a **Cancel One-Time Charge** item while one is running.
 

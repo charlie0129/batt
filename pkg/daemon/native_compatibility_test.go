@@ -1,13 +1,13 @@
 package daemon
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
+	"github.com/charlie0129/batt/pkg/config"
 )
 
 func useExactNativeTargets(t *testing.T) *fakeNativeLimit {
@@ -20,56 +20,58 @@ func useExactNativeTargets(t *testing.T) *fakeNativeLimit {
 	return fake
 }
 
-func TestNativeChargeNowUsesExistingRoute(t *testing.T) {
+func TestExactNativeChargeNowIsRejected(t *testing.T) {
 	file, _ := useTempConfig(t)
 	file.SetUpperLimit(55)
 	file.SetLowerLimit(50)
 	fake := useExactNativeTargets(t)
 	stubAdapter(t, true)
 	stubBatteryCharge(t, 52)
-	if !maintainLoopForced() || fake.limit != 55 {
-		t.Fatal("configured target not applied")
-	}
+
 	response := httptest.NewRecorder()
 	setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/charge-once/limit", nil))
-	if response.Code != http.StatusCreated || file.ChargeOnceTarget() != 55 || fake.limit != 55 {
-		t.Fatalf("existing charge-now action did not request 55%%: %d %s", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), ErrNativeChargeNow.Error()) {
+		t.Fatalf("native charge now must be rejected: %d %s", response.Code, response.Body.String())
 	}
-	if file.UpperLimit() != 55 || file.LowerLimit() != 50 {
-		t.Fatal("one-time charge changed the configured limits")
+	if file.ChargeOnceTarget() != 0 || file.UpperLimit() != 55 || file.LowerLimit() != 50 || len(fake.setCalls) != 0 || fake.disables != 0 {
+		t.Fatalf("rejected charge now changed the configuration or native limit: target=%d native=%+v", file.ChargeOnceTarget(), fake)
 	}
-	disableUnsupportedConfiguredFeatures()
-	if file.ChargeOnceTarget() != 55 || !maintainLoopForced() || fake.limit != 55 {
-		t.Fatal("restart recovery discarded a supported one-time charge")
-	}
-	stubBatteryCharge(t, 55)
-	if !completeChargeOnce(file) || !maintainLoopForced() || fake.limit != 55 {
-		t.Fatal("completion did not retain the configured target")
-	}
-	stubBatteryCharge(t, 54)
-	if !maintainLoopForced() || fake.limit != 55 {
-		t.Fatal("completion resumed following the battery percentage")
+	if maintainManagedChargeOnce(55) || len(fake.setCalls) != 0 || fake.disables != 0 {
+		t.Fatalf("native maintenance must reject charge now without changing the limit: %+v", fake)
 	}
 }
 
-func TestNativeChargeNowFailurePreservesTarget(t *testing.T) {
-	file, _ := useTempConfig(t)
-	file.SetUpperLimit(55)
-	fake := useExactNativeTargets(t)
-	stubAdapter(t, true)
-	stubBatteryCharge(t, 52)
-	if !maintainLoopForced() {
-		t.Fatal("initial target failed")
-	}
-	fake.err = errors.New("native request failed")
-	response := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/charge-once/limit", nil))
-	if response.Code != http.StatusInternalServerError || file.ChargeOnceTarget() != 0 || !strings.Contains(response.Body.String(), "failed to enforce one-time charge") {
-		t.Fatalf("failed one-time action was accepted or persisted: %d %s", response.Code, response.Body.String())
-	}
-	fake.err = nil
-	if !maintainLoopForced() || fake.limit != 55 {
-		t.Fatal("failed one-time request lost the configured target")
+func TestExactNativeChargeOnceRestartRecovery(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		target, want int
+	}{
+		{name: "charge now is cleared", target: 55, want: 0},
+		{name: "charge full is preserved", target: 100, want: 100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			file, path := useTempConfig(t)
+			file.SetUpperLimit(55)
+			file.SetChargeOnceTarget(tc.target)
+			if err := file.Save(); err != nil {
+				t.Fatal(err)
+			}
+			fake := useExactNativeTargets(t)
+			stubAdapter(t, true)
+			mockNativeBatteryCharge(t, 52)
+
+			disableUnsupportedConfiguredFeatures()
+			reloaded, err := config.NewFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if file.ChargeOnceTarget() != tc.want || reloaded.ChargeOnceTarget() != tc.want {
+				t.Fatalf("restart target=%d: in memory=%d, on disk=%d, want=%d", tc.target, file.ChargeOnceTarget(), reloaded.ChargeOnceTarget(), tc.want)
+			}
+			if !maintainLoopForced() || fake.enabled != (tc.want == 0) || (tc.want == 0 && fake.limit != 55) {
+				t.Fatalf("restart did not apply the supported target: target=%d native=%+v", tc.want, fake)
+			}
+		})
 	}
 }
 

@@ -908,7 +908,7 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 		return
 	}
 	mode := getCapabilities().ChargeControlMode
-	if !full && mode == compatibility.ChargeControlNative && !getCapabilities().NativeExactTargets {
+	if !full && mode == compatibility.ChargeControlNative {
 		c.IndentedJSON(http.StatusConflict, ErrNativeChargeNow.Error())
 		_ = c.AbortWithError(http.StatusConflict, ErrNativeChargeNow)
 		return
