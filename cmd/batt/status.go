@@ -198,7 +198,7 @@ func NewStatusCommand() *cobra.Command {
 				if data.capabilities.NativeExactTargets {
 					cmd.Println("  Charge limit configured: " + bool2Text(cfg.UpperLimit() < 100))
 					cmd.Println("    macOS applies the configured target asynchronously; changes can take several minutes.")
-					cmd.Println("    Target is retained during sleep.")
+					cmd.Println("    macOS decides when to charge and retains the target during sleep.")
 				} else {
 					cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100 && !data.batteryInfo.FullChargeOverrideActive()))
 					cmd.Println("    batt sets the limit built into macOS (System Settings -> Battery -> Charge Limit). macOS decides when to charge and retains the limit during sleep.")

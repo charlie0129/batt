@@ -3,6 +3,7 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -116,7 +117,7 @@ func setLimit(c *gin.Context) {
 		if err == nil {
 			msg += fmt.Sprintf(", current charge: %d%%", charge)
 		}
-		if err == nil && charge > l && !caps.NativeExactTargets {
+		if err == nil && charge > l {
 			msg += ". Current charge is above the limit; macOS may use battery power until it falls within the configured range."
 		}
 	case err != nil:
@@ -139,16 +140,13 @@ func setLimit(c *gin.Context) {
 		msg = "set charging limit to 100%. batt will not control charging anymore."
 	}
 
-	if caps.NativeExactTargets {
-		// Coalesce changes while powerd restarts; the loop reads the latest target.
-		select {
-		case maintainLoopRequested <- struct{}{}:
-		default:
-		}
-		c.IndentedJSON(http.StatusAccepted, msg)
+	// Immediate single maintain loop, to avoid waiting for the next loop
+	if applied := maintainLoopForced(); !applied && caps.NativeExactTargets {
+		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	maintainLoopForced()
 
 	c.IndentedJSON(http.StatusCreated, msg)
 }
@@ -558,14 +556,40 @@ func getCharging(c *gin.Context) {
 }
 
 func getBatteryInfo(c *gin.Context) {
-	resp, err := powerinfo.ReadBattery()
-	if err != nil {
+	// Use powerkit-go to retrieve current system info (IOKit only is sufficient here)
+	info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
+	if err != nil || info == nil || info.IOKit == nil {
+		if err == nil {
+			err = errors.New("no IOKit data available")
+		}
 		logrus.Errorf("getBatteryInfo failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
+	// Map powerkit-go data to our backwards-compatible Battery structure
+	var state powerinfo.BatteryState
+	switch {
+	case info.IOKit.State.FullyCharged:
+		state = powerinfo.Full
+	case info.IOKit.State.IsCharging:
+		state = powerinfo.Charging
+	default:
+		state = powerinfo.Discharging
+	}
+
+	// Compute charge rate (mW) using native amperage sign from IOKit
+	powerW := info.IOKit.Battery.Voltage * info.IOKit.Battery.Amperage
+	chargeRateMilliW := int(math.Round(powerW * 1000.0))
+
+	resp := powerinfo.Battery{
+		State:          state,
+		DesignCapacity: info.IOKit.Battery.DesignCapacity,
+		MaxCapacity:    info.IOKit.Battery.MaxCapacity,
+		ChargeRate:     chargeRateMilliW,
+		DesignVoltage:  info.IOKit.Battery.Voltage,
+	}
 	if getCapabilities().ChargeControlMode == compatibility.ChargeControlNative {
 		if active, err := powerui.FullChargeOverride(); err == nil {
 			resp.ChargingToFullOverride = &active
@@ -931,7 +955,7 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 	}
 
 	message := chargeOnceStartedMessage(target, charge, conf.UpperLimit())
-	if err := startChargeOnce(target); err != nil {
+	if err := startChargeOnce(target, charge); err != nil {
 		if restoreErr := restoreNativeLimit(); restoreErr != nil {
 			err = fmt.Errorf("%w; failed to restore native limit: %v", err, restoreErr)
 		}
@@ -941,8 +965,7 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 	}
 
 	// A successful API response requires the first enforcement pass to work.
-	nativeErr := reapplyNativeChargeOnce(target)
-	if applied := maintainLoopForced(); !applied || nativeErr != nil {
+	if !maintainLoopForced() {
 		conf.ClearChargeOnceTarget()
 		if err := conf.Save(); err != nil {
 			conf.SetChargeOnceTarget(target)
@@ -952,9 +975,6 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 			return
 		}
 		err := fmt.Errorf("failed to enforce one-time charge")
-		if nativeErr != nil {
-			err = fmt.Errorf("%w: %w", err, nativeErr)
-		}
 		if restoreErr := restoreNativeLimit(); restoreErr != nil {
 			err = fmt.Errorf("%w; failed to restore native limit: %v", err, restoreErr)
 		}

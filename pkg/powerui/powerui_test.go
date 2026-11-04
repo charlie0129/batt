@@ -9,218 +9,255 @@ import (
 )
 
 type fakeOperations struct {
-	custom, enabled, registered     bool
-	target                          int
-	manual, ignoreManual            bool
-	registeredTargets               []int
-	writes, sliders                 []int
-	disables                        int
-	refreshes                       int
-	fail                            string
-	ignoreWrite, ignoreRegistration bool
-	registrationDelay               int
+	custom, enabled, agentEnabled bool
+	target                        int
+	agentTarget                   int
+	calls                         []string
+	sliderTargets                 []int
+	writeTargets                  []int
+	fail                          string
+	ignoreWrite                   bool
+	ignoreReload                  bool
+	registered, ignoreDisable     bool
+	reads                         int
+	registeredTargets             []int
+	ignoreRegistration            bool
+	registrationReads             int
+	registrationDelay             int
 }
 
 func (f *fakeOperations) Supported() bool                 { return true }
 func (f *fakeOperations) CustomLimits() bool              { return f.custom }
 func (f *fakeOperations) AvailableLimits() ([]int, error) { return []int{100, 80, 90}, nil }
-func (f *fakeOperations) Limit() (int, bool, error)       { return f.target, f.enabled, nil }
-func (f *fakeOperations) Disable() error                  { f.disables++; f.enabled = false; return nil }
-func (f *fakeOperations) RefreshBattery() error {
-	f.refreshes++
-	if f.fail == "refresh" {
-		return errors.New("refresh rejected")
+func (f *fakeOperations) Limit() (int, bool, error) {
+	if f.fail == "agent" || (f.fail == "agentReadback" && len(f.writeTargets) > 0) {
+		return 0, false, errors.New("XPC unavailable")
+	}
+	return f.agentTarget, f.agentEnabled, nil
+}
+func (f *fakeOperations) Preferences() (int, bool, error) {
+	f.reads++
+	if f.fail == "read" || (f.fail == "readback" && f.reads > 1) {
+		return 0, false, errors.New("preferences unavailable")
+	}
+	return f.target, f.enabled, nil
+}
+func (f *fakeOperations) Enable() error {
+	f.calls = append(f.calls, "enable")
+	if f.fail == "enable" {
+		return errors.New("enable rejected")
+	}
+	f.agentEnabled = true
+	f.target, f.enabled = 80, true // Apple's enable API also resets the target.
+	f.agentTarget = 80
+	f.registered = true
+	return nil
+}
+func (f *fakeOperations) WritePreferences(target int) error {
+	f.calls = append(f.calls, "write")
+	f.writeTargets = append(f.writeTargets, target)
+	if f.fail == "write" {
+		return errors.New("flush/notification failed")
+	}
+	if !f.ignoreWrite {
+		f.target, f.enabled = target, true
+	}
+	if !f.ignoreWrite && !f.ignoreReload {
+		f.agentTarget, f.agentEnabled = target, true
+		f.registered = true
+		if !f.ignoreRegistration {
+			f.registeredTargets = nil
+		}
 	}
 	return nil
 }
 func (f *fakeOperations) SetSliderLimit(target int) error {
-	f.sliders = append(f.sliders, target)
+	f.sliderTargets = append(f.sliderTargets, target)
 	return nil
 }
-func (f *fakeOperations) Policy() (int, bool, error) {
-	if f.fail == "read" || (f.fail == "readback" && len(f.writes) > 0) {
-		return 0, false, errors.New("policy unavailable")
+func (f *fakeOperations) Disable() error {
+	f.calls = append(f.calls, "disable")
+	if f.fail == "disable" {
+		return errors.New("disable rejected")
 	}
-	return f.target, f.enabled, nil
-}
-func (f *fakeOperations) SetPolicy(target int) error {
-	f.writes = append(f.writes, target)
-	if f.fail == "write" {
-		return errors.New("write/reload failed")
-	}
-	if f.ignoreWrite {
-		return nil
-	}
-	f.target, f.enabled = target, target < 100
-	f.registered = target < 100
-	if target < 100 && !f.ignoreManual {
-		f.manual = false
-	}
-	if !f.ignoreRegistration {
-		f.registeredTargets = nil
+	if !f.ignoreDisable {
+		f.enabled, f.agentEnabled, f.registered = false, false, false
 	}
 	return nil
 }
-func (f *fakeOperations) Registrations() ([]int, bool, error) {
-	if f.fail == "registration" || (f.fail == "registrationReadback" && len(f.writes) > 0) {
-		return nil, false, errors.New("registration unavailable")
+
+func (f *fakeOperations) ManualLimitRegistered() (bool, error) {
+	if f.fail == "registration" {
+		return false, errors.New("registration read failed")
 	}
-	if len(f.writes) > 0 && f.registrationDelay > 0 {
+	return f.registered, nil
+}
+
+func (f *fakeOperations) RegisteredManualLimits() ([]int, error) {
+	f.registrationReads++
+	if f.fail == "registration" || (f.fail == "registrationReadback" && len(f.writeTargets) > 0) {
+		return nil, errors.New("registration read failed")
+	}
+	if len(f.writeTargets) > 0 && f.registrationDelay > 0 {
 		f.registrationDelay--
-		return nil, f.manual, nil
+		return nil, nil
 	}
 	if f.registeredTargets != nil {
-		return f.registeredTargets, f.manual, nil
+		return f.registeredTargets, nil
 	}
 	if f.registered {
-		return []int{f.target}, f.manual, nil
+		return []int{f.agentTarget}, nil
 	}
-	return nil, f.manual, nil
+	return nil, nil
 }
 
-func TestNativeCeilingTargets(t *testing.T) {
-	targets := []int{10, 55, 99}
-	for _, target := range targets {
-		t.Run(fmt.Sprint(target), func(t *testing.T) {
-			f := &fakeOperations{custom: true, target: 100}
-			c := &Client{api: f}
-			if err := c.SetLimit(target); err != nil {
-				t.Fatal(err)
-			}
-			got, on, err := c.Limit()
-			if err != nil || !on || got != target || len(f.sliders) > 0 || !reflect.DeepEqual(f.writes, []int{target}) {
-				t.Fatalf("ceiling not applied: %+v %v", f, err)
-			}
-			if err := c.SetLimit(target); err != nil || !reflect.DeepEqual(f.writes, []int{target, target}) || f.refreshes != 2 {
-				t.Fatalf("unchanged ceiling was not reapplied: %+v %v", f, err)
-			}
-		})
-	}
-}
-
-func TestNativeCeilingReconcilesCompetingManualLimit(t *testing.T) {
-	for _, ignored := range []bool{false, true} {
-		f := &fakeOperations{custom: true, target: 55, enabled: true, registered: true, manual: true, ignoreManual: ignored}
-		c := &Client{api: f}
-		if target, on, err := c.Limit(); err != nil || !on || target != 0 {
-			t.Fatalf("manual conflict concealed: %d %t %v", target, on, err)
-		}
-		err := c.SetLimit(55)
-		if (err != nil) != ignored || !reflect.DeepEqual(f.writes, []int{55}) {
-			t.Fatalf("ignored=%t: writes=%v err=%v", ignored, f.writes, err)
-		}
-	}
-}
-
-func TestNativeCeilingReleasePreservesManualLimit(t *testing.T) {
-	f := &fakeOperations{custom: true, target: 55, enabled: true, registered: true, manual: true}
+func TestExactNativeTargetAfterDisabledState(t *testing.T) {
+	f := &fakeOperations{custom: true, target: 100}
 	c := &Client{api: f}
-	if err := c.Disable(); err != nil || !f.manual || f.enabled || f.registered {
-		t.Fatalf("release changed Apple's limit or retained batt's policy: %+v %v", f, err)
+	if err := c.SetLimit(69); err != nil {
+		t.Fatal(err)
 	}
-	if err := c.Disable(); err != nil || len(f.writes) != 1 {
-		t.Fatalf("manual-only limit triggered another release: %+v %v", f, err)
+	if !reflect.DeepEqual(f.calls, []string{"enable", "write"}) || len(f.sliderTargets) != 0 {
+		t.Fatalf("sub-80 target must re-engage then use preferences, calls=%v slider=%v", f.calls, f.sliderTargets)
 	}
-}
-
-func TestNativeCeilingRepairsMissingStaleAndUnsafeRegistrations(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		targets []int
-	}{
-		{"missing", []int{}}, {"stale", []int{70}}, {"stale mirror", []int{55, 70}},
-		{"wrong flags", []int{0}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := &fakeOperations{custom: true, enabled: true, target: 55, registeredTargets: tc.targets, ignoreRegistration: true}
-			c := &Client{api: f}
-			if target, on, err := c.Limit(); err != nil || !on || target != 0 {
-				t.Fatalf("drift concealed: %d %t %v", target, on, err)
-			}
-			if err := c.SetLimit(55); err == nil || !strings.Contains(err.Error(), "not confirmed") {
-				t.Fatalf("unconfirmed write succeeded: %v", err)
-			}
-			f.registeredTargets = []int{55, 55}
-			if target, on, err := c.Limit(); err != nil || !on || target != 55 {
-				t.Fatal(target, on, err)
-			}
-			if err := c.SetLimit(55); err != nil || len(f.writes) != 2 {
-				t.Fatal(f.writes, err)
-			}
-		})
+	limit, enabled, err := c.Limit()
+	if err != nil || limit != 69 || !enabled {
+		t.Fatalf("exact read-back: %d %t %v", limit, enabled, err)
+	}
+	if err := c.SetLimit(69); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.writeTargets) != 1 {
+		t.Fatalf("unchanged target rewritten: %v", f.writeTargets)
+	}
+	if err := c.SetLimit(61); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(f.writeTargets, []int{69, 61}) {
+		t.Fatal(f.writeTargets)
+	}
+	if !reflect.DeepEqual(f.calls, []string{"enable", "write", "write"}) {
+		t.Fatalf("changing an enabled target must not reset it to Apple's 80%% default: %v", f.calls)
 	}
 }
 
-func TestNativeCeilingWriteFailures(t *testing.T) {
-	for _, target := range []int{55, 100} {
-		for _, stage := range []string{"read", "write", "readback", "registration", "registrationReadback", "ignored"} {
-			t.Run(fmt.Sprintf("%d/%s", target, stage), func(t *testing.T) {
-				f := &fakeOperations{custom: true, target: 100, fail: stage, ignoreWrite: stage == "ignored"}
-				if target == 100 {
-					f.target, f.enabled, f.registered = 55, true, true
+func TestNativeStaleEnabledPreferenceReengagesAgent(t *testing.T) {
+	f := &fakeOperations{custom: true, target: 69, enabled: true, agentEnabled: false}
+	c := &Client{api: f}
+	if _, enabled, err := c.Limit(); err != nil || enabled {
+		t.Fatalf("stale preference reported enabled: %t %v", enabled, err)
+	}
+	if err := c.SetLimit(69); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(f.calls, []string{"enable", "write"}) {
+		t.Fatal(f.calls)
+	}
+}
+
+func TestNativeStaleAgentTargetIsRetriedWithoutResettingHold(t *testing.T) {
+	f := &fakeOperations{custom: true, target: 55, enabled: true,
+		agentTarget: 70, agentEnabled: true, ignoreReload: true}
+	c := &Client{api: f}
+	for range 2 {
+		if target, enabled, err := c.Limit(); err != nil || !enabled || target != 0 {
+			t.Fatalf("pending target must remain enabled and require reconciliation: target=%d enabled=%t err=%v", target, enabled, err)
+		}
+		if err := c.SetLimit(55); err == nil || !strings.Contains(err.Error(), "not confirmed") {
+			t.Fatalf("stale agent reported success: %v", err)
+		}
+	}
+	if !reflect.DeepEqual(f.calls, []string{"write", "write"}) || f.agentTarget != 70 {
+		t.Fatalf("pending target was not retried or existing hold was reset: %+v", f)
+	}
+	f.ignoreReload = false
+	if err := c.SetLimit(55); err != nil {
+		t.Fatal(err)
+	}
+	if target, loaded, err := c.Limit(); err != nil || !loaded || target != 55 {
+		t.Fatalf("exact target did not load: %d %t %v", target, loaded, err)
+	}
+	if err := c.SetLimit(55); err != nil || len(f.calls) != 3 {
+		t.Fatalf("unchanged loaded target should not be rewritten: %v %v", f.calls, err)
+	}
+}
+
+func TestStaleDisabledPreferencesDoNotHideActiveAgent(t *testing.T) {
+	f := &fakeOperations{custom: true, target: 100, agentTarget: 55, agentEnabled: true}
+	c := &Client{api: f}
+	if target, enabled, err := c.Limit(); err != nil || !enabled || target != 0 {
+		t.Fatalf("active agent hidden by disabled preference: %d %t %v", target, enabled, err)
+	}
+	if err := c.Disable(); err != nil || !reflect.DeepEqual(f.calls, []string{"disable"}) {
+		t.Fatalf("stale registration not released directly: %v %v", f.calls, err)
+	}
+}
+
+func TestEveryExactNativeTarget(t *testing.T) {
+	// These are software checks, not a claim that every percentage was tested
+	// on a real battery. In particular, no test may cycle the host battery.
+	for target := 10; target < 100; target++ {
+		for _, enabled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%d/enabled=%t", target, enabled), func(t *testing.T) {
+				previous := 80
+				if target == previous {
+					previous = 85
 				}
-				if err := (&Client{api: f}).SetLimit(target); err == nil {
-					t.Fatal("failed or ignored write succeeded")
+				f := &fakeOperations{custom: true, target: previous, agentTarget: previous, enabled: enabled, agentEnabled: enabled}
+				c := &Client{api: f}
+				if err := c.SetLimit(target); err != nil {
+					t.Fatal(err)
 				}
-				if (stage == "read" || stage == "registration") && len(f.writes) > 0 {
-					t.Fatal("wrote after failed precondition")
+				got, on, err := c.Limit()
+				if err != nil || !on || got != target || len(f.sliderTargets) != 0 {
+					t.Fatalf("exact %d%% target lost: got=%d enabled=%t err=%v slider=%v", target, got, on, err, f.sliderTargets)
+				}
+				if !reflect.DeepEqual(f.writeTargets, []int{target}) {
+					t.Fatalf("unexpected intermediate target: %v", f.writeTargets)
+				}
+				want := []string{"write"}
+				if !enabled {
+					want = []string{"enable", "write"}
+				}
+				if !reflect.DeepEqual(f.calls, want) {
+					t.Fatalf("enabled hold was reset: %v", f.calls)
 				}
 			})
 		}
 	}
 }
 
-func TestNativeCeilingRelease(t *testing.T) {
-	for _, tc := range []struct {
-		name                string
-		enabled, registered bool
-	}{
-		{"own policy", true, true}, {"saved but not loaded", true, false},
-		{"live but not saved", false, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := &fakeOperations{custom: true, target: 55, enabled: tc.enabled, registered: tc.registered}
-			c := &Client{api: f}
-			if err := c.SetLimit(100); err != nil || f.enabled || f.registered {
-				t.Fatalf("release: %+v %v", f, err)
+func TestNativeWriteFailuresAreNotSuccess(t *testing.T) {
+	for _, stage := range []string{"read", "agent", "enable", "write", "readback", "ignored", "agentReadback", "registrationReadback"} {
+		t.Run(stage, func(t *testing.T) {
+			f := &fakeOperations{custom: true, target: 100, fail: stage, ignoreWrite: stage == "ignored"}
+			if err := (&Client{api: f}).SetLimit(69); err == nil {
+				t.Fatal("unconfirmed write reported success")
 			}
-			if !reflect.DeepEqual(f.writes, []int{100}) {
-				t.Fatal(f.writes)
-			}
-			if err := c.Disable(); err != nil || len(f.writes) != 1 {
-				t.Fatal("clean release not idempotent", err)
+			if (stage == "read" || stage == "agent" || stage == "enable") && len(f.writeTargets) > 0 {
+				t.Fatal("wrote after failed precondition")
 			}
 		})
 	}
 }
 
-func TestNativeCeilingReleaseRequiresLiveRegistrationToDisappear(t *testing.T) {
-	f := &fakeOperations{custom: true, target: 55, enabled: true, registeredTargets: []int{55}, ignoreRegistration: true}
-	c := &Client{api: f}
-	if err := c.Disable(); err == nil {
-		t.Fatal("release succeeded while the live policy remained")
+func TestNativeReleaseUsesAgentAndHandlesStaleDisabledState(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		f := &fakeOperations{custom: true, target: 69, enabled: enabled, agentEnabled: enabled, registered: true}
+		if err := (&Client{api: f}).SetLimit(100); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"disable"}
+		if !enabled {
+			want = []string{"enable", "disable"}
+		}
+		if !reflect.DeepEqual(f.calls, want) || len(f.writeTargets) > 0 {
+			t.Fatalf("release: %+v", f)
+		}
 	}
-	f.registeredTargets = []int{}
-	if err := c.Disable(); err != nil || len(f.writes) != 1 {
-		t.Fatal("released policy rewritten", f.writes, err)
-	}
-}
-
-func TestNativeCeilingRegistrationDelay(t *testing.T) {
-	f := &fakeOperations{custom: true, target: 100, registrationDelay: 2}
-	if err := (&Client{api: f}).SetLimit(55); err != nil || len(f.writes) != 1 || f.refreshes != 1 {
-		t.Fatal(f.writes, err)
-	}
-}
-
-func TestTelemetryRefreshFailureDoesNotFailPolicyWrite(t *testing.T) {
-	f := &fakeOperations{custom: true, target: 100, fail: "refresh"}
-	c := &Client{api: f}
-	if err := c.SetLimit(55); err != nil {
-		t.Fatal(err)
-	}
-	if len(f.writes) != 1 || f.refreshes != 1 {
-		t.Fatal("unexpected policy writes or telemetry refreshes", f.writes, f.refreshes)
+	f := &fakeOperations{custom: true, agentEnabled: true, fail: "disable"}
+	if err := (&Client{api: f}).Disable(); err == nil {
+		t.Fatal("disable failure hidden")
 	}
 }
 
@@ -229,25 +266,25 @@ func TestNativeLimitsAndOlderSystemFallback(t *testing.T) {
 		f := &fakeOperations{custom: custom}
 		c := &Client{api: f}
 		if c.SupportsExactTargets() != custom {
-			t.Fatal("wrong exact-target capability")
+			t.Fatal("exact native targets require the preference path")
 		}
 		limits, err := c.AvailableLimits()
 		if err != nil {
 			t.Fatal(err)
 		}
 		if custom {
-			if len(limits) != 91 || limits[0] != 10 || limits[90] != 100 {
+			if len(limits) != 91 || limits[0] != 10 || limits[59] != 69 || limits[90] != 100 {
 				t.Fatal(limits)
 			}
 		} else {
 			if !reflect.DeepEqual(limits, []int{80, 90, 100}) {
 				t.Fatal(limits)
 			}
-			if err := c.SetLimit(90); err != nil || !reflect.DeepEqual(f.sliders, []int{90}) || len(f.writes) > 0 {
-				t.Fatal(f, err)
+			if err := c.SetLimit(90); err != nil {
+				t.Fatal(err)
 			}
-			if err := c.Disable(); err != nil || f.disables != 1 {
-				t.Fatal(f, err)
+			if !reflect.DeepEqual(f.sliderTargets, []int{90}) || len(f.calls) > 0 {
+				t.Fatal(f)
 			}
 		}
 		for _, target := range []int{-1, 0, 9, 101} {
@@ -255,5 +292,172 @@ func TestNativeLimitsAndOlderSystemFallback(t *testing.T) {
 				t.Fatalf("accepted %d", target)
 			}
 		}
+	}
+}
+
+func TestNativeDisableLifecycle(t *testing.T) {
+	for _, target := range []int{10, 55, 70, 99} {
+		t.Run(fmt.Sprint(target), func(t *testing.T) {
+			f := &fakeOperations{custom: true, target: 100}
+			c := &Client{api: f}
+			for range 2 {
+				if err := c.SetLimit(target); err != nil || !f.registered {
+					t.Fatalf("enable: %v registered=%t", err, f.registered)
+				}
+				if err := c.SetLimit(100); err != nil || f.registered || f.agentEnabled || f.enabled {
+					t.Fatalf("disable left control active: err=%v state=%+v", err, f)
+				}
+				calls := len(f.calls)
+				if err := c.Disable(); err != nil || len(f.calls) != calls {
+					t.Fatalf("clean disable must not re-enable an 80%% limit: %v %v", f.calls, err)
+				}
+			}
+		})
+	}
+}
+
+func TestNativeDisableChecksPolicyAndQueuedSettings(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		saved, registered bool
+	}{
+		{"stale registration", false, true},
+		{"pending preference reload", true, false},
+		{"both stale", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeOperations{custom: true, target: 55, enabled: tc.saved, registered: tc.registered}
+			if err := (&Client{api: f}).Disable(); err != nil {
+				t.Fatal(err)
+			}
+			if f.registered || f.enabled || f.agentEnabled || !reflect.DeepEqual(f.calls, []string{"enable", "disable"}) {
+				t.Fatalf("release skipped stale/pending state: %+v", f)
+			}
+		})
+	}
+}
+
+func TestNativeDisableDoesNotClaimUnconfirmedRelease(t *testing.T) {
+	for _, stage := range []string{"registration", "ignored disable", "enable", "disable"} {
+		t.Run(stage, func(t *testing.T) {
+			f := &fakeOperations{custom: true, target: 55, registered: true, fail: stage,
+				ignoreDisable: stage == "ignored disable"}
+			if err := (&Client{api: f}).Disable(); err == nil {
+				t.Fatalf("unconfirmed release reported success: %+v", f)
+			}
+		})
+	}
+}
+
+func TestNativeRegistrationRetriesUntilConfirmed(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		registered []int
+	}{
+		{"missing", []int{}},
+		{"stale", []int{70}},
+		{"stale mirror", []int{55, 70}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeOperations{custom: true, target: 55, enabled: true,
+				agentTarget: 55, agentEnabled: true, registeredTargets: tc.registered,
+				ignoreRegistration: true}
+			c := &Client{api: f}
+			if target, on, err := c.Limit(); err != nil || !on || target != 0 {
+				t.Fatalf("agent agreement concealed missing/stale powerd limit: %d %t %v", target, on, err)
+			}
+			if err := c.SetLimit(55); err == nil || !strings.Contains(err.Error(), "not confirmed") {
+				t.Fatalf("unconfirmed registration reported success: %v", err)
+			}
+			for range 2 {
+				if target, on, err := c.Limit(); err != nil || !on || target != 0 {
+					t.Fatalf("pending registration reported confirmed: %d %t %v", target, on, err)
+				}
+				if err := c.SetLimit(55); err == nil || !strings.Contains(err.Error(), "not confirmed") {
+					t.Fatalf("unconfirmed registration reported success: %v", err)
+				}
+			}
+			if !reflect.DeepEqual(f.calls, []string{"write", "write", "write"}) {
+				t.Fatalf("unconfirmed target was not retried on every call: %v", f.calls)
+			}
+			f.registeredTargets = []int{55, 55}
+			if target, on, err := c.Limit(); err != nil || !on || target != 55 {
+				t.Fatalf("matching agent and mirror not confirmed: %d %t %v", target, on, err)
+			}
+			if err := c.SetLimit(55); err != nil || len(f.calls) != 3 {
+				t.Fatal(f.calls, err)
+			}
+			// Drift after confirmation also repairs immediately.
+			f.registeredTargets = []int{}
+			if err := c.SetLimit(55); err == nil || len(f.calls) != 4 {
+				t.Fatal(f.calls, err)
+			}
+		})
+	}
+}
+
+func TestNativePendingTargetCanChangeOrReleaseImmediately(t *testing.T) {
+	f := &fakeOperations{custom: true, target: 55, enabled: true,
+		agentTarget: 55, agentEnabled: true, registeredTargets: []int{}, ignoreRegistration: true}
+	c := &Client{api: f}
+	if err := c.SetLimit(55); err == nil {
+		t.Fatal("unconfirmed registration reported success")
+	}
+	if err := c.SetLimit(52); err == nil {
+		t.Fatal("unconfirmed registration reported success")
+	}
+	if !reflect.DeepEqual(f.writeTargets, []int{55, 52}) {
+		t.Fatal(f.writeTargets)
+	}
+	if err := c.Disable(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetLimit(52); err == nil {
+		t.Fatal("unconfirmed registration reported success")
+	}
+	if !reflect.DeepEqual(f.calls, []string{"write", "write", "disable", "enable", "write"}) {
+		t.Fatal(f.calls)
+	}
+}
+
+func TestNativeWriteConfirmsRegistrationBeforeReturning(t *testing.T) {
+	for _, delay := range []int{0, 2} {
+		t.Run(fmt.Sprintf("registrationDelay=%d", delay), func(t *testing.T) {
+			f := &fakeOperations{custom: true, target: 100, registrationDelay: delay}
+			if err := (&Client{api: f}).SetLimit(55); err != nil {
+				t.Fatal(err)
+			}
+			if f.registrationReads != delay+1 || !reflect.DeepEqual(f.writeTargets, []int{55}) {
+				t.Fatalf("write returned without confirming registration or rewrote while waiting: %+v", f)
+			}
+		})
+	}
+}
+
+func TestNativeRegistrationReadFailureIsNotConfirmation(t *testing.T) {
+	f := &fakeOperations{custom: true, target: 55, enabled: true,
+		agentTarget: 55, agentEnabled: true, fail: "registration"}
+	c := &Client{api: f}
+	if _, _, err := c.Limit(); err == nil {
+		t.Fatal("registration failure hidden")
+	}
+	if err := c.SetLimit(55); err == nil || len(f.calls) != 0 {
+		t.Fatal("failed check caused a blind rewrite", f.calls, err)
+	}
+}
+
+func TestSliderNativeDoesNotUseRegistration(t *testing.T) {
+	f := &fakeOperations{agentTarget: 80, agentEnabled: true, fail: "registration"}
+	c := &Client{api: f}
+	if target, on, err := c.Limit(); err != nil || !on || target != 80 {
+		t.Fatal(target, on, err)
+	}
+	for range 2 {
+		if err := c.SetLimit(90); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if f.registrationReads != 0 || !reflect.DeepEqual(f.sliderTargets, []int{90, 90}) {
+		t.Fatal("slider backend entered exact-native reconciliation", f)
 	}
 }

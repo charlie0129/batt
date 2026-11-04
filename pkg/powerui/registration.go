@@ -11,46 +11,69 @@ import (
 	"time"
 )
 
-// Registrations reads powerd independently of PowerUI's feature flag. Do not
+// Read powerd's registrations independently of PowerUI's feature flag. Do not
 // treat a failed command or an unfamiliar output format as an empty policy list.
-func (nativeBridge) Registrations() (targets []int, manual bool, err error) {
+func readRegistrationOutput() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/usr/bin/pmset", "-g", "battlimit")
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, false, fmt.Errorf("read native charge registrations: %w", err)
+		return "", fmt.Errorf("read native charge registrations: %w", err)
 	}
-	return policyTargets(string(output))
+	return string(output), nil
+}
+
+// RegisteredManualLimits returns active manual limits only. Other policies cannot
+// confirm our request, and terminated registrations no longer enforce a target.
+func (nativeBridge) RegisteredManualLimits() ([]int, error) {
+	output, err := readRegistrationOutput()
+	if err != nil {
+		return nil, err
+	}
+	return manualLimitTargets(output, false)
+}
+
+func (nativeBridge) ManualLimitRegistered() (bool, error) {
+	output, err := readRegistrationOutput()
+	if err != nil {
+		return false, err
+	}
+	return manualLimitRegistered(output)
 }
 
 var registrationRow = regexp.MustCompile(`\{[^{}]*\}`)
 
-func policyTargets(output string) (targets []int, manual bool, err error) {
+func manualLimitRegistered(output string) (bool, error) {
+	limits, err := manualLimitTargets(output, true)
+	return len(limits) != 0, err
+}
+
+func manualLimitTargets(output string, includeTerminated bool) ([]int, error) {
 	invalid := fmt.Errorf("unrecognized pmset battery-limit output; registration cannot be confirmed")
 	if len(output) > 64*1024 {
-		return nil, false, invalid
+		return nil, invalid
 	}
 	output = strings.TrimSpace(output)
 	if output == "No battery level limits set" {
-		return nil, false, nil
+		return nil, nil
 	}
 	body, ok := strings.CutPrefix(output, "Battery level limits:")
 	if !ok {
-		return nil, false, invalid
+		return nil, invalid
 	}
 	body = strings.TrimSpace(body)
 	if !strings.HasPrefix(body, "(") || !strings.HasSuffix(body, ")") {
-		return nil, false, invalid
+		return nil, invalid
 	}
 	body = strings.TrimSpace(body[1 : len(body)-1])
 	if body == "" {
-		return nil, false, nil
+		return nil, nil
 	}
 	rows := registrationRow.FindAllString(body, -1)
 	if len(rows) == 0 {
-		return nil, false, invalid
+		return nil, invalid
 	}
 	for i, separator := range registrationRow.Split(body, -1) {
 		want := ","
@@ -58,9 +81,10 @@ func policyTargets(output string) (targets []int, manual bool, err error) {
 			want = ""
 		}
 		if strings.TrimSpace(separator) != want {
-			return nil, false, invalid
+			return nil, invalid
 		}
 	}
+	var limits []int
 	for _, row := range rows {
 		values := map[string]string{}
 		for _, field := range strings.Split(row[1:len(row)-1], ";") {
@@ -70,7 +94,7 @@ func policyTargets(output string) (targets []int, manual bool, err error) {
 			key, value, found := strings.Cut(field, "=")
 			key, value = strings.TrimSpace(key), strings.TrimSpace(value)
 			if !found || values[key] != "" || value == "" {
-				return nil, false, invalid
+				return nil, invalid
 			}
 			values[key] = value
 		}
@@ -78,7 +102,7 @@ func policyTargets(output string) (targets []int, manual bool, err error) {
 		for key, maxValue := range maxima {
 			n, err := strconv.ParseUint(values[key], 10, 32)
 			if err != nil || n > maxValue || (key == "chargeSocLimitSoc" && n == 0) {
-				return nil, false, invalid
+				return nil, invalid
 			}
 		}
 		reason := values["chargeSocLimitReason"]
@@ -86,28 +110,16 @@ func policyTargets(output string) (targets []int, manual bool, err error) {
 			var err error
 			reason, err = strconv.Unquote(reason)
 			if err != nil {
-				return nil, false, invalid
+				return nil, invalid
 			}
 		}
 		if reason == "" {
-			return nil, false, invalid
+			return nil, invalid
 		}
-		if reason == "manualChargeLimit" && values["Terminated"] == "0" {
-			manual = true
-		}
-		if reason == "battChargeLimit" {
+		if reason == "manualChargeLimit" && (includeTerminated || values["Terminated"] == "0") {
 			target, _ := strconv.Atoi(values["chargeSocLimitSoc"])
-			if !validCeilingFlags(values) {
-				// A matching target with unsafe flags still needs reconciliation.
-				target = 0
-			}
-			targets = append(targets, target)
+			limits = append(limits, target)
 		}
 	}
-	return targets, manual, nil
-}
-
-func validCeilingFlags(values map[string]string) bool {
-	return values["Terminated"] == "0" && values["chargeSocLimitDrain"] == "0" &&
-		values["chargeSocLimitNoChargeToFull"] == "0" && values["chargeSocLimitIsEOC"] == "1"
+	return limits, nil
 }

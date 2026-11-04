@@ -1,15 +1,15 @@
-// Package powerui controls native charging. On macOS 27 a private powerd
-// ceiling policy stops charging without requesting discharge or suppressing
-// Apple's full-charge maintenance. Older systems use PowerUI's slider limit.
+// Package powerui controls the manual charge limit through PowerUIAgent.
+// On macOS 27 its slider setter clamps sub-80 targets, so the root daemon
+// writes the agent's exact target preference and asks it to reload instead.
+// A saved preference is not proof that the battery has stopped charging.
 package powerui
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 // Controller is the subset of PowerUI charge control used by the daemon.
@@ -18,17 +18,19 @@ type Controller interface {
 	AvailableLimits() ([]int, error)
 	// SupportsExactTargets reports whether exact percentage targets are available.
 	SupportsExactTargets() bool
-	// Limit checks the stored policy and powerd registrations, not physical
-	// charging current. A zero target with enabled=true requires reconciliation.
+	// Limit checks the target, feature switch and (on macOS 27) powerd
+	// registration, not physical charging current.
+	// A zero target with enabled=true means the saved target, agent or
+	// registration disagree; callers must reconcile rather than assume a disabled limiter.
 	Limit() (limit int, enabled bool, err error)
-	// SetLimit reapplies a target and confirms its registration; 100 releases
+	// SetLimit requests a target and confirms its registration; 100 releases
 	// the native limit. An unconfirmed target returns an error and is retried
 	// on the next call. Slider-only backends verify through their setter.
 	SetLimit(limit int) error
 	Disable() error
 }
 
-// The client chooses the no-drain policy or the older slider API. Tests replace
+// The client chooses the preference path or the slider API. Tests replace
 // these operations without calling Apple services or changing preferences.
 type operations interface {
 	Supported() bool
@@ -36,11 +38,12 @@ type operations interface {
 	Limit() (int, bool, error)
 	Disable() error
 	CustomLimits() bool
-	Policy() (int, bool, error)
-	SetPolicy(int) error
+	Preferences() (int, bool, error)
+	Enable() error
+	WritePreferences(int) error
 	SetSliderLimit(int) error
-	Registrations() (targets []int, manual bool, err error)
-	RefreshBattery() error
+	ManualLimitRegistered() (bool, error)
+	RegisteredManualLimits() ([]int, error)
 }
 
 // Client serializes access to the native charge-limit service.
@@ -89,28 +92,37 @@ func (c *Client) Limit() (int, bool, error) {
 }
 
 func (c *Client) customLimit() (int, bool, error) {
-	limit, enabled, err := c.api.Policy()
+	limit, enabled, err := c.api.Preferences()
 	if err != nil {
 		return 0, false, err
 	}
-	targets, manual, err := c.api.Registrations()
+	// A saved preference does not prove the agent has loaded it. Its getter
+	// reports exact sub-80 targets on macOS 27 (unlike its clamping setter).
+	// Keep retrying if the agent still has a previous target in memory.
+	agentLimit, agentEnabled, err := c.api.Limit()
 	if err != nil {
-		return 0, enabled, err
+		return 0, false, err
 	}
-	if enabled != (len(targets) > 0) {
+	if agentEnabled && (!enabled || agentLimit != limit) {
+		// Preserve enabled=true so a request to disable still releases the
+		// existing registration while a new target is pending.
 		return 0, true, nil
 	}
-	// An Apple manual limit can request discharge even when our ceiling agrees.
-	// Leave it alone once batt's own policy has been released.
-	if enabled && manual {
-		return 0, true, nil
-	}
-	for _, target := range targets {
-		if target != limit {
+	if enabled && agentEnabled {
+		registered, err := c.api.RegisteredManualLimits()
+		if err != nil {
+			return 0, true, err
+		}
+		if len(registered) == 0 {
 			return 0, true, nil
 		}
+		for _, target := range registered {
+			if target != limit {
+				return 0, true, nil
+			}
+		}
 	}
-	return limit, enabled, nil
+	return limit, enabled && agentEnabled, nil
 }
 
 func (c *Client) SetLimit(limit int) error {
@@ -119,44 +131,112 @@ func (c *Client) SetLimit(limit int) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if limit == 100 {
+		return c.disable()
+	}
 	if !c.api.CustomLimits() {
-		if limit == 100 {
-			return c.api.Disable()
-		}
 		return c.api.SetSliderLimit(limit)
 	}
-	wantEnabled := limit < 100
-	_, enabled, err := c.customLimit()
+	current, enabled, err := c.customLimit()
 	if err != nil {
 		return fmt.Errorf("read native target before changing it: %w", err)
 	}
-	if !wantEnabled && !enabled {
+	if enabled && current == limit {
 		return nil
 	}
-	if err := c.api.SetPolicy(limit); err != nil {
-		return fmt.Errorf("write native no-drain ceiling: %w", err)
+	// customLimit returns a zero target when the agent has stale settings. That
+	// needs another preference notification, not an enable call that resets
+	// the target to 80% and can release a lower hold.
+	_, agentEnabled, err := c.api.Limit()
+	if err != nil {
+		return fmt.Errorf("read native feature state before changing it: %w", err)
 	}
-	// Let powerd load the policy before confirming all flags and registrations.
-	// This verifies policy, not the battery's physical response.
+	// Explicitly re-engage the agent after a previous disable. A preference
+	// notification alone can leave it in its ChargingToFull state.
+	// enableMCL temporarily selects Apple's 80% default. Do not call it for
+	// an already-enabled controller: it would release an existing lower hold.
+	if !agentEnabled {
+		if err := c.api.Enable(); err != nil {
+			return fmt.Errorf("enable native charge control: %w", err)
+		}
+	}
+	if err := c.api.WritePreferences(limit); err != nil {
+		return fmt.Errorf("write native charge target: %w", err)
+	}
+	current, enabled, err = c.api.Preferences()
+	if err != nil {
+		return fmt.Errorf("verify native charge target: %w", err)
+	}
+	if !enabled || current != limit {
+		return fmt.Errorf("native target did not retain %d%% (read %d%%, enabled=%t)", limit, current, enabled)
+	}
+	// Allow the reload notification to reach the agent before confirming
+	// registration. This checks policy, not the battery's physical response.
 	for attempt := 0; attempt < 10; attempt++ {
 		if attempt > 0 {
 			time.Sleep(100 * time.Millisecond)
 		}
-		current, enabled, err := c.customLimit()
+		current, enabled, err = c.customLimit()
 		if err != nil {
 			return fmt.Errorf("verify native charge registration: %w", err)
 		}
-		if enabled == wantEnabled && (!enabled || current == limit) {
-			// Avoid displaying the pre-reload charging sample for another minute.
-			if err := c.api.RefreshBattery(); err != nil {
-				logrus.WithError(err).Warn("native target applied, but battery telemetry refresh failed")
-			}
+		if enabled && current == limit {
 			return nil
 		}
 	}
 	return fmt.Errorf("native charge target %d%% registration is not confirmed; batt will retry", limit)
 }
 
+func (c *Client) disable() error {
+	// A disabled preference may have left a registration behind. The agent
+	// only removes it through disableMCL while it believes it is enabled.
+	if c.api.CustomLimits() {
+		_, enabled, err := c.api.Limit()
+		if err != nil {
+			return err
+		}
+		if !enabled {
+			_, savedEnabled, err := c.api.Preferences()
+			if err != nil {
+				return err
+			}
+			registered, err := c.api.ManualLimitRegistered()
+			if err != nil {
+				return err
+			}
+			if !savedEnabled && !registered {
+				return nil
+			}
+			if err := c.api.Enable(); err != nil {
+				return err
+			}
+		}
+	}
+	if err := c.api.Disable(); err != nil {
+		return err
+	}
+	if c.api.CustomLimits() {
+		_, enabled, err := c.api.Limit()
+		if err != nil {
+			return err
+		}
+		_, savedEnabled, err := c.api.Preferences()
+		if err != nil {
+			return err
+		}
+		registered, err := c.api.ManualLimitRegistered()
+		if err != nil {
+			return err
+		}
+		if enabled || savedEnabled || registered {
+			return errors.New("native charge limit release is not yet confirmed")
+		}
+	}
+	return nil
+}
+
 func (c *Client) Disable() error {
-	return c.SetLimit(100)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.disable()
 }

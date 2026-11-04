@@ -142,7 +142,6 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	if err := ensureStartupSleepPolicy(); err != nil {
 		return err
 	}
-	resumeNativeChargeOnce()
 
 	router := setupRoutes()
 	sseHub = events.NewEventHub()

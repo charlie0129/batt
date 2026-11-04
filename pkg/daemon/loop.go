@@ -22,7 +22,6 @@ var (
 	// wg is used to skip several loops when system woke up or before sleep
 	wg                      = &sync.WaitGroup{}
 	loopInterval            = time.Duration(10) * time.Second
-	maintainLoopRequested   = make(chan struct{}, 1)
 	loopRecorder            = NewTimeSeriesRecorder(60)
 	continuousLoopThreshold = 1*time.Minute + 20*time.Second // add 20s to be sure
 )
@@ -49,10 +48,7 @@ func infiniteLoop() {
 			maintainAdapterDisable(conf, now)
 		}
 		maintainLoop()
-		select {
-		case <-maintainLoopRequested:
-		case <-time.After(loopInterval):
-		}
+		time.Sleep(loopInterval)
 	}
 }
 
@@ -320,7 +316,7 @@ func cancelCalibrationForPermanentDisable() {
 	cancelCalibrationNoRestoreNoError()
 }
 
-func handleChargingLogic(ignoreMissedLoops, isChargingEnabled bool, batteryCharge, lower, upper int) bool {
+func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool, batteryCharge, lower, upper int) bool {
 	maintainLoopsMissed := !ignoreMissedLoops && checkMissedMaintainLoops(false)
 
 	// Fix for #123.
@@ -495,8 +491,8 @@ func maintainManagedChargeLimit() bool {
 }
 
 // maintainManagedChargeOnce temporarily overrides the Apple-managed charge
-// limit. Native exact targets are reapplied once on admission, then kept at the
-// same target during maintenance.
+// limit. Exact native targets can request the one-time upper limit directly;
+// slider-only native control still only supports charging to full once.
 func maintainManagedChargeOnce(target int) bool {
 	maintainedChargingInProgress = false
 	caps := getCapabilities()
@@ -593,7 +589,7 @@ func maintainActiveCharging(ignoreMissedLoops bool) bool {
 	// so charging starts right away instead of waiting for the charge to fall
 	// below the lower limit, and stops exactly at the target.
 	if chargeOnceTarget > 0 && batteryCharge < chargeOnceTarget {
-		return handleChargingLogic(ignoreMissedLoops, isChargingEnabled, batteryCharge, chargeOnceTarget, chargeOnceTarget)
+		return handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn, batteryCharge, chargeOnceTarget, chargeOnceTarget)
 	}
 
 	// If maintain is disabled, we don't care about the battery charge, enable charging anyway.
@@ -610,7 +606,7 @@ func maintainActiveCharging(ignoreMissedLoops bool) bool {
 		return true
 	}
 
-	return handleChargingLogic(ignoreMissedLoops, isChargingEnabled, batteryCharge, lower, upper)
+	return handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn, batteryCharge, lower, upper)
 }
 
 func updateMagSafeLed(isChargingEnabled bool) {
