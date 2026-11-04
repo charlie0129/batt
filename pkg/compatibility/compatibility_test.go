@@ -44,7 +44,10 @@ func TestLowerLimitFeature(t *testing.T) {
 		}
 	}
 	if (Capabilities{ChargingControl: true, ChargeControlMode: ChargeControlNative}).Supports(FeatureLowerLimit) {
-		t.Fatal("native mode must not offer a lower limit")
+		t.Fatal("slider-only native mode must not offer a lower limit")
+	}
+	if (Capabilities{ChargingControl: true, ChargeControlMode: ChargeControlNative, NativeExactTargets: true}).Supports(FeatureLowerLimit) {
+		t.Fatal("exact-target native mode must not offer the lower limit")
 	}
 	if (Capabilities{ChargeControlMode: ChargeControlLegacy}).Supports(FeatureLowerLimit) {
 		t.Fatal("lower limit requires charging control")
