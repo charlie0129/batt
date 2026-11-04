@@ -112,13 +112,13 @@ func setLimit(c *gin.Context) {
 	charge, err := smcConn.GetBatteryCharge()
 	switch {
 	case caps.ChargeControlMode == compatibility.ChargeControlNative:
-		// shortcut: assume Apple's five-point gap below 80%; revise if measured thresholds differ.
-		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", l, l-5)
+		msg = fmt.Sprintf("set charging limit to %d%%", l)
 		if err == nil {
 			msg += fmt.Sprintf(", current charge: %d%%", charge)
 		}
+		msg += ". macOS resumes charging once the battery drops about 5% below the limit."
 		if err == nil && charge > l {
-			msg += ". Current charge is above the limit; macOS may use battery power until it falls within the configured range."
+			msg += " Current charge is above the limit; macOS may use battery power to discharge toward the target."
 		}
 	case err != nil:
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", conf.UpperLimit(), conf.LowerLimit())

@@ -37,6 +37,7 @@ func TestNativeLimitUsesConfiguredTargetRegardlessOfCharge(t *testing.T) {
 		{"at requested target", 50, 50, 50},
 		{"inside old band", 52, 55, 52},
 		{"below minimum", 8, 55, 8},
+		{"minimum native target", 8, 10, 80},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			file, path := useTempConfig(t)
@@ -48,9 +49,9 @@ func TestNativeLimitUsesConfiguredTargetRegardlessOfCharge(t *testing.T) {
 			if r.Code != http.StatusCreated || fake.limit != tc.target || !fake.enabled {
 				t.Fatalf("limit not applied: %d %s native=%+v", r.Code, r.Body.String(), fake)
 			}
-			wantMessage := fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", tc.target, tc.target-5, tc.charge)
+			wantMessage := fmt.Sprintf("set charging limit to %d%%, current charge: %d%%. macOS resumes charging once the battery drops about 5%% below the limit.", tc.target, tc.charge)
 			if tc.charge > tc.target {
-				wantMessage += ". Current charge is above the limit; macOS may use battery power until it falls within the configured range."
+				wantMessage += " Current charge is above the limit; macOS may use battery power to discharge toward the target."
 			}
 			if strings.TrimSpace(r.Body.String()) != strconv.Quote(wantMessage) || file.UpperLimit() != tc.target {
 				t.Fatalf("unexpected native limit response or saved target: %s target=%d", r.Body.String(), file.UpperLimit())
