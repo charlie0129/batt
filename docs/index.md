@@ -1,5 +1,5 @@
 !!! note "Feb 17, 2026 UPDATE:" 
-    Finally, after more than 5 years, macOS 26.4 and later supports charge limiting natively (adjustable from 80% to 100%), so ***`batt` is not needed if the built-in range meets your needs***. `batt` remains useful on older releases and when you want a limit below 80%. On macOS 27-era firmware, `batt` programs the firmware's charge-limit facility directly.
+    Finally, after more than 5 years, macOS 26.4 and later supports charge limiting natively (adjustable from 80% to 100%), so ***`batt` is not needed if the built-in range meets your needs***. `batt` remains useful on older releases and when you want a limit below 80%. On macOS 27-era firmware, `batt` supports native limits below 80% when direct SMC control is unavailable.
 
 
 <img src="assets/icon.png" alt="Batt Logo" width="128" />
@@ -24,8 +24,6 @@
 Previously, before optimized battery charging was introduced, MacBooks are known to suffer from battery swelling when they are kept at 100% all the time, especially the 2015s. Even with optimized battery charging, the effect is not optimal <span style="font-size: 13px;">(described [here](comparison.md#but-macos-has-similar-features-built-in-is-it))</span>
 
 `batt` can effectively alleviate this problem by limiting the battery charge level. It can be used to set a maximum charge level. For example, you can set it to 80%, and it will stop charging when the battery reaches 80%.
-
-On older firmware, the computer then runs from wall power and the battery percentage remains steady. On macOS 27-era firmware, Apple changed the mechanism: the firmware may run the Mac from the battery when it is above the limit, so the percentage can drop until it returns to the configured range.
 
 ### Guides
 
@@ -175,7 +173,7 @@ You can think of `batt` like `docker`. It has a daemon that runs in the backgrou
 
 For example, when you run `sudo batt limit 80`, the client will send the requirement to the daemon, and the daemon will do its job to keep the charge limit to 80%.
 
-The daemon selects one of two control backends from SMC key presence. The legacy backend continuously reads battery percentage and toggles charging itself. The firmware backend writes lower/upper limits and periodically reconciles them while Apple firmware enforces the range, including during sleep. The same capability data is exposed to CLI and GUI clients so unsupported features are not offered.
+The daemon selects a control backend from usable SMC keys and native services. The legacy backend continuously reads battery percentage and toggles charging itself. The firmware backend writes lower/upper limits and periodically reconciles them while Apple firmware enforces the range, including during sleep. The native backend keeps PowerUIAgent's upper target in sync; opt-in adapter mode toggles wall power. The same capability data is exposed to CLI and GUI clients so unsupported features are not offered.
 
 ## Motivation
 

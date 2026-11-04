@@ -16,6 +16,9 @@ import (
 var (
 	maintainedChargingInProgress = false
 	maintainLoopInnerLock        = &sync.Mutex{}
+	// Protected by maintainLoopInnerLock. Once shutdown releases charging,
+	// a queued maintenance pass must not put the limit back before exit.
+	chargeControlStopped = false
 	// wg is used to skip several loops when system woke up or before sleep
 	wg                      = &sync.WaitGroup{}
 	loopInterval            = time.Duration(10) * time.Second
@@ -419,6 +422,9 @@ func handleChargingLogic(ignoreMissedLoops, isChargingEnabled, isPluggedIn bool,
 func maintainLoopInner(ignoreMissedLoops bool) bool {
 	maintainLoopInnerLock.Lock()
 	defer maintainLoopInnerLock.Unlock()
+	if chargeControlStopped {
+		return true
+	}
 
 	switch getCapabilities().ChargeControlMode {
 	case compatibility.ChargeControlFirmware, compatibility.ChargeControlNative:
@@ -431,10 +437,9 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 	}
 }
 
-// maintainManagedChargeLimit delegates hysteresis enforcement to Apple (the
-// firmware or macOS's built-in limit). It deliberately does not read
-// battery/charging state or interact with sleep, MagSafe, adapter, or
-// calibration features.
+// maintainManagedChargeLimit maintains Apple's charge control. Firmware takes
+// both thresholds directly; native mode keeps the configured upper limit
+// as the single target accepted by PowerUI.
 func maintainManagedChargeLimit() bool {
 	if calibrationNeedsMaintainLoop() {
 		batteryCharge, err := smcConn.GetBatteryCharge()
@@ -471,9 +476,14 @@ func maintainManagedChargeLimit() bool {
 		logrus.Errorf("failed to reconcile %s charge limit: %v", getCapabilities().ChargeControlMode, err)
 		return false
 	}
-	if changed {
+	switch {
+	case changed && getCapabilities().NativeExactTargets:
+		// A native request can still be settling in powerd. The client checks
+		// registration on later passes; acceptance is not confirmation.
+		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Debug("requested native charge target; registration may still be pending")
+	case changed:
 		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Infof("reconciled %s charge limit", getCapabilities().ChargeControlMode)
-	} else {
+	default:
 		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Tracef("%s charge limit is correct", getCapabilities().ChargeControlMode)
 	}
 	maintainedChargingInProgress = false
@@ -481,11 +491,11 @@ func maintainManagedChargeLimit() bool {
 }
 
 // maintainManagedChargeOnce temporarily overrides the Apple-managed charge
-// limit. Firmware supports a narrow band below the target; native macOS only
-// supports charging to full once by temporarily disabling its limit.
+// limit. Native control only supports charging to full once.
 func maintainManagedChargeOnce(target int) bool {
 	maintainedChargingInProgress = false
-	mode := getCapabilities().ChargeControlMode
+	caps := getCapabilities()
+	mode := caps.ChargeControlMode
 
 	if target < 100 && mode != compatibility.ChargeControlFirmware {
 		logrus.Error("the native macOS backend cannot force a one-time charge below 100%")
@@ -494,16 +504,19 @@ func maintainManagedChargeOnce(target int) bool {
 
 	var changed bool
 	var err error
-	if target >= 100 {
+	switch {
+	case target >= 100:
 		changed, err = ensureManagedChargeLimitDisabled()
-	} else {
+	default:
 		changed, err = ensureManagedChargeLimit(target-1, target)
 	}
 	if err != nil {
 		logrus.Errorf("failed to reconcile %s charge limit for a one-time charge: %v", mode, err)
 		return false
 	}
-	if changed {
+	if changed && caps.NativeExactTargets {
+		logrus.WithField("target", target).Debug("requested native one-time charge target; registration may still be pending")
+	} else if changed {
 		logrus.WithField("target", target).Infof("reconciled %s charge limit for a one-time charge", mode)
 	}
 	return true

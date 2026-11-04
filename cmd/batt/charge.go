@@ -19,7 +19,7 @@ func NewChargeCommand() *cobra.Command {
 		GroupID: gBasic,
 		Long: `Charge the battery once, then let the configured charge limit apply again.
 
-Your charge limit and lower-limit delta stay as they are, so normal behavior resumes as soon as the battery reaches the target. A one-time charge survives a daemon restart or reboot. Cancel it with "batt charge cancel"; setting a limit with "batt limit" cancels it too. When macOS controls the charge limit natively, "batt charge now" is unavailable because macOS decides when charging starts; "batt charge full" remains available.`,
+Your charge limit and lower-limit delta stay as they are, so normal behavior resumes as soon as the battery reaches the target. A one-time charge survives a daemon restart or reboot. Cancel it with "batt charge cancel"; setting a limit with "batt limit" cancels it too. Native mode does not support "batt charge now"; "batt charge full" remains available.`,
 		Example: `  batt charge now
   batt charge full
   batt charge cancel`,
@@ -31,7 +31,7 @@ Your charge limit and lower-limit delta stay as they are, so normal behavior res
 			Short: "Charge to the configured limit now",
 			Long: `Charge to the configured upper limit now.
 
-Normally batt waits for the charge to fall below the lower limit before it charges again. This starts charging right away, even when the charge sits between the lower and the upper limit, and stops at the upper limit. The lower limit is not changed.`,
+In modes with a lower limit, this starts charging without waiting for the charge to fall below that threshold. The lower limit is not changed. Native mode does not support this action because macOS controls when charging resumes. Use "batt charge full" instead.`,
 			Args: cobra.NoArgs,
 			RunE: func(_ *cobra.Command, _ []string) error {
 				return runChargeOnce(
@@ -61,7 +61,7 @@ Your charge limit is restored automatically as soon as the battery reaches 100%.
 			Short: "Cancel the one-time charge",
 			Long: `Cancel a running one-time charge.
 
-The configured charge limit applies again immediately.`,
+The configured charge limit is requested again. When macOS controls charging natively, it applies that target asynchronously.`,
 			Args: cobra.NoArgs,
 			RunE: func(_ *cobra.Command, _ []string) error {
 				return runChargeOnce(
