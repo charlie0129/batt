@@ -476,14 +476,9 @@ func maintainManagedChargeLimit() bool {
 		logrus.Errorf("failed to reconcile %s charge limit: %v", getCapabilities().ChargeControlMode, err)
 		return false
 	}
-	switch {
-	case changed && getCapabilities().NativeExactTargets:
-		// A native request can still be settling in powerd. The client checks
-		// registration on later passes; acceptance is not confirmation.
-		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Debug("requested native charge target; registration may still be pending")
-	case changed:
+	if changed {
 		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Infof("reconciled %s charge limit", getCapabilities().ChargeControlMode)
-	default:
+	} else {
 		logrus.WithFields(logrus.Fields{"lower": lower, "upper": upper}).Tracef("%s charge limit is correct", getCapabilities().ChargeControlMode)
 	}
 	maintainedChargingInProgress = false
@@ -491,11 +486,11 @@ func maintainManagedChargeLimit() bool {
 }
 
 // maintainManagedChargeOnce temporarily overrides the Apple-managed charge
-// limit. Native control only supports charging to full once.
+// limit. Firmware supports a narrow band below the target; native macOS only
+// supports charging to full once by temporarily disabling its limit.
 func maintainManagedChargeOnce(target int) bool {
 	maintainedChargingInProgress = false
-	caps := getCapabilities()
-	mode := caps.ChargeControlMode
+	mode := getCapabilities().ChargeControlMode
 
 	if target < 100 && mode != compatibility.ChargeControlFirmware {
 		logrus.Error("the native macOS backend cannot force a one-time charge below 100%")
@@ -504,19 +499,16 @@ func maintainManagedChargeOnce(target int) bool {
 
 	var changed bool
 	var err error
-	switch {
-	case target >= 100:
+	if target >= 100 {
 		changed, err = ensureManagedChargeLimitDisabled()
-	default:
+	} else {
 		changed, err = ensureManagedChargeLimit(target-1, target)
 	}
 	if err != nil {
 		logrus.Errorf("failed to reconcile %s charge limit for a one-time charge: %v", mode, err)
 		return false
 	}
-	if changed && caps.NativeExactTargets {
-		logrus.WithField("target", target).Debug("requested native one-time charge target; registration may still be pending")
-	} else if changed {
+	if changed {
 		logrus.WithField("target", target).Infof("reconciled %s charge limit for a one-time charge", mode)
 	}
 	return true

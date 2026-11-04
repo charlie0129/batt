@@ -48,7 +48,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 
 Yes, macOS have optimized battery charging. It will try to find out your charging and working schedule and prohibits charging above 80% for a couple of hours overnight. However, if you have an un-regular schedule, this will simply not work. Also, you lose predictability (which I value a lot) about your computer's behavior, i.e., by letting macOS decide for you, you, the one who knows your schedule the best, cannot control when to charge or when not to charge.
 
-`batt` lets you choose a maximum charge level. In native mode, macOS applies the target asynchronously and can temporarily override it to charge fully.
+`batt` lets you choose a maximum charge level. In native mode, macOS enforces it and can temporarily override it to charge fully.
 
 ## Compatibility Matrix
 
@@ -100,7 +100,7 @@ Starting with macOS 27 Developer Beta 4 (firmware `20457.0.125.0.2`+, also shipp
 
 `batt` automatically uses the native macOS charge limit through PowerUIAgent when direct SMC control is unavailable. On macOS 27, `sudo batt limit 55` requests 55%, bypassing the slider's 80% minimum. Targets from 10–99% are supported; 100% releases the limit. Older native backends use the values offered by macOS.
 
-Native mode uses a single upper target and retains it during sleep. It does not support `lower-limit-delta`, MagSafe LED control or legacy sleep options. Changes can take several minutes. **If the battery is above the limit, macOS may drain it toward the target even while the Mac is plugged in.** macOS may also temporarily charge fully; `batt status` and the GUI report Apple's full-charge override when available. Check `batt status` and `pmset -g battlimit` after changing a target; an accepted request does not mean charging has already stopped.
+Native mode uses a single upper target and retains it during sleep. It does not support `lower-limit-delta`, MagSafe LED control or legacy sleep options. On macOS 27, `batt limit` returns once macOS has registered the new target (`pmset -g battlimit` lists it); the battery can take a minute or more to start or stop charging. **If the battery is above the limit, macOS may drain it toward the target even while the Mac is plugged in.** macOS may also temporarily charge fully; `batt status` and the GUI report Apple's full-charge override when available.
 
 As an alternative, `batt` offers an opt-in **adapter mode**, enabled at runtime with `sudo batt adapter-mode enable`. The adapter (wall-power) SMC key is not entitlement-gated, so `batt` runs the same ThinkPad-style hysteresis loop it uses in legacy mode, but toggles wall power instead of the charge state:
 
@@ -650,6 +650,7 @@ The legacy loop requires macOS to be running. Native limits can survive a daemon
 - [@invisiblepixel](https://github.com/invisiblepixel) for app icon design.
 - [@brookqin](https://github.com/brookqin) for implementing auto calibration.
 - [@ashwinr64](https://github.com/ashwinr64) for investigating SMC keys on macOS 27 [#140 comment](https://github.com/charlie0129/batt/pull/140#issuecomment-4950731214) [actuallymentor/battery#469](https://github.com/actuallymentor/battery/pull/469), also [@lilianmoraru](https://github.com/lilianmoraru) for the initial PR.
+- [@MandalorianY](https://github.com/MandalorianY) for native charge limits below 80% on macOS 27 [#166](https://github.com/charlie0129/batt/pull/166).
 
 ## Star History
 
