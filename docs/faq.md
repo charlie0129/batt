@@ -32,7 +32,7 @@ Homebrew-installed:
 
 #### GUI version
 
-Just follow the installation steps again. After you open the new version of batt.app, click `Upgrade Daemon...` upgrade to the new daemon.
+Just follow the installation steps again. After you open the new version of batt.app, click `Upgrade Daemon...` to upgrade to the new daemon.
 
 <img width="206" alt="SCR-20250624-lbmb-2" src="https://github.com/user-attachments/assets/f3731a00-d973-4d67-8b4a-d57595e3842f" />
 
@@ -85,7 +85,7 @@ You probably don't need this on Intel :p
 
 On Intel MacBooks, you can control battery charging in a much, much easier way, simply setting the `BCLM` key in Apple SMC to the limit you need, and you are all done. There are many tools available. For example, you can use [smc-command](https://github.com/hholtmann/smcFanControl/tree/master/smc-command) to set SMC keys. Of course, you will lose some advanced features like upper and lower limit.
 
-However, on Apple Silicon, the way how charging is controlled changed. There is no such key. Therefore, we have to use a much more complicated way to achieve the same goal, and handle more edge cases, hence `batt`.
+However, on Apple Silicon, the way charging is controlled changed. There is no such key. Therefore, we have to use a much more complicated way to achieve the same goal, and handle more edge cases, hence `batt`.
 
 ### Will there be an Intel version?
 
@@ -100,7 +100,7 @@ TL;DR: This is intended, and is the default behavior. It is described [here](usa
 
 But it is suggested to keep the default behavior to make your charge limit work as intended. Why? Because when you close the lid, your MacBook will go into **forced sleep**, and `batt` will be paused by macOS. As a result, `batt` can no longer control battery charging. It will be whatever state it was before you close the lid. This is the problem. Let's say, if you close the lid when your MacBook is charging, since `batt` is paused by macOS, it will keep charging, ignoring the charge limit you have set. There is no way to prevent **forced sleep**. Therefore, the only way to solve this problem is to disable charging before sleep. This is what `batt` does. It will disable charging just before your MacBook goes to sleep, and re-enable it when it wakes up. This way, your Mac will not overcharge during sleep.
 
-Not that you will encounter this **forced sleep** only if you, the user, forced the Mac to sleep, either by closing the lid or selecting the Sleep option in the Apple menu. If your Mac decide to sleep by itself, called **idle sleep**, i.e. when it is idle for a while, in this case, you will not experience this stop-charging-before-sleep situation.
+Note that you will encounter this **forced sleep** only if you, the user, forced the Mac to sleep, either by closing the lid or selecting the Sleep option in the Apple menu. If your Mac decides to sleep by itself, called **idle sleep**, i.e. when it is idle for a while, in this case, you will not experience this stop-charging-before-sleep situation.
 
 So it is suggested to keep this feature on. But _What if I MUST let my Mac charge during a **forced sleep** without turning off `disable-charging-pre-sleep`, even if it may charge beyond the charge limit?_ This is simple, just disable charge limit `batt disable`. This way, when you DO want to enable charge limit again, `disable-charging-pre-sleep` will still be there to prevent overcharging. The rationale is: when you want to charge during a **forced sleep**, you actually want heavy use of your battery and don't want ANY charge limit at all, e.g. when you are on a long outside-event, and you want to charge your Mac when it is sitting in your bag, lid closed. Setting the charge limit to 100% is equivalent to disabling charge limit. Therefore, most `batt` features will be turned off and your Mac can charge as if `batt` is not installed.
 
@@ -116,7 +116,7 @@ Since it is a hobby project, I want to balance effort and the final outcome. Go 
 
 ### Why are there so many logs?
 
-By default, `batt` daemon will have its log level set to `debug` for easy debugging. The `debug` logs are helpful when reporting problems since it contains useful information. So it is recommended to keep it as `debug`. You may find a lot of logs in `/tmp/batt.log` after you use your Mac for a few days. However, there is no need to worry about this. The logs will be cleaned by macOS on reboot. It will not grow indefinitely.
+By default, `batt` daemon will have its log level set to `debug` for easy debugging. The `debug` logs are helpful when reporting problems since they contain useful information. So it is recommended to keep it as `debug`. You may find a lot of logs in `/tmp/batt.log` after you use your Mac for a few days. However, there is no need to worry about this. The logs will be cleaned by macOS on reboot. It will not grow indefinitely.
 
 If you believe you will not encounter any problem in the future and still want to set a higher log level, you can achieve this by:
 
@@ -158,7 +158,7 @@ As in [#62](https://github.com/charlie0129/batt/issues/62), you can quit the GUI
 
 You may also want to remove the GUI app from *System Settings* -> *General* -> *Login Items & Extensions* to prevent it from starting automatically on login. Important: only remove the GUI app from *Open at Login*, do NOT remove the daemon from *Allow in Background*.
 
-The reason behind is that the GUI app does not do the actual battery charge controlling. The daemon does. As long as the daemon is not uninstalled, charging control will work. The GUI app is just a client to communicate with the daemon. Quitting the GUI app will not affect the daemon. You can save some menu bar space if you rarely change settings.
+The reason behind this is that the GUI app does not do the actual battery charge controlling. The daemon does. As long as the daemon is not uninstalled, charging control will work. The GUI app is just a client to communicate with the daemon. Quitting the GUI app will not affect the daemon. You can save some menu bar space if you rarely change settings.
 
 ### Will batt work after shutdown?
 

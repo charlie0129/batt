@@ -50,7 +50,7 @@ On older firmware, the computer then runs from wall power and the battery percen
 
 ## Features
 
-`batt` tried to keep as simple as possible. Charging limiting is the only thing to care about for most users:
+`batt` tries to keep things as simple as possible. Charge limiting is the only thing to care about for most users:
 
 - Limit battery charge, with a lower and upper bound, like ThinkPads. [Docs](docs/usage.md#limit-battery-charge)
 - Charge to the limit or to 100% once, without changing the limit. [Docs](docs/usage.md#charge-once)
@@ -74,13 +74,13 @@ However, if you are nerdy and want to dive into the details, it does have some a
 > [!TIP]
 > It is _highly_ recommended to disable macOS's optimized charging when using `batt`. <br>
 > To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`. <br>
-> Built-in charge limit also need to be disabled if you are on macOS 26.4 or later.
+> Built-in charge limit also needs to be disabled if you are on macOS 26.4 or later.
 
 * Download `.dmg` file from [Releases](https://github.com/charlie0129/batt/releases) and open it (right-click open if macOS says it's damaged)
 * Drag `batt.app` to `Applications`
 * macOS may say it's damaged when you try to run it. To fix it, run this in your Terminal: <br>
 `sudo xattr -r -d com.apple.quarantine /Applications/batt.app`.
-* Run `batt.app` and Follow the MenuBar UI to install or upgrade.
+* Run `batt.app` and follow the MenuBar UI to install or upgrade.
 
 <img src="docs/assets/screenshot-gui-setup.png" alt="Screenshot GUI Setup" width="320" />
 
@@ -184,11 +184,11 @@ The daemon selects one of two control backends from SMC key presence. The legacy
 
 I created this tool simply because I am not satisfied with existing tools 😐.
 
-I have written and using similar utils (to limit charging) on Intel MacBooks for years. Finally I got hands on an Apple Silicon MacBook (yes, 2 years later since it is introduced 😅 and I just got my first one). The old BCLM way to limit charging doesn't work anymore. I was looking for a tool to limit charging on M1 MacBooks.
+I have written and used similar utils (to limit charging) on Intel MacBooks for years. Finally I got hands on an Apple Silicon MacBook (yes, 2 years after it was introduced 😅 and I just got my first one). The old BCLM way to limit charging doesn't work anymore. I was looking for a tool to limit charging on M1 MacBooks.
 
 I have tried some alternatives, both closed source and open source, but I kept none of them. Some paid alternatives' licensing options are just too limited 🤔, a bit bloated, require periodic Internet connection (hmm?) and are closed source. It doesn't seem a good option for me. Some open source alternatives just don't handle edge cases well and I encountered issues regularly especially when sleeping (as of Apr 2023).
 
-I want a _simple_ tool that does just one thing, and **does it well** -- limiting charging, just like the [Unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy). It seems I don't have any options but to develop by myself. So I spent a weekend developing an MVP, so here we are! `batt` is here!
+I want a _simple_ tool that does just one thing, and **does it well** -- limiting charging, just like the [Unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy). It seems I don't have any options but to develop it myself. So I spent a weekend developing an MVP, so here we are! `batt` is here!
 
 ## Acknowledgements
 
