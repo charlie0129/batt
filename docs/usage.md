@@ -242,7 +242,7 @@ This option makes the MagSafe LED reflect the charging state of your MacBook (or
 
 Note that you must have a MagSafe LED on your MacBook to use this feature.
 
-With firmware-managed charging, `batt` uses the charging state reported by macOS. While the Mac is asleep, the LED is updated after it wakes. Legacy direct charging and adapter modes continue to use the charging state controlled by `batt`; the native macOS limit does not support LED control.
+With firmware-managed charging and the native macOS limit, `batt` uses the charging state reported by macOS. While the Mac is asleep, the LED is updated after it wakes. Legacy direct charging and adapter modes continue to use the charging state controlled by `batt`.
 
 To enable MagSafe LED control, run `sudo batt magsafe-led enable`.
 

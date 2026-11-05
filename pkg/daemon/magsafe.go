@@ -10,7 +10,7 @@ import (
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
-var firmwareIsCharging = func() (bool, error) {
+var systemIsCharging = func() (bool, error) {
 	info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true})
 	if err != nil {
 		return false, err
@@ -21,9 +21,9 @@ var firmwareIsCharging = func() (bool, error) {
 	return info.IOKit.State.IsCharging, nil
 }
 
-// maintainFirmwareMagSafeLED reflects actual charging, independent of whether
-// firmware is currently enforcing a charge limit.
-func maintainFirmwareMagSafeLED() {
+// maintainManagedMagSafeLED reflects actual charging in firmware and native
+// modes, independent of whether macOS is currently enforcing a charge limit.
+func maintainManagedMagSafeLED() {
 	if !getCapabilities().MagSafeLED {
 		return
 	}
@@ -31,7 +31,7 @@ func maintainFirmwareMagSafeLED() {
 	var target smc.MagSafeLedState
 	switch conf.ControlMagSafeLED() {
 	case config.ControlMagSafeModeEnabled:
-		charging, err := firmwareIsCharging()
+		charging, err := systemIsCharging()
 		if err != nil {
 			logrus.WithError(err).Error("failed to read battery charging state for MagSafe LED")
 			return

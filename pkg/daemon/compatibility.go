@@ -27,6 +27,7 @@ func detectCapabilities() compatibility.Capabilities {
 	}
 	legacy := mode == compatibility.ChargeControlLegacy
 	active := legacy || mode == compatibility.ChargeControlAdapter
+	managed := mode == compatibility.ChargeControlFirmware || mode == compatibility.ChargeControlNative
 	return compatibility.Capabilities{
 		ChargingControl:    mode != compatibility.ChargeControlUnsupported,
 		ChargeControlMode:  mode,
@@ -35,9 +36,9 @@ func detectCapabilities() compatibility.Capabilities {
 		// The legacy and adapter loops both run while awake and rely on the
 		// sleep hooks to avoid overcharging during sleep.
 		SleepHooks: active,
-		// Active modes use batt's switch state; firmware mode uses the actual
-		// charging state reported by macOS.
-		MagSafeLED: (active || mode == compatibility.ChargeControlFirmware) && smcConn.CheckMagSafeExistence(),
+		// Active modes use batt's switch state; firmware and native modes use
+		// the actual charging state reported by macOS.
+		MagSafeLED: (active || managed) && smcConn.CheckMagSafeExistence(),
 		// In adapter mode batt owns the adapter to enforce the limit, so the
 		// manual adapter/force-discharge feature is hidden to avoid conflicts.
 		AdapterControl: adapter && mode != compatibility.ChargeControlAdapter,
