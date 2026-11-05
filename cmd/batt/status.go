@@ -39,6 +39,9 @@ func chargeTarget(cfg *config.File) (int, bool) {
 // is reached. Returns nil when not applicable (not charging, no target, charge
 // already at/above the target, or result is zero).
 func computeTimeToLimit(data *statusData, cfg *config.File) *int {
+	if data.batteryInfo.FullChargeOverrideActive() {
+		return nil
+	}
 	target, ok := chargeTarget(cfg)
 	if !ok || data.batteryInfo.State != powerinfo.Charging || data.currentCharge >= target {
 		return nil
@@ -192,8 +195,21 @@ func NewStatusCommand() *cobra.Command {
 				cmd.Println("    The firmware decides when to charge and can continue enforcing the limit during sleep.")
 			case compatibility.ChargeControlNative:
 				cmd.Println("  Control mode: " + bold("native macOS charge limit"))
-				cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100))
-				cmd.Println("    batt sets the limit built into macOS (System Settings -> Battery -> Charge Limit). macOS decides when to charge and keeps enforcing the limit during sleep.")
+				if data.capabilities.NativeExactTargets {
+					cmd.Println("  Charge limit configured: " + bool2Text(cfg.UpperLimit() < 100))
+					cmd.Println("    The battery can take a minute or more to respond to a new target.")
+					cmd.Println("    macOS decides when to charge and retains the target during sleep.")
+				} else {
+					cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100 && !data.batteryInfo.FullChargeOverrideActive()))
+					cmd.Println("    batt sets the limit built into macOS (System Settings -> Battery -> Charge Limit). macOS decides when to charge and retains the limit during sleep.")
+				}
+				if cfg.UpperLimit() < 100 && data.batteryInfo.FullChargeOverrideActive() {
+					notice := powerinfo.FullChargeOverrideNotice
+					if data.batteryInfo.FullChargeOverrideAtFull(data.currentCharge) {
+						notice = powerinfo.FullChargeOverrideAtFullNotice
+					}
+					cmd.Println("  Notice: " + notice)
+				}
 			case compatibility.ChargeControlAdapter:
 				cmd.Println("  Control mode: " + bold("adapter (wall power)"))
 				cmd.Println("  Charge limit active: " + bool2Text(cfg.UpperLimit() < 100))
@@ -315,7 +331,7 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Println()
 			cmd.Println(bold("Hardware compatibility:"))
 			cmd.Printf("  Charge control mode: %s\n", bold("%s", data.capabilities.ChargeControlMode))
-			if limits := data.capabilities.SupportedLimits; len(limits) > 0 {
+			if limits := data.capabilities.SupportedLimits; len(limits) > 0 && !data.capabilities.NativeExactTargets {
 				cmd.Printf("  Supported charge limits: %s\n", bold("%s", compatibility.FormatLimits(limits)))
 			}
 			cmd.Printf("  Sleep hooks: %s\n", bool2Text(data.capabilities.SleepHooks))

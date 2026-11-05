@@ -136,6 +136,7 @@ func (c *menuController) refreshOnOpen() {
 
 	c.calibrationThreshold = conf.CalibrationDischargeThreshold()
 	c.updateChargeOnce(conf, currentCharge)
+	c.updateFullChargeOverride(batteryInfo)
 	c.menu.setTitle(itemCurrentLimit, fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
 	for _, item := range quickLimitItems {
 		c.menu.setChecked(item, quickLimitForItem(item) == conf.UpperLimit())
@@ -192,6 +193,16 @@ func (c *menuController) refreshDisableSchedules() {
 		currentCharge = c.currentCharge
 	}
 	c.updateChargeOnce(conf, currentCharge)
+	if c.capabilities.ChargeControlMode == compatibility.ChargeControlNative {
+		if batteryInfo, err := c.api.GetBatteryInfo(); err == nil {
+			c.updateFullChargeOverride(batteryInfo)
+		} else {
+			c.menu.setHidden(itemFullChargeOverride, true)
+			logrus.WithError(err).Debug("Failed to refresh full-charge override state")
+		}
+	} else {
+		c.menu.setHidden(itemFullChargeOverride, true)
+	}
 
 	if c.capabilities.AdapterControl {
 		if adapter, err := c.api.GetAdapter(); err == nil {
@@ -302,6 +313,20 @@ func (c *menuController) updateForceDischargeControls() {
 func (c *menuController) setStateError(message string, err error) {
 	logrus.WithError(err).Error(message)
 	c.menu.setTitle(itemState, "State: Error")
+	c.menu.setHidden(itemFullChargeOverride, true)
+}
+
+func (c *menuController) updateFullChargeOverride(batteryInfo *powerinfo.Battery) {
+	visible := c.capabilities.ChargeControlMode == compatibility.ChargeControlNative &&
+		c.upperLimit < 100 && batteryInfo.FullChargeOverrideActive()
+	c.menu.setHidden(itemFullChargeOverride, !visible)
+	if batteryInfo.FullChargeOverrideAtFull(c.currentCharge) {
+		c.menu.setTitle(itemFullChargeOverride, "Battery full; waiting for macOS")
+		c.menu.setTooltip(itemFullChargeOverride, powerinfo.FullChargeOverrideAtFullNotice)
+	} else {
+		c.menu.setTitle(itemFullChargeOverride, "Limit paused by macOS")
+		c.menu.setTooltip(itemFullChargeOverride, fullChargeOverrideTooltip)
+	}
 }
 
 func canShowPreventSleepOnAdapterDisable(installed bool, capabilities compatibility.Capabilities, needsUpgrade bool) bool {
@@ -313,6 +338,7 @@ func (c *menuController) setCompatibility(installed bool, capabilities compatibi
 		return
 	}
 	c.capabilities = capabilities
+	c.menu.setHidden(itemFullChargeOverride, true)
 	c.menu.setStatusIcon(installed, capabilities.ChargingControl, needsUpgrade)
 
 	usable := installed && capabilities.ChargingControl && !needsUpgrade

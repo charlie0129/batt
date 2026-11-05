@@ -16,6 +16,7 @@ import (
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
+	"github.com/charlie0129/batt/pkg/powerui"
 	"github.com/charlie0129/batt/pkg/smc"
 	"github.com/charlie0129/batt/pkg/version"
 )
@@ -68,14 +69,19 @@ func setLimit(c *gin.Context) {
 		return
 	}
 
-	if delta := conf.UpperLimit() - conf.LowerLimit(); l-delta <= 10 {
+	previousLimit, previousLower := conf.UpperLimit(), conf.LowerLimit()
+	delta := previousLimit - previousLower
+	if caps.ChargeControlMode != compatibility.ChargeControlNative && l-delta < 11 {
 		err := fmt.Errorf("upper limit must be greater than lower limit + 10, got %d", l-delta)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-
-	previousLimit := conf.UpperLimit()
+	// Native control ignores the saved delta, but the shared config still
+	// requires a nonnegative lower limit when changing the upper limit.
+	if caps.ChargeControlMode == compatibility.ChargeControlNative && l < delta {
+		conf.SetLowerLimit(previousLimit - (l - 1))
+	}
 	previousUntil, previousPreLimit := conf.DisableUntil(), conf.PreDisableLimit()
 	conf.SetUpperLimit(l)
 	// An explicit limit change overrides any pending scheduled re-enabling.
@@ -83,6 +89,9 @@ func setLimit(c *gin.Context) {
 	superseded := supersedeChargeOnce()
 	if err := conf.Save(); err != nil {
 		conf.SetUpperLimit(previousLimit)
+		if conf.LowerLimit() != previousLower {
+			conf.SetLowerLimit(previousLower)
+		}
 		if previousUntil.IsZero() {
 			conf.ClearDisableTimer()
 		} else {
@@ -102,9 +111,19 @@ func setLimit(c *gin.Context) {
 
 	var msg string
 	charge, err := smcConn.GetBatteryCharge()
-	if err != nil {
+	switch {
+	case caps.ChargeControlMode == compatibility.ChargeControlNative:
+		msg = fmt.Sprintf("set charging limit to %d%%", l)
+		if err == nil {
+			msg += fmt.Sprintf(", current charge: %d%%", charge)
+		}
+		msg += ". macOS resumes charging once the battery drops about 5% below the limit."
+		if err == nil && charge > l {
+			msg += " Current charge is above the limit; macOS may use battery power to discharge toward the target."
+		}
+	case err != nil:
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", conf.UpperLimit(), conf.LowerLimit())
-	} else {
+	default:
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", conf.UpperLimit(), conf.LowerLimit(), charge)
 		if charge > conf.UpperLimit() {
 			switch {
@@ -123,7 +142,12 @@ func setLimit(c *gin.Context) {
 	}
 
 	// Immediate single maintain loop, to avoid waiting for the next loop
-	maintainLoopForced()
+	if applied := maintainLoopForced(); !applied && caps.NativeExactTargets {
+		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
 
 	c.IndentedJSON(http.StatusCreated, msg)
 }
@@ -219,7 +243,12 @@ func setDisableFor(c *gin.Context) {
 		"prevLimit": prevLimit,
 	}).Infof("disabled batt temporarily")
 
-	maintainLoopForced()
+	if applied := maintainLoopForced(); !applied && getCapabilities().NativeExactTargets {
+		err := fmt.Errorf("temporary disable was saved, but releasing charge control failed; the daemon will retry")
+		c.IndentedJSON(http.StatusInternalServerError, err.Error())
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
 
 	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("batt disabled, charge limit will be restored to %d%% at %s", prevLimit, until.Format(time.DateTime)))
 }
@@ -562,6 +591,13 @@ func getBatteryInfo(c *gin.Context) {
 		ChargeRate:     chargeRateMilliW,
 		DesignVoltage:  info.IOKit.Battery.Voltage,
 	}
+	if getCapabilities().ChargeControlMode == compatibility.ChargeControlNative {
+		if active, err := powerui.FullChargeOverride(); err == nil {
+			resp.ChargingToFullOverride = &active
+		} else {
+			logrus.WithError(err).Debug("Full-charge override state unavailable")
+		}
+	}
 
 	c.IndentedJSON(http.StatusOK, resp)
 }
@@ -583,7 +619,6 @@ func setLowerLimitDelta(c *gin.Context) {
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-
 	if conf.UpperLimit()-d < 10 {
 		err := fmt.Errorf("lower limit delta must be less than limit - 10, got %d", d)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())

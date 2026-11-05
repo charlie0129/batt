@@ -1,6 +1,7 @@
 package gui
 
 const (
+	fullChargeOverrideTooltip      = `macOS may charge to 100% for battery maintenance.`
 	disableLimitTooltip            = `Disable the battery charge limit and let your Mac charge to 100%, either indefinitely or for a selected duration. After a temporary disable, batt automatically restores your current limit.`
 	disableLimitScheduledTooltip   = `A temporary charge-limit disable is in progress. To cancel the schedule, set a charge limit.`
 	forceDischargeTooltip          = `Cut power from the wall and run from the battery, either indefinitely or for a selected duration. After a temporary force discharge, batt automatically restores the power adapter.`

@@ -28,9 +28,10 @@ func detectCapabilities() compatibility.Capabilities {
 	legacy := mode == compatibility.ChargeControlLegacy
 	active := legacy || mode == compatibility.ChargeControlAdapter
 	return compatibility.Capabilities{
-		ChargingControl:   mode != compatibility.ChargeControlUnsupported,
-		ChargeControlMode: mode,
-		SupportedLimits:   supportedLimits,
+		ChargingControl:    mode != compatibility.ChargeControlUnsupported,
+		ChargeControlMode:  mode,
+		NativeExactTargets: mode == compatibility.ChargeControlNative && nativeLimit.SupportsExactTargets(),
+		SupportedLimits:    supportedLimits,
 		// The legacy and adapter loops both run while awake and rely on the
 		// sleep hooks to avoid overcharging during sleep.
 		SleepHooks: active,
@@ -110,13 +111,14 @@ func detectNativeChargeControl() (compatibility.ChargeControlMode, []int) {
 
 func capabilityLogFields(capabilities compatibility.Capabilities) logrus.Fields {
 	return logrus.Fields{
-		"chargingControl":   capabilities.ChargingControl,
-		"chargeControlMode": capabilities.ChargeControlMode,
-		"supportedLimits":   capabilities.SupportedLimits,
-		"sleepHooks":        capabilities.SleepHooks,
-		"magSafeLED":        capabilities.MagSafeLED,
-		"adapterControl":    capabilities.AdapterControl,
-		"calibration":       capabilities.Calibration,
+		"chargingControl":    capabilities.ChargingControl,
+		"chargeControlMode":  capabilities.ChargeControlMode,
+		"nativeExactTargets": capabilities.NativeExactTargets,
+		"supportedLimits":    capabilities.SupportedLimits,
+		"sleepHooks":         capabilities.SleepHooks,
+		"magSafeLED":         capabilities.MagSafeLED,
+		"adapterControl":     capabilities.AdapterControl,
+		"calibration":        capabilities.Calibration,
 	}
 }
 

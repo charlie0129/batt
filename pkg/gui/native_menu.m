@@ -201,6 +201,9 @@ void BattBuildMenu(BattMenuController *controller, NSString *version) {
     [root addItem:ActionItem(controller, @"Install Daemon...", @"i", BattItemInstall)];
     [root addItem:DisplayItem(controller, @"Loading...", BattItemState, NO)];
     [root addItem:DisplayItem(controller, @"Loading...", BattItemCurrentLimit, NO)];
+    NSMenuItem *fullChargeOverride = DisplayItem(controller, @"Limit paused by macOS", BattItemFullChargeOverride, NO);
+    fullChargeOverride.hidden = YES;
+    [root addItem:fullChargeOverride];
     [root addItem:[NSMenuItem separatorItem]];
     [root addItem:DisplayItem(controller, @"Quick Limits", BattItemQuickLimits, NO)];
 

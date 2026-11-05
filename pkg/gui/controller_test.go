@@ -182,6 +182,10 @@ func TestChargeOnceMenuAvailability(t *testing.T) {
 			chargeControlMode: compatibility.ChargeControlNative, wantLimit: false, wantFull: true,
 		},
 		{
+			name: "native target below the slider minimum cannot force charging", upperLimit: 55, currentCharge: 52,
+			chargeControlMode: compatibility.ChargeControlNative, wantLimit: false, wantFull: true,
+		},
+		{
 			name: "legacy target is not reached at target minus one", upperLimit: 80, currentCharge: 79,
 			chargeControlMode: compatibility.ChargeControlLegacy, wantLimit: true, wantFull: true,
 		},

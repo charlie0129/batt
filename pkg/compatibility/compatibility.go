@@ -42,6 +42,9 @@ const (
 type Capabilities struct {
 	ChargingControl   bool              `json:"chargingControl"`
 	ChargeControlMode ChargeControlMode `json:"chargeControlMode"`
+	// NativeExactTargets means the native backend accepts exact percentage
+	// targets rather than only the values offered by the macOS slider.
+	NativeExactTargets bool `json:"nativeExactTargets,omitempty"`
 	// SupportedLimits lists the only upper limits the charge-control backend
 	// accepts, in ascending order. Empty means any limit from 10 to 100.
 	SupportedLimits []int `json:"supportedLimits,omitempty"`
@@ -71,9 +74,6 @@ func (c Capabilities) Supports(feature Feature) bool {
 	case FeatureChargingControl:
 		return c.ChargingControl
 	case FeatureLowerLimit:
-		// The native backend only takes an upper limit; Apple decides when
-		// charging resumes. Older daemons never report the native mode, so
-		// they keep the lower limit available.
 		return c.ChargingControl && c.ChargeControlMode != ChargeControlNative
 	case FeatureSleepHooks:
 		return c.SleepHooks
