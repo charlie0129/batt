@@ -74,3 +74,6 @@ vendor
 *.o
 
 repomix-output.xml
+
+# Mkdocs
+/site/

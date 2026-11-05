@@ -1,4 +1,4 @@
-name: Buind Test Binary
+name: Build Test Binary
 
 on:
   push:
