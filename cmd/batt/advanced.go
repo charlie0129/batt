@@ -93,9 +93,9 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 	enable := &cobra.Command{
 		Use: "enable",
 		Short: `Enable MagSafe LED control. The LED will reflect charging status:
-		- Green: Charge limit is reached and charging is stopped.
+		- Green: Charging is stopped.
 		- Orange: Charging is in progress.
-		- Off: Woke from sleep, charging is off and batt is awaiting control.`,
+		- Off: Forced off, or temporarily after wake with active charging control.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			ret, err := apiClient.SetControlMagSafeLED(config.ControlMagSafeModeEnabled)
 			if err != nil {

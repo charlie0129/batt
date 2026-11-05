@@ -89,7 +89,7 @@ On firmware exposing `bfF0`, `batt` writes the upper and lower percentages to `b
 This mode has several intentional differences and current limitations:
 
 - If the battery is above the upper limit, firmware can stop drawing wall power and use the battery to run the Mac. Unlike legacy control, the percentage may therefore fall.
-- MagSafe LED control is unavailable because `batt` no longer owns or reliably knows the charging-enabled state.
+- MagSafe LED control follows the actual charging state reported by macOS. Green means the battery is not charging, which can happen for reasons other than reaching the limit.
 - Legacy sleep options are unavailable and unnecessary. Incompatible values left in the configuration after an upgrade are disabled by the daemon.
 
 The daemon reports these capabilities to current CLI and GUI clients. Older daemons that do not provide detailed compatibility data retain the previous permissive client behavior.
@@ -98,7 +98,7 @@ The daemon reports these capabilities to current CLI and GUI clients. Older daem
 
 Starting with macOS 27 Developer Beta 4 (firmware `20457.0.125.0.2`+), Apple gated the SMC charge-control keys behind a private entitlement (`com.apple.private.iokit.soc-limit`). Both the legacy keys (`CH0B`/`CH0C`/`CHTE`) and the firmware-limit keys (`bfF0`/`bfD0`/`bfE0`) now return `kIOReturnNotPrivileged` even to root, so neither the legacy nor the firmware backend works. See [#152](https://github.com/charlie0129/batt/issues/152).
 
-macOS 15.8 updates bring the same firmware, but their SMC firmware-limit keys stay usable, so `batt` v0.7.4 and later use the firmware-managed mode above there, with MagSafe LED control unavailable ([#160](https://github.com/charlie0129/batt/issues/160), [#162](https://github.com/charlie0129/batt/issues/162)). macOS 26.7 most likely behaves the same, but has not been verified.
+macOS 15.8 updates bring the same firmware, but their SMC firmware-limit keys stay usable, so `batt` v0.7.4 and later use the firmware-managed mode above there ([#160](https://github.com/charlie0129/batt/issues/160), [#162](https://github.com/charlie0129/batt/issues/162)). macOS 26.7 most likely behaves the same, but has not been verified.
 
 `batt` automatically uses the native macOS charge limit through PowerUIAgent when direct SMC control is unavailable. On macOS 27, `sudo batt limit 55` requests 55%, bypassing the slider's 80% minimum. Targets from 10–99% are supported; 100% releases the limit. Older native backends use the values offered by macOS.
 
@@ -420,13 +420,13 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 
 This option makes the MagSafe LED reflect the charging state of your MacBook (or force it off).
 
-- Green: charge limit is reached and charging is stopped.
+- Green: charging is stopped.
 - Orange: charging is in progress.
-- Off: just woken up from sleep, charing is disabled and batt is waiting before controlling charging.
+- Off: forced off, or temporarily after wake with active charging control.
 
 Note that you must have a MagSafe LED on your MacBook to use this feature.
 
-This also requires legacy direct charging control. It is unavailable on macOS 27 / 20xxx firmware even if the Mac has a physical MagSafe LED, because firmware owns the charging decision and `batt` cannot reliably mirror its state.
+With firmware-managed charging, `batt` uses the charging state reported by macOS. While the Mac is asleep, the LED is updated after it wakes. Legacy direct charging and adapter modes continue to use the charging state controlled by `batt`; the native macOS limit does not support LED control.
 
 To enable MagSafe LED control, run `sudo batt magsafe-led enable`.
 

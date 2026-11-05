@@ -427,7 +427,11 @@ func maintainLoopInner(ignoreMissedLoops bool) bool {
 	}
 
 	switch getCapabilities().ChargeControlMode {
-	case compatibility.ChargeControlFirmware, compatibility.ChargeControlNative:
+	case compatibility.ChargeControlFirmware:
+		ok := maintainManagedChargeLimit()
+		maintainFirmwareMagSafeLED()
+		return ok
+	case compatibility.ChargeControlNative:
 		return maintainManagedChargeLimit()
 	case compatibility.ChargeControlLegacy, compatibility.ChargeControlAdapter:
 		return maintainActiveCharging(ignoreMissedLoops)

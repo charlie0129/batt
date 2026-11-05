@@ -21,9 +21,9 @@ void BattApplyTooltips(BattMenuController *controller) {
          "Note that you must have a MagSafe LED on your MacBook to use this feature.");
     SetTooltip(controller, BattItemMagSafeEnabled,
         @"Enable MagSafe LED control. The LED will reflect charging status:\n\n"
-         "- Green: Charge limit is reached and charging is stopped.\n"
+         "- Green: Charging is stopped.\n"
          "- Orange: Charging is in progress.\n"
-         "- Off: Woke from sleep, charging is off and batt is awaiting control.");
+         "- Off: Forced off, or temporarily after wake with active charging control.");
     SetTooltip(controller, BattItemMagSafeDisabled,
         @"Disable MagSafe LED control. The LED will stay in its default state (mostly orange).");
     SetTooltip(controller, BattItemMagSafeAlwaysOff,
