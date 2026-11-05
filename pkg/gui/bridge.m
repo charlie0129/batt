@@ -1,5 +1,8 @@
+#import <AvailabilityMacros.h>
 #import <Cocoa/Cocoa.h>
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= 130000
 #import <ServiceManagement/ServiceManagement.h>
+#endif
 
 #include "native.h"
 
@@ -33,6 +36,7 @@ void batt_show_notification(const char *title, const char *body) {
 }
 
 bool batt_register_login_item(void) {
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= 130000
     if (@available(macOS 13.0, *)) {
         NSError *error = nil;
         BOOL success = [[SMAppService mainAppService] registerAndReturnError:&error];
@@ -41,11 +45,13 @@ bool batt_register_login_item(void) {
         }
         return success;
     }
+#endif
     NSLog(@"SMAppService not available on this macOS version");
     return false;
 }
 
 bool batt_unregister_login_item(void) {
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= 130000
     if (@available(macOS 13.0, *)) {
         NSError *error = nil;
         BOOL success = [[SMAppService mainAppService] unregisterAndReturnError:&error];
@@ -54,14 +60,17 @@ bool batt_unregister_login_item(void) {
         }
         return success;
     }
+#endif
     NSLog(@"SMAppService not available on this macOS version");
     return false;
 }
 
 bool batt_is_login_item_registered(void) {
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= 130000
     if (@available(macOS 13.0, *)) {
         return [SMAppService mainAppService].status == SMAppServiceStatusEnabled;
     }
+#endif
     return false;
 }
 

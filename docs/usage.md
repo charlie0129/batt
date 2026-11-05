@@ -236,13 +236,13 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 
 This option makes the MagSafe LED reflect the charging state of your MacBook (or force it off).
 
-- Green: charge limit is reached and charging is stopped.
+- Green: charging is stopped.
 - Orange: charging is in progress.
-- Off: just woken up from sleep, charging is disabled and batt is waiting before controlling charging.
+- Off: forced off, or temporarily after wake with active charging control.
 
 Note that you must have a MagSafe LED on your MacBook to use this feature.
 
-This also requires legacy direct charging control. It is unavailable on macOS 27 / 20xxx firmware even if the Mac has a physical MagSafe LED, because firmware owns the charging decision and `batt` cannot reliably mirror its state.
+With firmware-managed charging, `batt` uses the charging state reported by macOS. While the Mac is asleep, the LED is updated after it wakes. Legacy direct charging and adapter modes continue to use the charging state controlled by `batt`; the native macOS limit does not support LED control.
 
 To enable MagSafe LED control, run `sudo batt magsafe-led enable`.
 

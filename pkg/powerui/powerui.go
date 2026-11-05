@@ -46,10 +46,27 @@ type operations interface {
 	RegisteredManualLimits() ([]int, error)
 }
 
+// The agent registers a reloaded target within milliseconds. SetLimit polls
+// for it this many times, this far apart, before reporting a failure.
+const (
+	registrationChecks        = 10
+	registrationCheckInterval = 100 * time.Millisecond
+)
+
 // Client serializes access to the native charge-limit service.
 type Client struct {
 	mu  sync.Mutex
 	api operations
+	// sleep waits between registration checks. Tests replace it.
+	sleep func(time.Duration)
+}
+
+func (c *Client) wait(d time.Duration) {
+	if c.sleep != nil {
+		c.sleep(d)
+		return
+	}
+	time.Sleep(d)
 }
 
 // New creates a client without probing or changing the system.
@@ -144,17 +161,16 @@ func (c *Client) SetLimit(limit int) error {
 	if enabled && current == limit {
 		return nil
 	}
-	// customLimit returns a zero target when the agent has stale settings. That
-	// needs another preference notification, not an enable call that resets
-	// the target to 80% and can release a lower hold.
+	// customLimit returns a zero target while the agent has stale settings.
+	// That needs another preference notification, not an enable call.
 	_, agentEnabled, err := c.api.Limit()
 	if err != nil {
 		return fmt.Errorf("read native feature state before changing it: %w", err)
 	}
 	// Explicitly re-engage the agent after a previous disable. A preference
-	// notification alone can leave it in its ChargingToFull state.
-	// enableMCL temporarily selects Apple's 80% default. Do not call it for
-	// an already-enabled controller: it would release an existing lower hold.
+	// notification alone can leave it in its ChargingToFull state. enableMCL
+	// selects Apple's 80% default until the reload below replaces it, so skip
+	// it when the agent is already enabled.
 	if !agentEnabled {
 		if err := c.api.Enable(); err != nil {
 			return fmt.Errorf("enable native charge control: %w", err)
@@ -172,9 +188,9 @@ func (c *Client) SetLimit(limit int) error {
 	}
 	// Allow the reload notification to reach the agent before confirming
 	// registration. This checks policy, not the battery's physical response.
-	for attempt := 0; attempt < 10; attempt++ {
+	for attempt := range registrationChecks {
 		if attempt > 0 {
-			time.Sleep(100 * time.Millisecond)
+			c.wait(registrationCheckInterval)
 		}
 		current, enabled, err = c.customLimit()
 		if err != nil {

@@ -10,4 +10,4 @@
 
 Yes, macOS has optimized battery charging. It will try to find out your charging and working schedule and prohibits charging above 80% for a couple of hours overnight. However, if you have an irregular schedule, this will simply not work. Also, you lose predictability (which I value a lot) about your computer's behavior, i.e., by letting macOS decide for you, you, the one who knows your schedule the best, cannot control when to charge or when not to charge.
 
-`batt` lets you choose a maximum charge level. In native mode, macOS applies the target asynchronously and can temporarily override it to charge fully.
+`batt` lets you choose a maximum charge level. In native mode, macOS enforces it and can temporarily override it to charge fully.

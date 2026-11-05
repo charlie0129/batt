@@ -13,7 +13,7 @@ Check your firmware version by running `system_profiler SPHardwareDataType | gre
 | `118xx.x.x`               | macOS 15 Sequoia     | ✅   | ✅              | ✅                       |                                    |
 | `138xx.x.x` / `18xxx.x.x` | macOS 26 Tahoe       | ✅   | ✅              | ✅                       |                                    |
 | `20356.0.0.0.15` ~ `20457.0.77.0.2`               | macOS 27 Golden Gate Developer Beta 1~3 | ✅   | ✅              | ✅                       | Firmware-managed limits; see below |
-| `20457.0.125.0.2`+ | macOS 27 Golden Gate Developer Beta 4+ | ✅   | ✅     | ✅       | **Requires** a usable native or opt-in adapter backend. Native support depends on macOS; see below |
+| `20457.0.125.0.2`+ | macOS 27 Golden Gate Developer Beta 4+ | ✅   | ✅     | ✅       | On macOS 27, **requires** the native or opt-in adapter backend. macOS 15.8 keeps firmware-managed limits. See below |
 | Other                     | Unknown              | ❓   | ❓              | ❓                       |                                    |
 
 - ❌: Unsupported
@@ -37,18 +37,20 @@ On firmware exposing `bfF0`, `batt` writes the upper and lower percentages to `b
 This mode has several intentional differences and current limitations:
 
 - If the battery is above the upper limit, firmware can stop drawing wall power and use the battery to run the Mac. Unlike legacy control, the percentage may therefore fall.
-- MagSafe LED control is unavailable because `batt` no longer owns or reliably knows the charging-enabled state.
+- MagSafe LED control follows the actual charging state reported by macOS. Green means the battery is not charging, which can happen for reasons other than reaching the limit.
 - Legacy sleep options are unavailable and unnecessary. Incompatible values left in the configuration after an upgrade are disabled by the daemon.
 
 The daemon reports these capabilities to current CLI and GUI clients. Older daemons that do not provide detailed compatibility data retain the previous permissive client behavior.
 
 ### macOS 27 firmware with gated charge keys
 
-Starting with macOS 27 Developer Beta 4 (firmware `20457.0.125.0.2`+, also shipped in some macOS 15.x / 26.x security updates), Apple gated the SMC charge-control keys behind a private entitlement (`com.apple.private.iokit.soc-limit`). Both the legacy keys (`CH0B`/`CH0C`/`CHTE`) and the firmware-limit keys (`bfF0`/`bfD0`/`bfE0`) now return `kIOReturnNotPrivileged` even to root, so neither the legacy nor the firmware backend works. See [#152](https://github.com/charlie0129/batt/issues/152).
+Starting with macOS 27 Developer Beta 4 (firmware `20457.0.125.0.2`+), Apple gated the SMC charge-control keys behind a private entitlement (`com.apple.private.iokit.soc-limit`). Both the legacy keys (`CH0B`/`CH0C`/`CHTE`) and the firmware-limit keys (`bfF0`/`bfD0`/`bfE0`) now return `kIOReturnNotPrivileged` even to root, so neither the legacy nor the firmware backend works. See [#152](https://github.com/charlie0129/batt/issues/152).
+
+macOS 15.8 updates bring the same firmware, but their SMC firmware-limit keys stay usable, so `batt` v0.7.4 and later use the firmware-managed mode above there ([#160](https://github.com/charlie0129/batt/issues/160), [#162](https://github.com/charlie0129/batt/issues/162)). macOS 26.7 most likely behaves the same, but has not been verified.
 
 `batt` automatically uses the native macOS charge limit through PowerUIAgent when direct SMC control is unavailable. On macOS 27, `sudo batt limit 55` requests 55%, bypassing the slider's 80% minimum. Targets from 10–99% are supported; 100% releases the limit. Older native backends use the values offered by macOS.
 
-Native mode uses a single upper target and retains it during sleep. It does not support `lower-limit-delta`, MagSafe LED control or legacy sleep options. Changes can take several minutes. **If the battery is above the limit, macOS may drain it toward the target even while the Mac is plugged in.** macOS may also temporarily charge fully; `batt status` and the GUI report Apple's full-charge override when available. Check `batt status` and `pmset -g battlimit` after changing a target; an accepted request does not mean charging has already stopped.
+Native mode uses a single upper target and retains it during sleep. It does not support `lower-limit-delta`, MagSafe LED control or legacy sleep options. On macOS 27, `batt limit` returns once macOS has registered the new target (`pmset -g battlimit` lists it); the battery can take a minute or more to start or stop charging. **If the battery is above the limit, macOS may drain it toward the target even while the Mac is plugged in.** macOS may also temporarily charge fully; `batt status` and the GUI report Apple's full-charge override when available.
 
 As an alternative, `batt` offers an opt-in **adapter mode**, enabled at runtime with `sudo batt adapter-mode enable`. The adapter (wall-power) SMC key is not entitlement-gated, so `batt` runs the same ThinkPad-style hysteresis loop it uses in legacy mode, but toggles wall power instead of the charge state:
 
@@ -62,7 +64,7 @@ Intentional differences and limitations in adapter mode:
 - The limit is enforced only while `batt` is awake. Just before sleep `batt` restores/holds a safe state (charging is disabled pre-sleep by default) to avoid overcharging while asleep; the sleep options apply as in legacy mode.
 - In Clamshell mode (lid closed with an external display), cutting wall power makes the Mac sleep unless `batt prevent-sleep-on-adapter-disable` is enabled. This opt-in setting also applies to adapter mode; it prevents all system sleep while wall power is cut. See [Prevent sleep when adapter is disabled](usage.md#prevent-sleep-when-adapter-is-disabled) for safety warnings.
 - Because `batt` owns the adapter to enforce the limit, the manual `batt adapter` / GUI Force Discharge feature and auto-calibration are disabled in this mode.
-- MagSafe LED control is unavailable, because `batt` does not toggle the charge state directly.
+- MagSafe LED control follows wall power: orange while `batt` lets the Mac charge, green while it holds the limit.
 - Native control remains the default when charge keys are gated; adapter mode must be enabled explicitly.
 
 `batt` selects the backend from usable SMC keys and services; exact native targets require macOS 27.

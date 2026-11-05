@@ -200,6 +200,7 @@ I want a _simple_ tool that does just one thing, and **does it well** -- limitin
 - [@invisiblepixel](https://github.com/invisiblepixel) for app icon design.
 - [@brookqin](https://github.com/brookqin) for implementing auto calibration.
 - [@ashwinr64](https://github.com/ashwinr64) for investigating SMC keys on macOS 27 [#140 comment](https://github.com/charlie0129/batt/pull/140#issuecomment-4950731214) [actuallymentor/battery#469](https://github.com/actuallymentor/battery/pull/469), also [@lilianmoraru](https://github.com/lilianmoraru) for the initial PR.
+- [@MandalorianY](https://github.com/MandalorianY) for native charge limits below 80% on macOS 27 [#166](https://github.com/charlie0129/batt/pull/166).
 
 ### Contributors
 
