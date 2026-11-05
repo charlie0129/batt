@@ -12,7 +12,9 @@
 
 <span style="font-size: 20px;">`batt` is a tool to control battery charging on Apple Silicon MacBooks.</span>
 
+<!-- github-only:start -->
 <span style="font-size: 19px;">Full docs [here!](https://charlie0129.github.io/batt/)</span>
+<!-- github-only:end -->
 
 <img src="docs/assets/screenshot.png" alt="Batt Screenshot" width="256" />
 
@@ -84,6 +86,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 
 ### Installing the CLI
 
+<!-- tabs:start -->
 #### Homebrew
 
 ```bash
@@ -96,6 +99,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 ```bash
   curl -fsSL https://github.com/charlie0129/batt/raw/master/hack/install.sh
 ```
+<!-- tabs:end -->
 
 After installation run the following command to ensure that the installation succeeded:
 

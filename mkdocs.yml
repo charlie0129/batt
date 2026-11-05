@@ -5,12 +5,8 @@ site_url: https://charlie0129.github.io/batt/
 repo_url: https://github.com/charlie0129/batt
 
 nav:
-  - Home: 
+  - Home:
     - Batt: index.md
-    - Compatibility: compatibility.md
-    - Installation: installation.md
-    - Usage: usage.md
-    - Building: building.md
     - FAQ: faq.md
     - Comparison: comparison.md
   - Docs:
@@ -56,6 +52,10 @@ theme:
     - content.code.copy
     - search.suggest
     - search.highlight
+
+# The home page is generated from README.md; see hack/mkdocs_hooks.py.
+hooks:
+  - hack/mkdocs_hooks.py
 
 extra_css:
   - assets/stylesheets/extra.css

@@ -6,8 +6,10 @@ on:
     branches:
       - master
     paths:
+      - README.md
       - docs/**
       - mkdocs.yml
+      - hack/mkdocs_hooks.py
       - .github/workflows/deploy-pages.yml
 
 # Pages deploys from this workflow's artifact (Settings -> Pages -> Source:
