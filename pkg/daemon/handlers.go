@@ -675,7 +675,7 @@ func setControlMagSafeLED(c *gin.Context) {
 		return
 	}
 
-	if getCapabilities().ChargeControlMode == compatibility.ChargeControlFirmware && mode == config.ControlMagSafeModeDisabled {
+	if isManagedChargeControl() && mode == config.ControlMagSafeModeDisabled {
 		if err := smcConn.SetMagSafeLedState(smc.LEDSystem); err != nil {
 			logrus.WithError(err).Error("failed to return MagSafe LED control to the system")
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())

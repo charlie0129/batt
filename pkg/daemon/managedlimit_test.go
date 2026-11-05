@@ -214,7 +214,7 @@ func TestDetectCapabilitiesFallsBackToNativeLimit(t *testing.T) {
 	}
 }
 
-func TestDetectCapabilitiesNativeModeDoesNotOfferMagSafeLED(t *testing.T) {
+func TestDetectCapabilitiesNativeModeOffersMagSafeLED(t *testing.T) {
 	led, err := gosmc.NewValue(smc.MagSafeLedKey, gosmc.TypeUInt8, []byte{0})
 	if err != nil {
 		t.Fatal(err)
@@ -224,8 +224,8 @@ func TestDetectCapabilitiesNativeModeDoesNotOfferMagSafeLED(t *testing.T) {
 	useFakeNativeLimit(t, &fakeNativeLimit{supported: true, limits: []int{80, 100}})
 
 	got := detectCapabilities()
-	if got.ChargeControlMode != compatibility.ChargeControlNative || got.MagSafeLED {
-		t.Fatalf("unexpected native capabilities: %+v", got)
+	if got.ChargeControlMode != compatibility.ChargeControlNative || !got.MagSafeLED {
+		t.Fatalf("native mode must offer MagSafe LED control: %+v", got)
 	}
 }
 

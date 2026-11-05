@@ -15,7 +15,7 @@ import (
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
-func firmwareMagSafeFixture(t *testing.T, initial byte, mode config.ControlMagSafeMode, upper int) *smc.AppleSMC {
+func managedMagSafeFixture(t *testing.T, controlMode compatibility.ChargeControlMode, initial byte, mode config.ControlMagSafeMode, upper int) (*smc.AppleSMC, *fakeNativeLimit) {
 	t.Helper()
 	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
 		v, err := gosmc.NewValue(key, dataType, data)
@@ -44,20 +44,23 @@ func firmwareMagSafeFixture(t *testing.T, initial byte, mode config.ControlMagSa
 	file.SetControlMagSafeLED(mode)
 
 	previousSMC, previousConf, previousCapabilities := smcConn, conf, capabilities
-	previousCalibration, previousIsCharging := calibrationState, firmwareIsCharging
+	previousCalibration, previousIsCharging := calibrationState, systemIsCharging
 	t.Cleanup(func() {
 		smcConn, conf, capabilities = previousSMC, previousConf, previousCapabilities
-		calibrationState, firmwareIsCharging = previousCalibration, previousIsCharging
+		calibrationState, systemIsCharging = previousCalibration, previousIsCharging
 	})
 	smcConn, conf = mock, file
 	capabilities = compatibility.Capabilities{
-		ChargingControl: true, ChargeControlMode: compatibility.ChargeControlFirmware, MagSafeLED: true,
+		ChargingControl: true, ChargeControlMode: controlMode, MagSafeLED: true,
+		NativeExactTargets: controlMode == compatibility.ChargeControlNative,
 	}
 	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	return mock
+	native := &fakeNativeLimit{supported: true, exact: true, limit: 100}
+	useFakeNativeLimit(t, native)
+	return mock, native
 }
 
-func TestFirmwareModeUpdatesMagSafeLED(t *testing.T) {
+func TestManagedModesUpdateMagSafeLED(t *testing.T) {
 	tests := []struct {
 		name     string
 		mode     config.ControlMagSafeMode
@@ -76,55 +79,99 @@ func TestFirmwareModeUpdatesMagSafeLED(t *testing.T) {
 		{name: "unavailable charging state leaves LED alone", mode: config.ControlMagSafeModeEnabled, stateErr: errors.New("unavailable"), initial: smc.LEDOrange, want: smc.LEDOrange, upper: 70, wantPoll: true},
 		{name: "LED still follows charging with limit disabled", mode: config.ControlMagSafeModeEnabled, initial: smc.LEDOrange, want: smc.LEDGreen, upper: 100, wantPoll: true},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mock := firmwareMagSafeFixture(t, byte(tt.initial), tt.mode, tt.upper)
-			polled := false
-			firmwareIsCharging = func() (bool, error) {
-				polled = true
-				return tt.charging, tt.stateErr
-			}
+	for _, controlMode := range []compatibility.ChargeControlMode{compatibility.ChargeControlFirmware, compatibility.ChargeControlNative} {
+		for _, tt := range tests {
+			t.Run(string(controlMode)+"/"+tt.name, func(t *testing.T) {
+				mock, native := managedMagSafeFixture(t, controlMode, byte(tt.initial), tt.mode, tt.upper)
+				polled := false
+				systemIsCharging = func() (bool, error) {
+					polled = true
+					return tt.charging, tt.stateErr
+				}
 
-			if !maintainLoopForced() {
-				t.Fatal("firmware charge limit failed")
+				if !maintainLoopForced() {
+					t.Fatalf("%s charge limit failed", controlMode)
+				}
+				led, err := mock.Read(smc.MagSafeLedKey)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(led.Bytes) != 1 || led.Bytes[0] != byte(tt.want) {
+					t.Fatalf("LED = %x, want %02x", led.Bytes, tt.want)
+				}
+				if polled != tt.wantPoll {
+					t.Fatalf("charging state queried = %t, want %t", polled, tt.wantPoll)
+				}
+				if tt.upper >= 100 {
+					return
+				}
+				if controlMode == compatibility.ChargeControlNative {
+					if !native.enabled || native.limit != tt.upper {
+						t.Fatalf("unexpected native charge limit: %+v", native)
+					}
+					return
+				}
+				limit, err := mock.GetFirmwareChargeLimit()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !limit.Active || limit.Lower != 68 || limit.Upper != 70 {
+					t.Fatalf("unexpected firmware charge limit: %+v", limit)
+				}
+			})
+		}
+	}
+}
+
+func TestManagedDisableMagSafeLEDReturnsControlToSystem(t *testing.T) {
+	for _, controlMode := range []compatibility.ChargeControlMode{compatibility.ChargeControlFirmware, compatibility.ChargeControlNative} {
+		t.Run(string(controlMode), func(t *testing.T) {
+			mock, _ := managedMagSafeFixture(t, controlMode, byte(smc.LEDGreen), config.ControlMagSafeModeEnabled, 70)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPut, "/magsafe-led", strings.NewReader(`"disabled"`))
+			setupRoutes().ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusCreated {
+				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 			}
 			led, err := mock.Read(smc.MagSafeLedKey)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(led.Bytes) != 1 || led.Bytes[0] != byte(tt.want) {
-				t.Fatalf("LED = %x, want %02x", led.Bytes, tt.want)
+			if len(led.Bytes) != 1 || led.Bytes[0] != byte(smc.LEDSystem) {
+				t.Fatalf("LED = %x, want system control", led.Bytes)
 			}
-			if polled != tt.wantPoll {
-				t.Fatalf("charging state queried = %t, want %t", polled, tt.wantPoll)
-			}
-			limit, err := mock.GetFirmwareChargeLimit()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if tt.upper < 100 && (!limit.Active || limit.Lower != 68 || limit.Upper != 70) {
-				t.Fatalf("unexpected firmware charge limit: %+v", limit)
+			if conf.ControlMagSafeLED() != config.ControlMagSafeModeDisabled {
+				t.Fatalf("mode = %s, want disabled", conf.ControlMagSafeLED())
 			}
 		})
 	}
 }
 
-func TestFirmwareDisableMagSafeLEDReturnsControlToSystem(t *testing.T) {
-	mock := firmwareMagSafeFixture(t, byte(smc.LEDGreen), config.ControlMagSafeModeEnabled, 70)
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPut, "/magsafe-led", strings.NewReader(`"disabled"`))
-	setupRoutes().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+func TestReleaseMagSafeLEDOnExit(t *testing.T) {
+	tests := []struct {
+		name string
+		mode config.ControlMagSafeMode
+		want smc.MagSafeLedState
+	}{
+		{name: "enabled returns control to system", mode: config.ControlMagSafeModeEnabled, want: smc.LEDSystem},
+		{name: "always off returns control to system", mode: config.ControlMagSafeModeAlwaysOff, want: smc.LEDSystem},
+		{name: "disabled leaves LED alone", mode: config.ControlMagSafeModeDisabled, want: smc.LEDOrange},
 	}
-	led, err := mock.Read(smc.MagSafeLedKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(led.Bytes) != 1 || led.Bytes[0] != byte(smc.LEDSystem) {
-		t.Fatalf("LED = %x, want system control", led.Bytes)
-	}
-	if conf.ControlMagSafeLED() != config.ControlMagSafeModeDisabled {
-		t.Fatalf("mode = %s, want disabled", conf.ControlMagSafeLED())
+	for _, controlMode := range []compatibility.ChargeControlMode{compatibility.ChargeControlFirmware, compatibility.ChargeControlNative} {
+		for _, tt := range tests {
+			t.Run(string(controlMode)+"/"+tt.name, func(t *testing.T) {
+				mock, _ := managedMagSafeFixture(t, controlMode, byte(smc.LEDOrange), tt.mode, 70)
+				if err := releaseMagSafeLEDOnExit(); err != nil {
+					t.Fatal(err)
+				}
+				led, err := mock.Read(smc.MagSafeLedKey)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(led.Bytes) != 1 || led.Bytes[0] != byte(tt.want) {
+					t.Fatalf("LED = %x, want %02x", led.Bytes, tt.want)
+				}
+			})
+		}
 	}
 }

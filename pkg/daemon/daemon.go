@@ -294,16 +294,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		logrus.Errorf("failed to remove calibration sleep assertion before exiting: %v", err)
 	}
 
-	var cleanupErr error
-	if err := releaseChargeControlOnExit(); err != nil {
-		logrus.Errorf("failed to reset charge control before exiting: %v", err)
-		cleanupErr = errors.Join(cleanupErr, err)
-	}
-
-	if err := shutdownAdapterAndSleep(); err != nil {
-		logrus.Errorf("failed to restore adapter/sleep state before exiting: %v", err)
-		cleanupErr = errors.Join(cleanupErr, err)
-	}
+	cleanupErr := releaseHardwareOnExit()
 
 	logrus.Info("closing smc connection")
 	err = smcConn.Close()
@@ -355,6 +346,27 @@ func reconcileStartupSleepPolicy() error {
 		return fmt.Errorf("failed to restore pending sleep-disabled state during startup: %w", err)
 	}
 	return nil
+}
+
+// releaseHardwareOnExit hands charging, the adapter, sleep and the MagSafe
+// LED back to macOS before the SMC connection is closed.
+func releaseHardwareOnExit() error {
+	var cleanupErr error
+	if err := releaseChargeControlOnExit(); err != nil {
+		logrus.Errorf("failed to reset charge control before exiting: %v", err)
+		cleanupErr = errors.Join(cleanupErr, err)
+	}
+
+	if err := shutdownAdapterAndSleep(); err != nil {
+		logrus.Errorf("failed to restore adapter/sleep state before exiting: %v", err)
+		cleanupErr = errors.Join(cleanupErr, err)
+	}
+
+	if err := releaseMagSafeLEDOnExit(); err != nil {
+		logrus.Errorf("failed to return MagSafe LED control to the system before exiting: %v", err)
+		cleanupErr = errors.Join(cleanupErr, err)
+	}
+	return cleanupErr
 }
 
 func shutdownAdapterAndSleep() error {
