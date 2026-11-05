@@ -2,9 +2,13 @@ name: deploy-pages
 
 on:
   workflow_dispatch:
-  # push: UNCOMMENT THIS SECTION IN PRODUCTION
-    # branches:
-      # - master
+  push:
+    branches:
+      - master
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - .github/workflows/deploy-pages.yml
 
 permissions:
   contents: write

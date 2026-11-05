@@ -21,7 +21,7 @@
 !!! note "TL;DR:" 
     keep your battery at 80% or lower when plugged in, and discharge it as shallowly as feasible.
 
-Previously, before optimized battery charging was introduced, MacBooks are known to suffer from battery swelling when they are kept at 100% all the time, especially the 2015s. Even with optimized battery charging, the effect is not optimal <span style="font-size: 13px;">(described [here](comparison.md#but-macos-has-similar-features-built-in-is-it))</span>
+Previously, before optimized battery charging was introduced, MacBooks are known to suffer from battery swelling when they are kept at 100% all the time, especially the 2015s. Even with optimized battery charging, the effect is not optimal <span style="font-size: 13px;">(described [here](comparison.md#but-macos-has-similar-features-built-in-doesnt-it))</span>
 
 `batt` can effectively alleviate this problem by limiting the battery charge level. It can be used to set a maximum charge level. For example, you can set it to 80%, and it will stop charging when the battery reaches 80%.
 
