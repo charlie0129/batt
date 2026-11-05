@@ -146,3 +146,32 @@ func TestManagedDisableMagSafeLEDReturnsControlToSystem(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseMagSafeLEDOnExit(t *testing.T) {
+	tests := []struct {
+		name string
+		mode config.ControlMagSafeMode
+		want smc.MagSafeLedState
+	}{
+		{name: "enabled returns control to system", mode: config.ControlMagSafeModeEnabled, want: smc.LEDSystem},
+		{name: "always off returns control to system", mode: config.ControlMagSafeModeAlwaysOff, want: smc.LEDSystem},
+		{name: "disabled leaves LED alone", mode: config.ControlMagSafeModeDisabled, want: smc.LEDOrange},
+	}
+	for _, controlMode := range []compatibility.ChargeControlMode{compatibility.ChargeControlFirmware, compatibility.ChargeControlNative} {
+		for _, tt := range tests {
+			t.Run(string(controlMode)+"/"+tt.name, func(t *testing.T) {
+				mock, _ := managedMagSafeFixture(t, controlMode, byte(smc.LEDOrange), tt.mode, 70)
+				if err := releaseMagSafeLEDOnExit(); err != nil {
+					t.Fatal(err)
+				}
+				led, err := mock.Read(smc.MagSafeLedKey)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(led.Bytes) != 1 || led.Bytes[0] != byte(tt.want) {
+					t.Fatalf("LED = %x, want %02x", led.Bytes, tt.want)
+				}
+			})
+		}
+	}
+}

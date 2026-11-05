@@ -305,6 +305,11 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 		cleanupErr = errors.Join(cleanupErr, err)
 	}
 
+	if err := releaseMagSafeLEDOnExit(); err != nil {
+		logrus.Errorf("failed to return MagSafe LED control to the system before exiting: %v", err)
+		cleanupErr = errors.Join(cleanupErr, err)
+	}
+
 	logrus.Info("closing smc connection")
 	err = smcConn.Close()
 	if err != nil {

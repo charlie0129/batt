@@ -61,3 +61,15 @@ func maintainManagedMagSafeLED() {
 		}
 	}
 }
+
+// releaseMagSafeLEDOnExit returns the LED to system control. The SMC keeps
+// the last state batt wrote after the daemon exits, so without this the LED
+// stays green or off even when macOS charges again.
+func releaseMagSafeLEDOnExit() error {
+	maintainLoopInnerLock.Lock()
+	defer maintainLoopInnerLock.Unlock()
+	if !getCapabilities().MagSafeLED || conf.ControlMagSafeLED() == config.ControlMagSafeModeDisabled {
+		return nil
+	}
+	return smcConn.SetMagSafeLedState(smc.LEDSystem)
+}
