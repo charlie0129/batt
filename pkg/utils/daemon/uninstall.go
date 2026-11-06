@@ -2,14 +2,13 @@ package daemon
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
-
-	"github.com/sirupsen/logrus"
 )
 
 func Uninstall() error {
-	logrus.Infof("stopping batt")
+	slog.Info("stopping batt")
 
 	// run launchctl unload /Library/LaunchDaemons/cc.chlc.batt.plist
 	err := exec.Command(
@@ -21,7 +20,7 @@ func Uninstall() error {
 		return fmt.Errorf("failed to unload %s: %w. Are you root?", plistPath, err)
 	}
 
-	logrus.Infof("removing launch daemon")
+	slog.Info("removing launch daemon")
 
 	// if the file doesn't exist, we don't need to remove it
 	_, err = os.Stat(plistPath)

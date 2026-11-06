@@ -1,9 +1,8 @@
 package config
 
 import (
+	"log/slog"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 type Config interface {
@@ -43,7 +42,8 @@ type Config interface {
 	SetChargeOnceTarget(int)
 	ClearChargeOnceTarget()
 
-	LogrusFields() logrus.Fields
+	// LogValue renders the settings for a log line.
+	LogValue() slog.Value
 
 	// Load reads the configuration from the source.
 	Load() error

@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
@@ -83,10 +83,10 @@ func runChargeOnce(call func() (string, error), failure, success string) error {
 	}
 
 	if ret != "" {
-		logrus.Infof("daemon responded: %s", ret)
+		slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 	}
 
-	logrus.Info(success)
+	slog.Info(success)
 
 	return nil
 }

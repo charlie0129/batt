@@ -3,12 +3,12 @@ package smc
 import (
 	"fmt"
 
-	"github.com/sirupsen/logrus"
+	"github.com/charlie0129/batt/pkg/logging"
 )
 
 // GetBatteryCharge returns the battery charge.
 func (c *AppleSMC) GetBatteryCharge() (int, error) {
-	logrus.Tracef("GetBatteryCharge called")
+	logging.Trace("GetBatteryCharge called")
 
 	v, err := c.Read(BatteryChargeKey)
 	if err != nil {

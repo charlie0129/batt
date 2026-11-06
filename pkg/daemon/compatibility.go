@@ -2,10 +2,8 @@ package daemon
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
-
-	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
@@ -86,7 +84,7 @@ func (d *Daemon) reapplyChargeControlMode() error {
 		return fmt.Errorf("failed to enforce %s charge-control mode; previous %s mode restored", next.ChargeControlMode, prev)
 	}
 
-	logrus.WithFields(capabilityLogFields(next)).Info("reapplied charge control mode")
+	slog.Info("reapplied charge control mode", capabilityLogAttrs(next)...)
 	d.disableUnsupportedConfiguredFeatures()
 	return nil
 }
@@ -100,26 +98,27 @@ func (d *Daemon) detectNativeChargeControl() (compatibility.ChargeControlMode, [
 	}
 	limits, err := d.native.AvailableLimits()
 	if err != nil {
-		logrus.WithError(err).Warn("macOS reports a manual charge limit but its supported values could not be read")
+		slog.Warn("macOS reports a manual charge limit but its supported values could not be read", "error", err)
 		return compatibility.ChargeControlUnsupported, nil
 	}
 	if len(limits) == 0 {
-		logrus.Warn("macOS reports a manual charge limit but offers no supported values")
+		slog.Warn("macOS reports a manual charge limit but offers no supported values")
 		return compatibility.ChargeControlUnsupported, nil
 	}
 	return compatibility.ChargeControlNative, limits
 }
 
-func capabilityLogFields(capabilities compatibility.Capabilities) logrus.Fields {
-	return logrus.Fields{
-		"chargingControl":    capabilities.ChargingControl,
-		"chargeControlMode":  capabilities.ChargeControlMode,
-		"nativeExactTargets": capabilities.NativeExactTargets,
-		"supportedLimits":    capabilities.SupportedLimits,
-		"sleepHooks":         capabilities.SleepHooks,
-		"magSafeLED":         capabilities.MagSafeLED,
-		"adapterControl":     capabilities.AdapterControl,
-		"calibration":        capabilities.Calibration,
+// capabilityLogAttrs renders capabilities as log attributes.
+func capabilityLogAttrs(capabilities compatibility.Capabilities) []any {
+	return []any{
+		"chargingControl", capabilities.ChargingControl,
+		"chargeControlMode", capabilities.ChargeControlMode,
+		"nativeExactTargets", capabilities.NativeExactTargets,
+		"supportedLimits", capabilities.SupportedLimits,
+		"sleepHooks", capabilities.SleepHooks,
+		"magSafeLED", capabilities.MagSafeLED,
+		"adapterControl", capabilities.AdapterControl,
+		"calibration", capabilities.Calibration,
 	}
 }
 
@@ -132,7 +131,7 @@ func (d *Daemon) disableUnsupportedCalibrationState() {
 	if d.calibrationState.Phase == calibration.PhaseIdle {
 		return
 	}
-	logrus.WithField("phase", d.calibrationState.Phase).Info("discarding unsupported persisted calibration state")
+	slog.Info("discarding unsupported persisted calibration state", "phase", d.calibrationState.Phase)
 	d.releaseCalibrationSleepAssertion()
 	// Calibration may have temporarily changed the configured limit to 100%.
 	// Restore its saved limits without touching unsupported charging/adapter
@@ -143,7 +142,7 @@ func (d *Daemon) disableUnsupportedCalibrationState() {
 		d.conf.SetUpperLimit(st.SnapshotUpperLimit)
 		d.conf.SetLowerLimit(st.SnapshotLowerLimit)
 		if err := d.conf.Save(); err != nil {
-			logrus.WithError(err).Error("failed to restore limits from unsupported calibration state")
+			slog.Error("failed to restore limits from unsupported calibration state", "error", err)
 		}
 	}
 	d.calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
@@ -187,11 +186,11 @@ func (d *Daemon) disableUnsupportedConfiguredFeatures() {
 	// it to the next supported value rather than charging past it.
 	if upper := conf.UpperLimit(); !caps.SupportsLimit(upper) {
 		snapped := caps.NearestSupportedLimit(upper)
-		logrus.WithFields(logrus.Fields{
-			"configured":      upper,
-			"limit":           snapped,
-			"supportedLimits": caps.SupportedLimits,
-		}).Warn("configured charge limit is not offered by this Mac, raising it to the next supported limit")
+		slog.Warn("configured charge limit is not offered by this Mac, raising it to the next supported limit",
+			"configured", upper,
+			"limit", snapped,
+			"supportedLimits", caps.SupportedLimits,
+		)
 		conf.SetUpperLimit(snapped)
 		changed = true
 	}
@@ -204,22 +203,20 @@ func (d *Daemon) disableUnsupportedConfiguredFeatures() {
 		return
 	}
 	if err := conf.Save(); err != nil {
-		logrus.WithError(err).Error("failed to persist disabled unsupported features")
+		slog.Error("failed to persist disabled unsupported features", "error", err)
 		return
 	}
-	logrus.WithFields(capabilityLogFields(caps)).Info("disabled unsupported configured features")
+	slog.Info("disabled unsupported configured features", capabilityLogAttrs(caps)...)
 }
 
-func (d *Daemon) requireCapability(c *gin.Context, feature compatibility.Feature) bool {
+func (d *Daemon) requireCapability(w http.ResponseWriter, feature compatibility.Feature) bool {
 	if d.getCapabilities().Supports(feature) {
 		return true
 	}
-	err := fmt.Errorf("%s is not supported on this Mac", feature)
-	c.IndentedJSON(http.StatusConflict, err.Error())
-	_ = c.AbortWithError(http.StatusConflict, err)
+	d.fail(w, http.StatusConflict, fmt.Errorf("%s is not supported on this Mac", feature))
 	return false
 }
 
-func (d *Daemon) getCompatibility(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, d.getCapabilities())
+func (d *Daemon) getCompatibility(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, d.getCapabilities())
 }

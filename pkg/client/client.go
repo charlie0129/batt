@@ -6,13 +6,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 // Client is a struct for communicating with batt daemon
@@ -43,7 +42,7 @@ func NewClientWithTimeout(socketPath string, timeout time.Duration) *Client {
 						if os.IsPermission(err) {
 							return nil, ErrPermissionDenied
 						}
-						logrus.Errorf("failed to connect to unix socket: %v", err)
+						slog.Error("failed to connect to unix socket", "error", err)
 						return nil, err
 					}
 					return conn, err
@@ -55,12 +54,12 @@ func NewClientWithTimeout(socketPath string, timeout time.Duration) *Client {
 
 // Send is a method for sending a request to the batt daemon
 func (c *Client) Send(method string, path string, data string) (string, error) {
-	logrus.WithFields(logrus.Fields{
-		"method": method,
-		"path":   path,
-		"data":   data,
-		"unix":   c.socketPath,
-	}).Debug("sending request")
+	slog.Debug("sending request",
+		"method", method,
+		"path", path,
+		"data", data,
+		"unix", c.socketPath,
+	)
 
 	var resp *http.Response
 	var err error
@@ -87,7 +86,7 @@ func (c *Client) Send(method string, path string, data string) (string, error) {
 
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			logrus.Errorf("failed to close response body: %v", err)
+			slog.Error("failed to close response body", "error", err)
 		}
 	}()
 

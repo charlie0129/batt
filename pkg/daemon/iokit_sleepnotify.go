@@ -8,9 +8,8 @@ import "C"
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
-
-	"github.com/sirupsen/logrus"
 )
 
 // iokitSleepNotifier registers for IOKit system power notifications and runs
@@ -37,7 +36,7 @@ func (iokitSleepNotifier) Listen(h SleepHandler) error {
 	sleepHandler = h
 	sleepHandlerMu.Unlock()
 
-	logrus.Info("registered and listening system sleep notifications")
+	slog.Info("registered and listening system sleep notifications")
 	if int(C.ListenNotifications()) != 0 {
 		return fmt.Errorf("IORegisterForSystemPower failed")
 	}
@@ -49,7 +48,7 @@ func (iokitSleepNotifier) Stop() {
 	sleepHandlerMu.Lock()
 	sleepHandler = nil
 	sleepHandlerMu.Unlock()
-	logrus.Info("stopped listening system sleep notifications")
+	slog.Info("stopped listening system sleep notifications")
 }
 
 //export canSystemSleepCallback

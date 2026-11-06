@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -102,9 +102,9 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 				return fmt.Errorf("failed to set to %s: %v", use, err)
 			}
 			if ret != "" {
-				logrus.Infof("daemon responded: %s", ret)
+				slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 			}
-			logrus.Infof("successfully set to %s", use)
+			slog.Info(fmt.Sprintf("successfully set to %s", use))
 			return nil
 		},
 	}
@@ -118,9 +118,9 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 				return fmt.Errorf("failed to set to %s: %v", use, err)
 			}
 			if ret != "" {
-				logrus.Infof("daemon responded: %s", ret)
+				slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 			}
-			logrus.Infof("successfully set to %s", use)
+			slog.Info(fmt.Sprintf("successfully set to %s", use))
 			return nil
 		},
 	}
@@ -134,9 +134,9 @@ func NewSetControlMagSafeLEDCommand() *cobra.Command {
 				return fmt.Errorf("failed to set to %s: %v", use, err)
 			}
 			if ret != "" {
-				logrus.Infof("daemon responded: %s", ret)
+				slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 			}
-			logrus.Infof("successfully set to %s", use)
+			slog.Info(fmt.Sprintf("successfully set to %s", use))
 			return nil
 		},
 	}

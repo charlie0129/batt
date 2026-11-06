@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/charlie0129/gosmc"
 	"github.com/peterneutron/powerkit-go/pkg/powerkit"
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
@@ -869,7 +869,7 @@ func (m *memConfig) ClearChargeOnceTarget() {
 	m.set(func(s *memConfigState) { s.chargeOnceTarget = 0 })
 }
 
-func (m *memConfig) LogrusFields() logrus.Fields { return logrus.Fields{} }
+func (m *memConfig) LogValue() slog.Value { return slog.GroupValue() }
 
 func (m *memConfig) Load() error {
 	m.mu.Lock()

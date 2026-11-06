@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -13,13 +14,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
-
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/events"
+	"github.com/charlie0129/batt/pkg/logging"
 	"github.com/charlie0129/batt/pkg/powerui"
 	"github.com/charlie0129/batt/pkg/smc"
 )
@@ -118,55 +117,52 @@ func New(conf config.Config, sys System) *Daemon {
 	return d
 }
 
-func (d *Daemon) routes() *gin.Engine {
-	gin.SetMode(gin.ReleaseMode)
-
-	router := gin.New()
-	router.Use(gin.Recovery())
-	router.Use(ginLogger(logrus.StandardLogger()))
-	router.GET("/config", d.getConfig)
-	router.GET("/limit", d.getLimit)
-	router.PUT("/limit", d.setLimit)
-	router.PUT("/disable", d.setDisableFor)
-	router.POST("/charge-once/limit", d.postChargeOnceToLimit)
-	router.POST("/charge-once/full", d.postChargeOnceToFull)
-	router.POST("/charge-once/cancel", d.postCancelChargeOnce)
-	router.PUT("/lower-limit-delta", d.setLowerLimitDelta)
-	router.PUT("/prevent-idle-sleep", d.setPreventIdleSleep)
-	router.PUT("/disable-charging-pre-sleep", d.setDisableChargingPreSleep)
-	router.PUT("/prevent-system-sleep", d.setPreventSystemSleep)
-	router.PUT("/prevent-sleep-on-adapter-disable", d.setPreventSleepOnAdapterDisable)
-	router.PUT("/adapter", d.setAdapter)
-	router.PUT("/adapter/disable", d.setAdapterDisableFor)
-	router.GET("/adapter", d.getAdapter)
-	router.GET("/charging", d.getCharging)
-	router.GET("/battery-info", d.getBatteryInfo)
-	router.PUT("/magsafe-led", d.setControlMagSafeLED)
-	router.PUT("/adapter-mode", d.setAdapterMode)
-	router.GET("/current-charge", d.getCurrentCharge)
-	router.GET("/plugged-in", d.getPluggedIn)
-	router.GET("/charging-control-capable", d.getChargingControlCapable)
-	router.GET("/compatibility", d.getCompatibility)
-	router.GET("/version", d.getVersion)
+// routes is the daemon's HTTP API.
+func (d *Daemon) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /config", d.getConfig)
+	mux.HandleFunc("GET /limit", d.getLimit)
+	mux.HandleFunc("PUT /limit", d.setLimit)
+	mux.HandleFunc("PUT /disable", d.setDisableFor)
+	mux.HandleFunc("POST /charge-once/limit", d.postChargeOnceToLimit)
+	mux.HandleFunc("POST /charge-once/full", d.postChargeOnceToFull)
+	mux.HandleFunc("POST /charge-once/cancel", d.postCancelChargeOnce)
+	mux.HandleFunc("PUT /lower-limit-delta", d.setLowerLimitDelta)
+	mux.HandleFunc("PUT /prevent-idle-sleep", d.setPreventIdleSleep)
+	mux.HandleFunc("PUT /disable-charging-pre-sleep", d.setDisableChargingPreSleep)
+	mux.HandleFunc("PUT /prevent-system-sleep", d.setPreventSystemSleep)
+	mux.HandleFunc("PUT /prevent-sleep-on-adapter-disable", d.setPreventSleepOnAdapterDisable)
+	mux.HandleFunc("PUT /adapter", d.setAdapter)
+	mux.HandleFunc("PUT /adapter/disable", d.setAdapterDisableFor)
+	mux.HandleFunc("GET /adapter", d.getAdapter)
+	mux.HandleFunc("GET /charging", d.getCharging)
+	mux.HandleFunc("GET /battery-info", d.getBatteryInfo)
+	mux.HandleFunc("PUT /magsafe-led", d.setControlMagSafeLED)
+	mux.HandleFunc("PUT /adapter-mode", d.setAdapterMode)
+	mux.HandleFunc("GET /current-charge", d.getCurrentCharge)
+	mux.HandleFunc("GET /plugged-in", d.getPluggedIn)
+	mux.HandleFunc("GET /charging-control-capable", d.getChargingControlCapable)
+	mux.HandleFunc("GET /compatibility", d.getCompatibility)
+	mux.HandleFunc("GET /version", d.getVersion)
 	// Deprecated
-	router.GET("/power-telemetry", d.getPowerTelemetry)
-	router.GET("/telemetry", d.getUnifiedTelemetry)
-	router.GET("/event", d.getEventStream)
+	mux.HandleFunc("GET /power-telemetry", d.getPowerTelemetry)
+	mux.HandleFunc("GET /telemetry", d.getUnifiedTelemetry)
+	mux.HandleFunc("GET /event", d.getEventStream)
 
 	// Calibration endpoints (status folded into /telemetry)
-	router.POST("/calibration/start", d.postStartCalibration)
-	router.POST("/calibration/pause", d.postPauseCalibration)
-	router.POST("/calibration/resume", d.postResumeCalibration)
-	router.POST("/calibration/cancel", d.postCancelCalibration)
-	router.PUT("/schedule", d.setSchedule)
-	router.PUT("/schedule/postpone", d.postponeSchedule)
-	router.PUT("/schedule/skip", d.skipSchedule)
+	mux.HandleFunc("POST /calibration/start", d.postStartCalibration)
+	mux.HandleFunc("POST /calibration/pause", d.postPauseCalibration)
+	mux.HandleFunc("POST /calibration/resume", d.postResumeCalibration)
+	mux.HandleFunc("POST /calibration/cancel", d.postCancelCalibration)
+	mux.HandleFunc("PUT /schedule", d.setSchedule)
+	mux.HandleFunc("PUT /schedule/postpone", d.postponeSchedule)
+	mux.HandleFunc("PUT /schedule/skip", d.skipSchedule)
 
 	// Calibration settings endpoints
-	router.PUT("/calibration/discharge-threshold", d.setCalibrationDischargeThreshold)
-	router.PUT("/calibration/hold-duration", d.setCalibrationHoldDurationMinutes)
+	mux.HandleFunc("PUT /calibration/discharge-threshold", d.setCalibrationDischargeThreshold)
+	mux.HandleFunc("PUT /calibration/hold-duration", d.setCalibrationHoldDurationMinutes)
 
-	return router
+	return accessLog(recoverPanics(mux))
 }
 
 // removeStaleSocket removes a unix socket file left behind by a daemon that was
@@ -190,7 +186,7 @@ func removeStaleSocket(path string) error {
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove stale socket %s: %w", path, err)
 	}
-	logrus.Infof("removed stale unix socket %s left by a previous daemon", path)
+	slog.Info(fmt.Sprintf("removed stale unix socket %s left by a previous daemon", path))
 	return nil
 }
 
@@ -210,7 +206,7 @@ func Run(configPath string, unixSocketPath string, allowNonRoot bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse config during startup: %w", err)
 	}
-	logrus.WithFields(conf.LogrusFields()).Infof("config loaded")
+	slog.Info("config loaded", "config", conf)
 
 	// Open Apple SMC and detect the charge-control mechanism from key
 	// presence before starting any loop, listener, scheduler, or API server.
@@ -232,12 +228,12 @@ func (d *Daemon) start(stateDir string) error {
 		return fmt.Errorf("native macOS 27 charge control requires the root batt daemon")
 	}
 	d.setChargeControl(caps)
-	logrus.WithFields(capabilityLogFields(caps)).Info("detected hardware capabilities")
+	slog.Info("detected hardware capabilities", capabilityLogAttrs(caps)...)
 	d.disableUnsupportedConfiguredFeatures()
 
 	d.loadCalibrationState(filepath.Join(stateDir, "batt.state.json"))
 	if err := d.holds.init(filepath.Join(stateDir, "batt.sleep.json")); err != nil {
-		logrus.WithError(err).Warn("failed to initialize sleep disabled state")
+		slog.Warn("failed to initialize sleep disabled state", "error", err)
 	}
 	d.disableUnsupportedCalibrationState()
 	d.restoreCalibrationSleepAssertion()
@@ -249,10 +245,10 @@ func (d *Daemon) start(stateDir string) error {
 	// Load persisted schedule from config
 	if cronExpr := d.conf.Cron(); d.getCapabilities().Calibration && cronExpr != "" {
 		if err := d.scheduler.Schedule(cronExpr); err != nil {
-			logrus.WithError(err).Warn("failed to restore schedule from config")
+			slog.Warn("failed to restore schedule from config", "error", err)
 		} else {
 			d.scheduler.Start()
-			logrus.WithField("cron", cronExpr).Info("restored schedule from config")
+			slog.Info("restored schedule from config", "cron", cronExpr)
 		}
 	}
 	return nil
@@ -273,10 +269,10 @@ func (d *Daemon) Run(stateDir string, unixSocketPath string, allowNonRoot bool) 
 		signal.Notify(sigc, syscall.SIGHUP)
 		for range sigc {
 			if err := d.reload(); err != nil {
-				logrus.WithError(err).Error("failed to reload config safely")
+				slog.Error("failed to reload config safely", "error", err)
 				continue
 			}
-			logrus.Infof("config reloaded")
+			slog.Info("config reloaded")
 		}
 	}()
 
@@ -291,28 +287,31 @@ func (d *Daemon) Run(stateDir string, unixSocketPath string, allowNonRoot bool) 
 	// adapter cut and the Mac on battery). launchd runs a single instance, so
 	// no live daemon owns the path here; remove a stale socket before binding.
 	if err := removeStaleSocket(unixSocketPath); err != nil {
-		logrus.Fatal(err)
+		_ = d.smc.Close()
+		return err
 	}
 
 	// Create the socket to listen on:
 	l, err := net.Listen("unix", unixSocketPath)
 	if err != nil {
-		logrus.Fatal(err)
+		_ = d.smc.Close()
+		return fmt.Errorf("listen on %s: %w", unixSocketPath, err)
 	}
 
 	if d.conf.AllowNonRootAccess() || allowNonRoot {
-		logrus.Infof("non-root access is allowed, chaning permissions of %s to 0777", unixSocketPath)
-		err = os.Chmod(unixSocketPath, 0777)
-		if err != nil {
-			logrus.Fatal(err)
+		slog.Info(fmt.Sprintf("non-root access is allowed, chaning permissions of %s to 0777", unixSocketPath))
+		if err := os.Chmod(unixSocketPath, 0777); err != nil {
+			_ = l.Close()
+			_ = d.smc.Close()
+			return fmt.Errorf("chmod %s: %w", unixSocketPath, err)
 		}
 	}
 
 	// Serve HTTP on unix socket
 	go func() {
-		logrus.Infof("http server listening on %s", l.Addr().String())
+		slog.Info(fmt.Sprintf("http server listening on %s", l.Addr().String()))
 		if err := srv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logrus.Fatal(err)
+			logging.Fatal("http server failed", "error", err)
 		}
 	}()
 
@@ -320,7 +319,7 @@ func (d *Daemon) Run(stateDir string, unixSocketPath string, allowNonRoot bool) 
 	// and this lets a runtime adapter-mode toggle get working sleep hooks.
 	go func() {
 		if err := d.notifier.Listen(daemonSleepHandler{d}); err != nil {
-			logrus.Errorf("failed to listen to system sleep notifications: %v", err)
+			slog.Error("failed to listen to system sleep notifications", "error", err)
 			os.Exit(1)
 		}
 	}()
@@ -328,7 +327,7 @@ func (d *Daemon) Run(stateDir string, unixSocketPath string, allowNonRoot bool) 
 	loopCtx, stopLoop := context.WithCancel(context.Background())
 	defer stopLoop()
 	go func() {
-		logrus.Debugln("main loop starts")
+		slog.Debug("main loop starts")
 		d.runLoop(loopCtx)
 	}()
 
@@ -337,18 +336,18 @@ func (d *Daemon) Run(stateDir string, unixSocketPath string, allowNonRoot bool) 
 	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
 	// Wait for a SIGINT or SIGTERM:
 	sig := <-sigc
-	logrus.Infof("caught signal \"%s\": shutting down.", sig)
+	slog.Info(fmt.Sprintf("caught signal \"%s\": shutting down.", sig))
 
-	logrus.Info("gracefully shutting down http server")
+	slog.Info("gracefully shutting down http server")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	err = srv.Shutdown(ctx)
 	if err != nil {
-		logrus.Errorf("failed to gracefully shutdown http server, closing it immediately: %v", err)
+		slog.Error("failed to gracefully shutdown http server, closing it immediately", "error", err)
 		_ = srv.Close()
 	}
 	cancel()
 
-	logrus.Info("stopping listening notifications")
+	slog.Info("stopping listening notifications")
 	d.notifier.Stop()
 	stopLoop()
 	d.scheduler.Stop()
@@ -356,7 +355,7 @@ func (d *Daemon) Run(stateDir string, unixSocketPath string, allowNonRoot bool) 
 	nativeShutdown := d.getCapabilities().NativeExactTargets
 	cleanupErr := d.shutdown()
 
-	logrus.Info("exiting")
+	slog.Info("exiting")
 	if nativeShutdown {
 		return cleanupErr
 	}
@@ -379,17 +378,17 @@ func (d *Daemon) reload() error {
 // macOS and closes the SMC connection. It is the last thing Run does.
 func (d *Daemon) shutdown() error {
 	if err := d.assertions.AllowSleepOnAC(); err != nil {
-		logrus.Errorf("failed to remove PM assertion before exiting: %v", err)
+		slog.Error("failed to remove PM assertion before exiting", "error", err)
 	}
 	if err := d.assertions.AllowCalibrationSleep(); err != nil {
-		logrus.Errorf("failed to remove calibration sleep assertion before exiting: %v", err)
+		slog.Error("failed to remove calibration sleep assertion before exiting", "error", err)
 	}
 
 	cleanupErr := d.releaseHardwareOnExit()
 
-	logrus.Info("closing smc connection")
+	slog.Info("closing smc connection")
 	if err := d.smc.Close(); err != nil {
-		logrus.Errorf("failed to close smc connection: %v", err)
+		slog.Error("failed to close smc connection", "error", err)
 		cleanupErr = errors.Join(cleanupErr, err)
 	}
 	return cleanupErr
@@ -414,7 +413,7 @@ func (d *Daemon) ensureStartupSleepPolicy() error {
 	err := d.reconcileStartupSleepPolicy()
 	var snapshotErr *sleepSnapshotError
 	if errors.As(err, &snapshotErr) {
-		logrus.WithError(err).Errorf("ignoring the unusable sleep snapshot %s; batt starts without it and cannot hold sleep until it is fixed or removed. If the Mac no longer sleeps, run `sudo pmset -a disablesleep 0`", snapshotErr.path)
+		slog.Error(fmt.Sprintf("ignoring the unusable sleep snapshot %s; batt starts without it and cannot hold sleep until it is fixed or removed. If the Mac no longer sleeps, run `sudo pmset -a disablesleep 0`", snapshotErr.path), "error", err)
 		return nil
 	}
 	return err
@@ -438,17 +437,17 @@ func (d *Daemon) reconcileStartupSleepPolicy() error {
 func (d *Daemon) releaseHardwareOnExit() error {
 	var cleanupErr error
 	if err := d.releaseChargeControlOnExit(); err != nil {
-		logrus.Errorf("failed to reset charge control before exiting: %v", err)
+		slog.Error("failed to reset charge control before exiting", "error", err)
 		cleanupErr = errors.Join(cleanupErr, err)
 	}
 
 	if err := d.shutdownAdapterAndSleep(); err != nil {
-		logrus.Errorf("failed to restore adapter/sleep state before exiting: %v", err)
+		slog.Error("failed to restore adapter/sleep state before exiting", "error", err)
 		cleanupErr = errors.Join(cleanupErr, err)
 	}
 
 	if err := d.releaseMagSafeLEDOnExit(); err != nil {
-		logrus.Errorf("failed to return MagSafe LED control to the system before exiting: %v", err)
+		slog.Error("failed to return MagSafe LED control to the system before exiting", "error", err)
 		cleanupErr = errors.Join(cleanupErr, err)
 	}
 	return cleanupErr
@@ -457,12 +456,12 @@ func (d *Daemon) releaseHardwareOnExit() error {
 func (d *Daemon) shutdownAdapterAndSleep() error {
 	if d.adapterSleepPolicyCapable() {
 		if err := d.enableAdapter(); err != nil {
-			logrus.Errorf("failed to re-enable adapter before exiting: %v", err)
+			slog.Error("failed to re-enable adapter before exiting", "error", err)
 			return err
 		}
 	}
 	if err := d.holds.releaseAll(); err != nil {
-		logrus.Errorf("failed to restore SleepDisabled before exiting: %v", err)
+		slog.Error("failed to restore SleepDisabled before exiting", "error", err)
 		return err
 	}
 	return nil

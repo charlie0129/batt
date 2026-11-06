@@ -3,10 +3,9 @@ package gui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
-
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/client"
@@ -45,70 +44,70 @@ func (c *menuController) onTimerTick() {
 }
 
 func (c *menuController) refreshCompatibility() {
-	logrus.Info("Getting config")
+	slog.Info("Getting config")
 	rawConfig, err := c.api.GetConfig()
 	if err != nil {
-		logrus.WithError(err).Warn("Failed to get config")
+		slog.Warn("Failed to get config", "error", err)
 		c.setCompatibility(false, compatibility.Permissive(), false)
 		return
 	}
 	conf := config.NewFileFromConfig(rawConfig, "")
-	logrus.WithFields(conf.LogrusFields()).Info("Got config")
+	slog.Info("Got config", "config", conf)
 	c.menu.setChecked(itemPreventSleepOnAdapterDisable, conf.PreventSleepOnAdapterDisable())
 
-	logrus.Info("Getting hardware compatibility")
+	slog.Info("Getting hardware compatibility")
 	capabilities, err := c.api.GetCompatibility()
 	c.compatibilityKnown = err == nil
 	if err != nil {
-		logrus.WithError(err).Warn("Detailed compatibility unavailable; enabling all GUI features")
+		slog.Warn("Detailed compatibility unavailable; enabling all GUI features", "error", err)
 		fallback := compatibility.Permissive()
 		capabilities = &fallback
 	}
-	logrus.WithField("capabilities", capabilities).Info("Got hardware compatibility")
+	slog.Info("Got hardware compatibility", "capabilities", capabilities)
 
-	logrus.Info("Getting daemon version")
+	slog.Info("Getting daemon version")
 	daemonVersion, err := c.api.GetVersion()
 	if err != nil {
-		logrus.WithError(err).Warn("Failed to get version")
+		slog.Warn("Failed to get version", "error", err)
 		c.setCompatibility(true, *capabilities, true)
 	} else {
 		c.setCompatibility(true, *capabilities, daemonVersion != version.Version)
 	}
-	logrus.WithFields(logrus.Fields{
-		"daemonVersion": daemonVersion,
-		"clientVersion": version.Version,
-	}).Info("Got daemon")
+	slog.Info("Got daemon",
+		"daemonVersion", daemonVersion,
+		"clientVersion", version.Version,
+	)
 }
 
 func (c *menuController) refreshOnOpen() {
 	rawConfig, err := c.api.GetConfig()
 	if err != nil {
-		logrus.WithError(err).Error("Failed to get config")
+		slog.Error("Failed to get config", "error", err)
 		c.setCompatibility(false, compatibility.Permissive(), false)
 		return
 	}
 	conf := config.NewFileFromConfig(rawConfig, "")
-	logrus.WithFields(conf.LogrusFields()).Info("Got config")
+	slog.Info("Got config", "config", conf)
 	c.updateDisableSchedules(conf)
 
 	capabilities, err := c.api.GetCompatibility()
 	c.compatibilityKnown = err == nil
 	if err != nil {
-		logrus.WithError(err).Warn("Detailed compatibility unavailable; enabling all GUI features")
+		slog.Warn("Detailed compatibility unavailable; enabling all GUI features", "error", err)
 		fallback := compatibility.Permissive()
 		capabilities = &fallback
 	}
 	daemonVersion, err := c.api.GetVersion()
 	if err != nil {
-		logrus.WithError(err).Error("Failed to get version")
+		slog.Error("Failed to get version", "error", err)
 		c.setCompatibility(true, *capabilities, true)
 	} else {
 		c.setCompatibility(true, *capabilities, daemonVersion != version.Version)
 	}
-	logrus.WithFields(logrus.Fields{
-		"daemonVersion": daemonVersion,
-		"clientVersion": version.Version,
-	}).Info("Got daemon")
+	slog.Info("Got daemon",
+		"daemonVersion", daemonVersion,
+		"clientVersion", version.Version,
+	)
 
 	isPluggedIn, err := c.api.GetPluggedIn()
 	if err != nil {
@@ -167,7 +166,7 @@ func (c *menuController) refreshOnOpen() {
 		if adapter, err := c.api.GetAdapter(); err == nil {
 			c.updateAdapterState(adapter)
 		} else {
-			logrus.WithError(err).Error("Failed to get adapter")
+			slog.Error("Failed to get adapter", "error", err)
 			c.adapterKnown = false
 			if c.compatibilityKnown {
 				c.menu.setEnabled(itemForceDischarge, false)
@@ -180,7 +179,7 @@ func (c *menuController) refreshOnOpen() {
 func (c *menuController) refreshDisableSchedules() {
 	rawConfig, err := c.api.GetConfig()
 	if err != nil {
-		logrus.WithError(err).Debug("Failed to refresh temporary disable schedule")
+		slog.Debug("Failed to refresh temporary disable schedule", "error", err)
 		return
 	}
 	conf := config.NewFileFromConfig(rawConfig, "")
@@ -189,7 +188,7 @@ func (c *menuController) refreshDisableSchedules() {
 
 	currentCharge, err := c.api.GetCurrentCharge()
 	if err != nil {
-		logrus.WithError(err).Debug("Failed to refresh current charge")
+		slog.Debug("Failed to refresh current charge", "error", err)
 		currentCharge = c.currentCharge
 	}
 	c.updateChargeOnce(conf, currentCharge)
@@ -198,7 +197,7 @@ func (c *menuController) refreshDisableSchedules() {
 			c.updateFullChargeOverride(batteryInfo)
 		} else {
 			c.menu.setHidden(itemFullChargeOverride, true)
-			logrus.WithError(err).Debug("Failed to refresh full-charge override state")
+			slog.Debug("Failed to refresh full-charge override state", "error", err)
 		}
 	} else {
 		c.menu.setHidden(itemFullChargeOverride, true)
@@ -311,7 +310,7 @@ func (c *menuController) updateForceDischargeControls() {
 }
 
 func (c *menuController) setStateError(message string, err error) {
-	logrus.WithError(err).Error(message)
+	slog.Error(message, "error", err)
 	c.menu.setTitle(itemState, "State: Error")
 	c.menu.setHidden(itemFullChargeOverride, true)
 }
@@ -382,7 +381,7 @@ func (c *menuController) updateTelemetry() {
 	telemetry, err := c.api.GetTelemetry(true, true)
 	if err != nil || telemetry == nil {
 		if err != nil {
-			logrus.WithError(err).Debug("GetTelemetry failed")
+			slog.Debug("GetTelemetry failed", "error", err)
 		}
 		return
 	}

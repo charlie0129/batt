@@ -5,11 +5,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	pkgerrors "github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/config"
@@ -44,16 +44,16 @@ By default, only root user is allowed to access the batt daemon for security rea
 
 			conf.SetAllowNonRootAccess(allowNonRootAccess)
 			if allowNonRootAccess {
-				logrus.Info("non-root users are allowed to access the batt daemon.")
+				slog.Info("non-root users are allowed to access the batt daemon.")
 			} else {
-				logrus.Info("only root user is allowed to access the batt daemon.")
+				slog.Info("only root user is allowed to access the batt daemon.")
 			}
 
 			err = daemonutils.Install()
 			if err != nil {
 				// check if current user is root
 				if os.Geteuid() != 0 {
-					logrus.Errorf("you must run this command as root")
+					slog.Error("you must run this command as root")
 				}
 				return fmt.Errorf("failed to install daemon: %v. Are you root?", err)
 			}
@@ -63,7 +63,7 @@ By default, only root user is allowed to access the batt daemon for security rea
 				return pkgerrors.Wrapf(err, "failed to save config")
 			}
 
-			logrus.Infof("installation succeeded")
+			slog.Info("installation succeeded")
 
 			exePath, _ := os.Executable()
 
@@ -93,7 +93,7 @@ type uninstallHardware interface {
 func restoreUninstallState(hardware uninstallHardware, resetCharging bool, recoverSleep func() error) error {
 	var resetErr error
 	if resetCharging && hardware.IsChargingControlCapable() {
-		logrus.Info("resetting charge limits")
+		slog.Info("resetting charge limits")
 		resetErr = hardware.ResetChargeControl()
 	}
 	if hardware.IsAdapterControlCapable() {
@@ -130,7 +130,7 @@ You must run this command as root.`,
 			if err != nil {
 				// check if current user is root
 				if os.Geteuid() != 0 {
-					logrus.Errorf("you must run this command as root")
+					slog.Error("you must run this command as root")
 				}
 				return fmt.Errorf("failed to uninstall daemon: %v", err)
 			}

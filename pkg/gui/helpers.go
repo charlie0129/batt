@@ -3,12 +3,12 @@ package gui
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
 
 	pkgerrors "github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -22,7 +22,7 @@ func isDaemonInstalled() bool {
 		if os.IsNotExist(err) {
 			return false
 		}
-		logrus.Warnf("Failed to check if %s exists: %s", plistPath, err)
+		slog.Warn(fmt.Sprintf("Failed to check if %s exists: %s", plistPath, err))
 		return false
 	}
 	return true
@@ -90,7 +90,7 @@ mkdir -p "$(dirname "%s")" # For whatever reason, some users don't have /usr/loc
 /bin/ln -sf "%s" "%s" || true
 `, exe, battSymlinkLocation, exe, battSymlinkLocation)
 
-	logrus.WithField("script", shellScript).Info("Installing daemon")
+	slog.Info("Installing daemon", "script", shellScript)
 
 	output := &bytes.Buffer{}
 	cmd := exec.Command("/usr/bin/osascript", "-e", fmt.Sprintf("do shell script \"%s\" with administrator privileges", escapeShellInAppleScript(shellScript)))
@@ -106,13 +106,13 @@ mkdir -p "$(dirname "%s")" # For whatever reason, some users don't have /usr/loc
 
 func startAppAtBoot() error {
 	if IsLoginItemRegistered() {
-		logrus.Info("Application is already registered to start at login")
+		slog.Info("Application is already registered to start at login")
 		return nil
 	}
 
 	if err := RegisterLoginItem(); err != nil {
 		return pkgerrors.Wrapf(err, "failed to register application to start at login")
 	}
-	logrus.Info("Application registered to start at login")
+	slog.Info("Application registered to start at login")
 	return nil
 }

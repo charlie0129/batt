@@ -3,9 +3,8 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
-
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
@@ -143,11 +142,11 @@ func (d *Daemon) startChargeOnce(target int) error {
 
 // reportChargeOnceStarted runs only after the immediate enforcement succeeds.
 func (d *Daemon) reportChargeOnceStarted(target, charge int) {
-	logrus.WithFields(logrus.Fields{
-		"target":             target,
-		"charge":             charge,
-		chargeOnceLimitField: d.conf.UpperLimit(),
-	}).Info("started a one-time charge")
+	slog.Info("started a one-time charge",
+		"target", target,
+		"charge", charge,
+		chargeOnceLimitField, d.conf.UpperLimit(),
+	)
 	d.publishChargeOnceEvent(chargeOnceActionStart, target, chargeOnceStartedMessage(target, charge, d.conf.UpperLimit()))
 }
 
@@ -169,10 +168,10 @@ func (d *Daemon) cancelChargeOnce() (int, error) {
 		return 0, err
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"target":             target,
-		chargeOnceLimitField: conf.UpperLimit(),
-	}).Info("cancelled the one-time charge")
+	slog.Info("cancelled the one-time charge",
+		"target", target,
+		chargeOnceLimitField, conf.UpperLimit(),
+	)
 
 	d.publishChargeOnceEvent(chargeOnceActionCancel, target,
 		fmt.Sprintf("One-time charge cancelled. The %d%% charge limit applies again.", conf.UpperLimit()))
@@ -194,7 +193,7 @@ func (d *Daemon) reportSupersededChargeOnce(target int, reason string) {
 	if target == 0 {
 		return
 	}
-	logrus.WithFields(logrus.Fields{"target": target, "reason": reason}).Info("cancelled the one-time charge")
+	slog.Info("cancelled the one-time charge", "target", target, "reason", reason)
 	d.publishChargeOnceEvent(chargeOnceActionCancel, target,
 		fmt.Sprintf("One-time charge to %d%% cancelled: %s.", target, reason))
 }
@@ -219,7 +218,7 @@ func (d *Daemon) completeChargeOnce() bool {
 
 	charge, err := d.smc.GetBatteryCharge()
 	if err != nil {
-		logrus.WithError(err).Error("failed to read battery charge for the one-time charge")
+		slog.Error("failed to read battery charge for the one-time charge", "error", err)
 		return false
 	}
 	if !d.chargeOnceReachedTarget(target, charge) {
@@ -231,15 +230,15 @@ func (d *Daemon) completeChargeOnce() bool {
 		// The file still holds the target. Keep memory consistent with it so the
 		// next loop retries completion instead of reporting a false success.
 		conf.SetChargeOnceTarget(target)
-		logrus.Errorf("saveConfig failed: %v", err)
+		slog.Error("saveConfig failed", "error", err)
 		return false
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"target":             target,
-		"charge":             charge,
-		chargeOnceLimitField: conf.UpperLimit(),
-	}).Info("one-time charge reached its target, charge limit applies again")
+	slog.Info("one-time charge reached its target, charge limit applies again",
+		"target", target,
+		"charge", charge,
+		chargeOnceLimitField, conf.UpperLimit(),
+	)
 
 	d.publishChargeOnceEvent(chargeOnceActionComplete, target,
 		fmt.Sprintf("Charged to %d%%. The %d%% charge limit applies again.", charge, conf.UpperLimit()))

@@ -2,12 +2,11 @@ package daemon
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/hack"
 )
@@ -32,11 +31,11 @@ func Install() error {
 		return fmt.Errorf("failed to chmod the current executable to 0755: %w", err)
 	}
 
-	logrus.Infof("current executable path: %s", exePath)
+	slog.Info(fmt.Sprintf("current executable path: %s", exePath))
 
 	tmpl := strings.ReplaceAll(hack.LaunchDaemonPlistTemplate, "/path/to/batt", exePath)
 
-	logrus.Infof("writing launch daemon to /Library/LaunchDaemons")
+	slog.Info("writing launch daemon to /Library/LaunchDaemons")
 
 	// mkdir -p
 	err = os.MkdirAll("/Library/LaunchDaemons", 0755)
@@ -47,7 +46,7 @@ func Install() error {
 	// warn if the file already exists
 	_, err = os.Stat(plistPath)
 	if err == nil {
-		logrus.Errorf("%s already exists", plistPath)
+		slog.Error(fmt.Sprintf("%s already exists", plistPath))
 	}
 
 	err = os.WriteFile(plistPath, []byte(tmpl), 0644)
@@ -61,7 +60,7 @@ func Install() error {
 		return fmt.Errorf("failed to chown %s: %w", plistPath, err)
 	}
 
-	logrus.Infof("starting batt")
+	slog.Info("starting batt")
 
 	// run launchctl load /Library/LaunchDaemons/cc.chlc.batt.plist
 	err = exec.Command(

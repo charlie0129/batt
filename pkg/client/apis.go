@@ -5,13 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	pkgerrors "github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
@@ -241,7 +241,7 @@ func (c *Client) SubscribeEvents(ctx context.Context) <-chan events.Event {
 
 			req, err := http.NewRequestWithContext(ctx, "GET", "http://unix/event", nil)
 			if err != nil {
-				logrus.WithError(err).Warn("SSE request build failed; retrying")
+				slog.Warn("SSE request build failed; retrying", "error", err)
 				select {
 				case <-time.After(retry):
 				case <-ctx.Done():
@@ -251,7 +251,7 @@ func (c *Client) SubscribeEvents(ctx context.Context) <-chan events.Event {
 			}
 			resp, err := c.httpClient.Do(req)
 			if err != nil {
-				logrus.WithError(err).Warn("SSE connect failed; retrying")
+				slog.Warn("SSE connect failed; retrying", "error", err)
 				select {
 				case <-time.After(retry):
 				case <-ctx.Done():
@@ -290,7 +290,7 @@ func (c *Client) SubscribeEvents(ctx context.Context) <-chan events.Event {
 					line, err := reader.ReadString('\n')
 					if err != nil {
 						_ = resp.Body.Close()
-						logrus.WithError(err).Debug("SSE stream ended")
+						slog.Debug("SSE stream ended", "error", err)
 						break loop
 					}
 					line = strings.TrimRight(line, "\r\n")

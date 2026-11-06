@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
@@ -28,7 +28,7 @@ func NewVersionCommand() *cobra.Command {
 			clientVersion, daemonVersion, err := getVersion()
 			if err != nil {
 				cmd.Printf("Client: %s\n", clientVersion)
-				logrus.Errorf("failed to get daemon version: %v", err)
+				slog.Error("failed to get daemon version", "error", err)
 				return
 			}
 			cmd.Printf("Client: %s\n", clientVersion)
@@ -61,10 +61,10 @@ Some Macs only offer a fixed set of limits (for example 80, 85, 90, 95 and 100 o
 			}
 
 			if ret != "" {
-				logrus.Infof("daemon responded: %s", ret)
+				slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 			}
 
-			logrus.Infof("successfully set battery charge limit to %d%%", limit)
+			slog.Info(fmt.Sprintf("successfully set battery charge limit to %d%%", limit))
 
 			return nil
 		},
@@ -95,10 +95,10 @@ Use --for to disable batt temporarily. The current charge limit is restored auto
 				}
 
 				if ret != "" {
-					logrus.Infof("daemon responded: %s", ret)
+					slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 				}
 
-				logrus.Infof("successfully disabled batt. Charge limit has been reset to 100%%. To re-enable batt, just set a charge limit using \"batt limit\".")
+				slog.Info("successfully disabled batt. Charge limit has been reset to 100%. To re-enable batt, just set a charge limit using \"batt limit\".")
 
 				return nil
 			}
@@ -118,10 +118,10 @@ Use --for to disable batt temporarily. The current charge limit is restored auto
 			}
 
 			if ret != "" {
-				logrus.Infof("daemon responded: %s", ret)
+				slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 			}
 
-			logrus.Infof("successfully disabled batt for %s. The charge limit will be restored automatically.", d)
+			slog.Info(fmt.Sprintf("successfully disabled batt for %s. The charge limit will be restored automatically.", d))
 
 			return nil
 		},
@@ -170,9 +170,9 @@ Use --for to disable the power adapter temporarily. The adapter is enabled autom
 					return fmt.Errorf("failed to disable power adapter: %v", err)
 				}
 				if ret != "" {
-					logrus.Infof("daemon responded: %s", ret)
+					slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 				}
-				logrus.Infof("successfully disabled power adapter for %s. The power adapter will be enabled automatically.", d)
+				slog.Info(fmt.Sprintf("successfully disabled power adapter for %s. The power adapter will be enabled automatically.", d))
 				return nil
 			}
 
@@ -182,10 +182,10 @@ Use --for to disable the power adapter temporarily. The adapter is enabled autom
 			}
 
 			if ret != "" {
-				logrus.Infof("daemon responded: %s", ret)
+				slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 			}
 
-			logrus.Infof("successfully disabled power adapter")
+			slog.Info("successfully disabled power adapter")
 
 			return nil
 		},
@@ -204,10 +204,10 @@ Use --for to disable the power adapter temporarily. The adapter is enabled autom
 				}
 
 				if ret != "" {
-					logrus.Infof("daemon responded: %s", ret)
+					slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 				}
 
-				logrus.Infof("successfully enabled power adapter")
+				slog.Info("successfully enabled power adapter")
 
 				return nil
 			},
@@ -222,9 +222,9 @@ Use --for to disable the power adapter temporarily. The adapter is enabled autom
 				}
 
 				if ret {
-					logrus.Infof("power adapter is enabled")
+					slog.Info("power adapter is enabled")
 				} else {
-					logrus.Infof("power adapter is disabled")
+					slog.Info("power adapter is disabled")
 				}
 
 				return nil
@@ -261,10 +261,10 @@ For example, if you want to set the lower limit to be 5% less than the upper lim
 			}
 
 			if ret != "" {
-				logrus.Infof("daemon responded: %s", ret)
+				slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 			}
 
-			logrus.Infof("successfully set lower limit delta to %d%%", delta)
+			slog.Info(fmt.Sprintf("successfully set lower limit delta to %d%%", delta))
 
 			return nil
 		},

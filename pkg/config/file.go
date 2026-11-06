@@ -2,14 +2,15 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
 	pkgerrors "github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/utils/ptr"
 )
@@ -95,7 +96,7 @@ func (c *ControlMagSafeMode) UnmarshalJSON(data []byte) error {
 		case ctrlMagSafeModeAlwaysOffStr:
 			*c = ControlMagSafeModeAlwaysOff
 		default:
-			logrus.Warnf("invalid ControlMagSafeMode %q, falling back to %q", s, ControlMagSafeModeDisabled)
+			slog.Warn(fmt.Sprintf("invalid ControlMagSafeMode %q, falling back to %q", s, ControlMagSafeModeDisabled))
 			*c = ControlMagSafeModeDisabled
 		}
 		return nil
@@ -696,7 +697,7 @@ func (f *File) Load() error {
 	defer func(fp *os.File) {
 		err := fp.Close()
 		if err != nil {
-			logrus.Warnf("failed to close file %s", f.filepath)
+			slog.Warn(fmt.Sprintf("failed to close file %s", f.filepath))
 		}
 	}(fp)
 
@@ -740,7 +741,7 @@ func (f *File) Save() error {
 	defer func(fp *os.File) {
 		err := fp.Close()
 		if err != nil {
-			logrus.Warnf("failed to close file %s", f.filepath)
+			slog.Warn(fmt.Sprintf("failed to close file %s", f.filepath))
 		}
 	}(fp)
 
@@ -754,19 +755,19 @@ func (f *File) Save() error {
 	return nil
 }
 
-func (f *File) LogrusFields() logrus.Fields {
+func (f *File) LogValue() slog.Value {
 	if f.c == nil {
 		panic("config is nil")
 	}
 
-	return logrus.Fields{
-		"upperLimit":                   f.UpperLimit(),
-		"lowerLimit":                   f.LowerLimit(),
-		"preventIdleSleep":             f.PreventIdleSleep(),
-		"disableChargingPreSleep":      f.DisableChargingPreSleep(),
-		"preventSystemSleep":           f.PreventSystemSleep(),
-		"preventSleepOnAdapterDisable": f.PreventSleepOnAdapterDisable(),
-		"allowNonRootAccess":           f.AllowNonRootAccess(),
-		"controlMagsafeLed":            f.ControlMagSafeLED(),
-	}
+	return slog.GroupValue(
+		slog.Int("upperLimit", f.UpperLimit()),
+		slog.Int("lowerLimit", f.LowerLimit()),
+		slog.Bool("preventIdleSleep", f.PreventIdleSleep()),
+		slog.Bool("disableChargingPreSleep", f.DisableChargingPreSleep()),
+		slog.Bool("preventSystemSleep", f.PreventSystemSleep()),
+		slog.Bool("preventSleepOnAdapterDisable", f.PreventSleepOnAdapterDisable()),
+		slog.Bool("allowNonRootAccess", f.AllowNonRootAccess()),
+		slog.String("controlMagsafeLed", string(f.ControlMagSafeLED())),
+	)
 }

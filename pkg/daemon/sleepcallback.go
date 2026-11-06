@@ -1,9 +1,9 @@
 package daemon
 
 import (
+	"fmt"
+	"log/slog"
 	"time"
-
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/config"
 )
@@ -22,16 +22,16 @@ func (h daemonSleepHandler) SystemHasPoweredOn()  { h.d.systemHasPoweredOn() }
 // canSystemSleep decides whether idle sleep may start. It is only consulted
 // for idle sleep; macOS does not ask before forced sleep.
 func (d *Daemon) canSystemSleep() bool {
-	logrus.Debugln("received kIOMessageCanSystemSleep notification, idle sleep is about to kick in")
+	slog.Debug("received kIOMessageCanSystemSleep notification, idle sleep is about to kick in")
 	if !d.usesActiveChargeControl() {
 		return true
 	}
 
 	if !d.conf.PreventIdleSleep() {
-		logrus.Debugln("PreventIdleSleep is disabled, allow idle sleep")
+		slog.Debug("PreventIdleSleep is disabled, allow idle sleep")
 		return true
 	} else if d.conf.PreventSystemSleep() {
-		logrus.Warningln("prevent-system-sleep is active, no need in prevent-idle-sleep. Please disable it")
+		slog.Warn("prevent-system-sleep is active, no need in prevent-idle-sleep. Please disable it")
 		return true
 	}
 
@@ -40,7 +40,7 @@ func (d *Daemon) canSystemSleep() bool {
 	// So decisions may not be made yet. We need to wait.
 	// Actually, we wait the larger of preSleepLoopDelay and postSleepLoopDelay. This is not implemented yet.
 	if timeAfterWokenUp := time.Since(d.lastWakeTime); timeAfterWokenUp < d.preSleepLoopDelay {
-		logrus.Debugf("system has just waked up (%fs ago), deny idle sleep", timeAfterWokenUp.Seconds())
+		slog.Debug(fmt.Sprintf("system has just waked up (%fs ago), deny idle sleep", timeAfterWokenUp.Seconds()))
 		return false
 	}
 
@@ -48,28 +48,28 @@ func (d *Daemon) canSystemSleep() bool {
 	d.maintainLoopInner(false)
 
 	if d.maintainedCharging() {
-		logrus.Debugln("maintained charging is in progress, deny idle sleep")
+		slog.Debug("maintained charging is in progress, deny idle sleep")
 		return false
 	}
 
-	logrus.Debugln("no maintained charging is in progress, allow idle sleep")
+	slog.Debug("no maintained charging is in progress, allow idle sleep")
 	return true
 }
 
 // systemWillSleep runs right before the system sleeps. Sleep cannot be
 // prevented here; the daemon only disables charging first when configured to.
 func (d *Daemon) systemWillSleep() {
-	logrus.Debugln("received kIOMessageSystemWillSleep notification, system will go to sleep")
+	slog.Debug("received kIOMessageSystemWillSleep notification, system will go to sleep")
 	caps, ch := d.loadChargeControl()
 	if !modeUsesActiveChargeControl(caps.ChargeControlMode) {
 		return
 	}
 
 	if !d.conf.DisableChargingPreSleep() {
-		logrus.Debugln("DisableChargingPreSleep is disabled, allow sleep")
+		slog.Debug("DisableChargingPreSleep is disabled, allow sleep")
 		return
 	} else if d.conf.PreventSystemSleep() {
-		logrus.Warningln("prevent-system-sleep is active, no need in disable-charging-pre-sleep. Please disable it")
+		slog.Warn("prevent-system-sleep is active, no need in disable-charging-pre-sleep. Please disable it")
 		return
 	}
 
@@ -81,11 +81,11 @@ func (d *Daemon) systemWillSleep() {
 	// By always disabling charging before sleep (if charge limit is enabled), we can prevent
 	// some rare cases.
 	if d.conf.UpperLimit() >= 100 {
-		logrus.Debugln("no maintained charging is in progress, allow sleep")
+		slog.Debug("no maintained charging is in progress, allow sleep")
 		return
 	}
 
-	logrus.Infof("charge limit is enabled, disabling charging, and allowing sleep")
+	slog.Info("charge limit is enabled, disabling charging, and allowing sleep")
 	// Delay next loop to prevent charging to be re-enabled after we disabled it.
 	// macOS will wait 30s before going to sleep, there is a chance that a maintain loop is
 	// executed during that time and it enables charging.
@@ -93,19 +93,19 @@ func (d *Daemon) systemWillSleep() {
 	// No need to prevent duplicated runs.
 	d.holdMaintainLoop(d.preSleepLoopDelay, nil)
 	if err := ch.Disable(); err != nil {
-		logrus.Errorf("pre-sleep charger.Disable failed: %v", err)
+		slog.Error("pre-sleep charger.Disable failed", "error", err)
 		return
 	}
 	if d.conf.ControlMagSafeLED() != config.ControlMagSafeModeDisabled {
 		if err := d.smc.DisableMagSafeLed(); err != nil {
-			logrus.Errorf("DisableMagSafeLed failed: %v", err)
+			slog.Error("DisableMagSafeLed failed", "error", err)
 		}
 	}
 }
 
 // systemHasPoweredOn runs once the system has finished waking up.
 func (d *Daemon) systemHasPoweredOn() {
-	logrus.Debugln("received kIOMessageSystemHasPoweredOn notification, system has finished waking up")
+	slog.Debug("received kIOMessageSystemHasPoweredOn notification, system has finished waking up")
 	if !d.usesActiveChargeControl() {
 		return
 	}
@@ -117,7 +117,7 @@ func (d *Daemon) systemHasPoweredOn() {
 		return
 	}
 	if d.conf.PreventSystemSleep() {
-		logrus.Debugf("prevent-system-sleep is active, so next loop is not delayed")
+		slog.Debug("prevent-system-sleep is active, so next loop is not delayed")
 		// System will wake up on charger connection for short period of time,
 		// so we are checking if battery needs charging, and if so, enabling charging
 		// and preventing system from re-entering sleep.
@@ -128,11 +128,11 @@ func (d *Daemon) systemHasPoweredOn() {
 		return
 	}
 
-	logrus.Debugf("delaying next loop by %s", d.postSleepLoopDelay)
+	slog.Debug(fmt.Sprintf("delaying next loop by %s", d.postSleepLoopDelay))
 	d.holdMaintainLoop(d.postSleepLoopDelay, func() {
 		if d.conf.DisableChargingPreSleep() && d.conf.ControlMagSafeLED() != config.ControlMagSafeModeDisabled {
 			if err := d.smc.DisableMagSafeLed(); err != nil {
-				logrus.Errorf("DisableMagSafeLed failed: %v", err)
+				slog.Error("DisableMagSafeLed failed", "error", err)
 			}
 		}
 	})

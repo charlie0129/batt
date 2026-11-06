@@ -1,8 +1,10 @@
 package smc
 
 import (
+	"fmt"
+
+	"github.com/charlie0129/batt/pkg/logging"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -16,7 +18,7 @@ func (c *AppleSMC) IsAdapterControlCapable() bool {
 
 // IsAdapterEnabled returns whether the adapter is enabled.
 func (c *AppleSMC) IsAdapterEnabled() (bool, error) {
-	logrus.Tracef("IsAdapterEnabled called")
+	logging.Trace("IsAdapterEnabled called")
 
 	var ret bool
 	var key string
@@ -39,14 +41,14 @@ func (c *AppleSMC) IsAdapterEnabled() (bool, error) {
 
 	ret = len(v.Bytes) == 1 && v.Bytes[0] == 0x0
 
-	logrus.Tracef("IsAdapterEnabled returned %t", ret)
+	logging.Trace(fmt.Sprintf("IsAdapterEnabled returned %t", ret))
 
 	return ret, nil
 }
 
 // EnableAdapter enables the adapter.
 func (c *AppleSMC) EnableAdapter() error {
-	logrus.Tracef("EnableAdapter called")
+	logging.Trace("EnableAdapter called")
 
 	switch {
 	case c.capabilities[AdapterKey1]:
@@ -62,7 +64,7 @@ func (c *AppleSMC) EnableAdapter() error {
 
 // DisableAdapter disables the adapter.
 func (c *AppleSMC) DisableAdapter() error {
-	logrus.Tracef("DisableAdapter called")
+	logging.Trace("DisableAdapter called")
 
 	switch {
 	case c.capabilities[AdapterKey1]:

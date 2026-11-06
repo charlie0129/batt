@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -86,9 +86,9 @@ func newEnableDisableCommand(
 					return fmt.Errorf("failed to enable %s: %v", use, err)
 				}
 				if ret != "" {
-					logrus.Infof("daemon responded: %s", ret)
+					slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 				}
-				logrus.Infof("successfully enabled %s", use)
+				slog.Info(fmt.Sprintf("successfully enabled %s", use))
 				return nil
 			},
 		},
@@ -101,9 +101,9 @@ func newEnableDisableCommand(
 					return fmt.Errorf("failed to disable %s: %v", use, err)
 				}
 				if ret != "" {
-					logrus.Infof("daemon responded: %s", ret)
+					slog.Info(fmt.Sprintf("daemon responded: %s", ret))
 				}
-				logrus.Infof("successfully disabled %s", use)
+				slog.Info(fmt.Sprintf("successfully disabled %s", use))
 				return nil
 			},
 		},

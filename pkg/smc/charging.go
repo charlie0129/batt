@@ -7,9 +7,8 @@ import (
 	"math"
 	"math/bits"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/charlie0129/batt/pkg/compatibility"
+	"github.com/charlie0129/batt/pkg/logging"
 )
 
 var (
@@ -43,7 +42,7 @@ func (c *AppleSMC) IsDirectChargingControlCapable() bool {
 
 // IsChargingEnabled returns whether direct, legacy charging is enabled.
 func (c *AppleSMC) IsChargingEnabled() (bool, error) {
-	logrus.Trace("IsChargingEnabled called")
+	logging.Trace("IsChargingEnabled called")
 	if c.ChargeControlMode() != compatibility.ChargeControlLegacy {
 		return false, ErrNotLegacyChargeControl
 	}
@@ -65,7 +64,7 @@ func (c *AppleSMC) IsChargingEnabled() (bool, error) {
 
 // EnableCharging enables direct, legacy charging.
 func (c *AppleSMC) EnableCharging() error {
-	logrus.Trace("EnableCharging called")
+	logging.Trace("EnableCharging called")
 	if c.ChargeControlMode() != compatibility.ChargeControlLegacy {
 		return ErrNotLegacyChargeControl
 	}
@@ -81,7 +80,7 @@ func (c *AppleSMC) EnableCharging() error {
 
 // DisableCharging disables direct, legacy charging.
 func (c *AppleSMC) DisableCharging() error {
-	logrus.Trace("DisableCharging called")
+	logging.Trace("DisableCharging called")
 	if c.ChargeControlMode() != compatibility.ChargeControlLegacy {
 		return ErrNotLegacyChargeControl
 	}

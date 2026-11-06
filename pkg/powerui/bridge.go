@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/sirupsen/logrus"
+	"github.com/charlie0129/batt/pkg/logging"
 )
 
 type nativeBridge struct{}
@@ -38,7 +38,7 @@ func takeError(cerr *C.char) error {
 
 func (b nativeBridge) Supported() bool {
 	supported := C.batt_powerui_supported() == 1
-	logrus.WithField("supported", supported).Trace("probed PowerUI manual charge limit")
+	logging.Trace("probed PowerUI manual charge limit", "supported", supported)
 	return supported
 }
 
@@ -67,7 +67,7 @@ func (b nativeBridge) Limit() (int, bool, error) {
 	if C.batt_powerui_get_limit(&limit, &enabled, &cerr) != 0 { //nolint:gocritic // dupSubExpr false positive on cgo call
 		return 0, false, fmt.Errorf("get native charge limit: %w", takeError(cerr))
 	}
-	logrus.WithFields(logrus.Fields{"limit": int(limit), "enabled": enabled == 1}).Trace("read native charge limit")
+	logging.Trace("read native charge limit", "limit", int(limit), "enabled", enabled == 1)
 	return int(limit), enabled == 1, nil
 }
 
@@ -80,7 +80,7 @@ func (b nativeBridge) SetSliderLimit(limit int) error {
 	if C.batt_powerui_set_limit(C.int(limit), &cerr) != 0 { //nolint:gocritic // dupSubExpr false positive on cgo call
 		return fmt.Errorf("set native charge limit to %d%%: %w", limit, takeError(cerr))
 	}
-	logrus.WithField("limit", limit).Trace("set native charge limit")
+	logging.Trace("set native charge limit", "limit", limit)
 	return nil
 }
 
@@ -89,7 +89,7 @@ func (b nativeBridge) Disable() error {
 	if C.batt_powerui_disable(&cerr) != 0 { //nolint:gocritic // dupSubExpr false positive on cgo call
 		return fmt.Errorf("disable native charge limit: %w", takeError(cerr))
 	}
-	logrus.Trace("disabled native charge limit")
+	logging.Trace("disabled native charge limit")
 	return nil
 }
 

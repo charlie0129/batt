@@ -1,8 +1,8 @@
 package smc
 
 import (
+	"github.com/charlie0129/batt/pkg/logging"
 	"github.com/charlie0129/gosmc"
-	"github.com/sirupsen/logrus"
 )
 
 // AppleSMC is a wrapper of gosmc.Client.
@@ -67,19 +67,19 @@ func (c *AppleSMC) Close() error {
 
 // Read reads a value from SMC.
 func (c *AppleSMC) Read(key string) (gosmc.Value, error) {
-	logrus.WithFields(logrus.Fields{
-		"key": key,
-	}).Trace("Trying to read from SMC")
+	logging.Trace("Trying to read from SMC",
+		"key", key,
+	)
 
 	v, err := c.conn.Read(key)
 	if err != nil {
 		return v, err
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"key": key,
-		"val": v,
-	}).Trace("Load from SMC succeed")
+	logging.Trace("Load from SMC succeed",
+		"key", key,
+		"val", v,
+	)
 
 	return v, nil
 }
@@ -99,38 +99,38 @@ func (c *AppleSMC) HasKey(key string) bool {
 
 // Write writes a value to SMC.
 func (c *AppleSMC) Write(key string, value []byte) error {
-	logrus.WithFields(logrus.Fields{
-		"key": key,
-		"val": value,
-	}).Trace("Trying to write to SMC")
+	logging.Trace("Trying to write to SMC",
+		"key", key,
+		"val", value,
+	)
 
 	err := c.conn.WriteBytes(key, value)
 	if err != nil {
 		return err
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"key": key,
-		"val": value,
-	}).Trace("Write to SMC succeed")
+	logging.Trace("Write to SMC succeed",
+		"key", key,
+		"val", value,
+	)
 
 	return nil
 }
 
 // WriteUint32 writes a typed uint32 value to SMC.
 func (c *AppleSMC) WriteUint32(key string, value uint32) error {
-	logrus.WithFields(logrus.Fields{
-		"key": key,
-		"val": value,
-	}).Trace("Trying to write uint32 to SMC")
+	logging.Trace("Trying to write uint32 to SMC",
+		"key", key,
+		"val", value,
+	)
 
 	if err := c.conn.WriteUint32(key, value); err != nil {
 		return err
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"key": key,
-		"val": value,
-	}).Trace("Write uint32 to SMC succeeded")
+	logging.Trace("Write uint32 to SMC succeeded",
+		"key", key,
+		"val", value,
+	)
 	return nil
 }

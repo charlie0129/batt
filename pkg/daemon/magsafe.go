@@ -2,8 +2,7 @@ package daemon
 
 import (
 	"errors"
-
-	"github.com/sirupsen/logrus"
+	"log/slog"
 
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/smc"
@@ -34,7 +33,7 @@ func (d *Daemon) maintainManagedMagSafeLED() {
 	case config.ControlMagSafeModeEnabled:
 		charging, err := d.systemIsCharging()
 		if err != nil {
-			logrus.WithError(err).Error("failed to read battery charging state for MagSafe LED")
+			slog.Error("failed to read battery charging state for MagSafe LED", "error", err)
 			return
 		}
 		target = smc.LEDGreen
@@ -49,16 +48,16 @@ func (d *Daemon) maintainManagedMagSafeLED() {
 
 	current, err := d.smc.Read(smc.MagSafeLedKey)
 	if err != nil {
-		logrus.WithError(err).Error("failed to read MagSafe LED state")
+		slog.Error("failed to read MagSafe LED state", "error", err)
 		return
 	}
 	if len(current.Bytes) != 1 {
-		logrus.Error("invalid MagSafe LED state length")
+		slog.Error("invalid MagSafe LED state length")
 		return
 	}
 	if current.Bytes[0] != byte(target) {
 		if err := d.smc.SetMagSafeLedState(target); err != nil {
-			logrus.WithError(err).Error("failed to set MagSafe LED state")
+			slog.Error("failed to set MagSafe LED state", "error", err)
 		}
 	}
 }

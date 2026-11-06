@@ -1,6 +1,10 @@
 package smc
 
-import "github.com/sirupsen/logrus"
+import (
+	"fmt"
+
+	"github.com/charlie0129/batt/pkg/logging"
+)
 
 // MagSafeLedState is the state of the MagSafe LED.
 type MagSafeLedState uint8
@@ -19,20 +23,20 @@ const (
 
 // SetMagSafeLedState .
 func (c *AppleSMC) SetMagSafeLedState(state MagSafeLedState) error {
-	logrus.Tracef("SetMagSafeLedState(%v) called", state)
+	logging.Trace(fmt.Sprintf("SetMagSafeLedState(%v) called", state))
 
 	return c.Write(MagSafeLedKey, []byte{byte(state)})
 }
 
 func (c *AppleSMC) DisableMagSafeLed() error {
-	logrus.Tracef("DisableMagSafeLed() called")
+	logging.Trace("DisableMagSafeLed() called")
 
 	return c.Write(MagSafeLedKey, []byte{byte(LEDOff)})
 }
 
 // GetMagSafeLedState .
 func (c *AppleSMC) GetMagSafeLedState() (MagSafeLedState, error) {
-	logrus.Tracef("GetMagSafeLedState called")
+	logging.Trace("GetMagSafeLedState called")
 
 	v, err := c.Read(MagSafeLedKey)
 	if err != nil || len(v.Bytes) != 1 {
@@ -47,7 +51,7 @@ func (c *AppleSMC) GetMagSafeLedState() (MagSafeLedState, error) {
 	case 2:
 		ret = LEDGreen
 	}
-	logrus.Tracef("GetMagSafeLedState returned %v", ret)
+	logging.Trace(fmt.Sprintf("GetMagSafeLedState returned %v", ret))
 	return ret, nil
 }
 

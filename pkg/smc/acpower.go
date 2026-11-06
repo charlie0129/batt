@@ -1,10 +1,14 @@
 package smc
 
-import "github.com/sirupsen/logrus"
+import (
+	"fmt"
+
+	"github.com/charlie0129/batt/pkg/logging"
+)
 
 // IsPluggedIn returns whether the device is plugged in.
 func (c *AppleSMC) IsPluggedIn() (bool, error) {
-	logrus.Tracef("IsPluggedIn called")
+	logging.Trace("IsPluggedIn called")
 
 	v, err := c.Read(ACPowerKey)
 	if err != nil {
@@ -12,7 +16,7 @@ func (c *AppleSMC) IsPluggedIn() (bool, error) {
 	}
 
 	ret := len(v.Bytes) == 1 && int8(v.Bytes[0]) > 0
-	logrus.Tracef("IsPluggedIn returned %t", ret)
+	logging.Trace(fmt.Sprintf("IsPluggedIn returned %t", ret))
 
 	return ret, nil
 }

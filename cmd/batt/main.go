@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -10,13 +11,13 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
 	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/gui"
+	"github.com/charlie0129/batt/pkg/logging"
 	"github.com/charlie0129/batt/pkg/utils/osver"
 )
 
@@ -80,18 +81,15 @@ func capabilitiesForHelp() compatibility.Capabilities {
 }
 
 func setupLogger() error {
-	level, err := logrus.ParseLevel(logLevel)
+	level, err := logging.ParseLevel(logLevel)
 	if err != nil {
 		return fmt.Errorf("failed to parse log level: %v", err)
 	}
-	logrus.SetLevel(level)
-	logrus.SetFormatter(&logrus.TextFormatter{})
+	timeFormat := time.RFC3339
 	if term.IsTerminal(int(os.Stderr.Fd())) {
-		logrus.SetFormatter(&logrus.TextFormatter{
-			FullTimestamp:   true,
-			TimestampFormat: time.Kitchen,
-		})
+		timeFormat = time.Kitchen
 	}
+	logging.Setup(os.Stderr, level, timeFormat)
 
 	return nil
 }
@@ -123,9 +121,9 @@ func main() {
 	// Start pprof server if enabled
 	if pprofAddr != "" {
 		go func() {
-			logrus.Infof("Starting pprof server on %s", pprofAddr)
+			slog.Info(fmt.Sprintf("Starting pprof server on %s", pprofAddr))
 			if err := http.ListenAndServe(pprofAddr, nil); err != nil {
-				logrus.Errorf("Failed to start pprof server: %v", err)
+				slog.Error("Failed to start pprof server", "error", err)
 			}
 		}()
 	}
@@ -159,19 +157,19 @@ Report issues: https://github.com/charlie0129/batt/issues`,
 			} else {
 				// An absent daemon or an older daemon without this endpoint must
 				// not prevent commands from running.
-				logrus.WithError(err).Debug("detailed compatibility unavailable; enabling all client features")
+				slog.Debug("detailed compatibility unavailable; enabling all client features", "error", err)
 			}
 
 			if clientVersion, daemonVersion, err := getVersion(); err == nil {
 				if daemonVersion != clientVersion {
-					logrus.WithFields(logrus.Fields{
-						"clientVersion": clientVersion,
-						"daemonVersion": daemonVersion,
-					}).Warn("Version mismatch between client and daemon. batt may not work as expected. You should follow the installation / upgrade instructions precisely to ensure both client and daemon are the same version.")
+					slog.Warn("Version mismatch between client and daemon. batt may not work as expected. You should follow the installation / upgrade instructions precisely to ensure both client and daemon are the same version.",
+						"clientVersion", clientVersion,
+						"daemonVersion", daemonVersion,
+					)
 				}
 			} else {
 				if errors.Is(err, client.ErrNotFound) {
-					logrus.Error("batt daemon is too old to report its version. You should follow the installation / upgrade instructions precisely to ensure both client and daemon are the same version.")
+					slog.Error("batt daemon is too old to report its version. You should follow the installation / upgrade instructions precisely to ensure both client and daemon are the same version.")
 				}
 			}
 

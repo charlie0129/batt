@@ -3,11 +3,11 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
 	"github.com/robfig/cron/v3"
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/events"
@@ -30,7 +30,7 @@ func (d *Daemon) calibrationOwnsChargeLimit() bool {
 
 func (d *Daemon) releaseCalibrationSleepAssertion() {
 	if err := d.assertions.AllowCalibrationSleep(); err != nil {
-		logrus.WithError(err).Error("failed to release calibration sleep assertion")
+		slog.Error("failed to release calibration sleep assertion", "error", err)
 	}
 }
 
@@ -41,7 +41,7 @@ func (d *Daemon) restoreCalibrationSleepAssertion() {
 		return
 	}
 	if err := d.assertions.PreventCalibrationSleep(); err != nil {
-		logrus.WithError(err).Error("failed to restore calibration sleep assertion")
+		slog.Error("failed to restore calibration sleep assertion", "error", err)
 	}
 }
 
@@ -68,7 +68,7 @@ func (d *Daemon) restoreChargeControlAfterCalibration(st *calibration.State) {
 			_, err = d.ensureManagedChargeLimitDisabled()
 		}
 		if err != nil {
-			logrus.WithError(err).Errorf("failed to restore %s charge limit after calibration", d.getCapabilities().ChargeControlMode)
+			slog.Error(fmt.Sprintf("failed to restore %s charge limit after calibration", d.getCapabilities().ChargeControlMode), "error", err)
 		}
 		return
 	}
@@ -91,12 +91,12 @@ func (d *Daemon) loadCalibrationState(path string) {
 		if os.IsNotExist(err) {
 			return
 		}
-		logrus.WithError(err).Warn("failed to read calibration state")
+		slog.Warn("failed to read calibration state", "error", err)
 		return
 	}
 	var st calibration.State
 	if err := json.Unmarshal(b, &st); err != nil {
-		logrus.WithError(err).Warn("failed to unmarshal calibration state")
+		slog.Warn("failed to unmarshal calibration state", "error", err)
 		return
 	}
 	// On restart, mark paused (safety) if mid-flow
@@ -112,11 +112,11 @@ func (d *Daemon) persistCalibrationState() {
 	}
 	b, err := json.MarshalIndent(d.calibrationState, "", "  ")
 	if err != nil {
-		logrus.WithError(err).Error("marshal calibration state")
+		slog.Error("marshal calibration state", "error", err)
 		return
 	}
 	if err := os.WriteFile(d.calibrationStatePath, b, 0644); err != nil {
-		logrus.WithError(err).Error("write calibration state")
+		slog.Error("write calibration state", "error", err)
 	}
 }
 
@@ -237,11 +237,10 @@ func (d *Daemon) applyCalibrationWithinLoop(charge int) bool {
 		return false
 	}
 
-	log := logrus.WithFields(logrus.Fields{
-		"phase":     st.Phase,
-		"charge":    charge,
-		"operation": "calibration",
-	})
+	log := slog.With("phase", st.Phase,
+		"charge", charge,
+		"operation", "calibration",
+	)
 	// Throttle debug logs to changes only.
 	if d.lastCalibrationStatus.charge != charge || d.lastCalibrationStatus.phase != st.Phase {
 		d.lastCalibrationStatus.charge = charge
@@ -254,14 +253,14 @@ func (d *Daemon) applyCalibrationWithinLoop(charge int) bool {
 		if charge < st.Threshold {
 			// Transition to charge phase.
 			st.Phase = calibration.PhaseCharge
-			logrus.Info("discharge phase complete. starting charge phase")
-			logrus.Info("enabling adapter")
+			slog.Info("discharge phase complete. starting charge phase")
+			slog.Info("enabling adapter")
 			if err := d.enableAdapter(); err != nil {
 				st.LastError = err.Error()
 				st.Phase = calibration.PhaseError
 				break
 			}
-			logrus.Info("enabling charging")
+			slog.Info("enabling charging")
 			if err := d.enableChargingForCalibration(); err != nil {
 				st.LastError = err.Error()
 				st.Phase = calibration.PhaseError
@@ -275,25 +274,25 @@ func (d *Daemon) applyCalibrationWithinLoop(charge int) bool {
 		} else {
 			log.Info("disabling adapter to allow discharge")
 			if err := d.disableAdapter(); err != nil {
-				logrus.WithError(err).Error("failed to disable adapter during discharge phase")
+				slog.Error("failed to disable adapter during discharge phase", "error", err)
 				st.LastError = err.Error()
 				st.Phase = calibration.PhaseError
 			}
 		}
 	case calibration.PhaseCharge:
 		if charge >= 100 {
-			logrus.WithField("holdDuration", time.Duration(st.HoldMinutes)*time.Minute).Info("charge phase complete. starting hold phase")
+			slog.Info("charge phase complete. starting hold phase", "holdDuration", time.Duration(st.HoldMinutes)*time.Minute)
 			st.Phase = calibration.PhaseHold
 			st.HoldEndTime = time.Now().Add(time.Duration(st.HoldMinutes) * time.Minute)
 		}
 	case calibration.PhaseHold:
 		if time.Now().After(st.HoldEndTime) {
-			logrus.Info("hold phase complete. starting post-hold phase, draining to previous limits")
+			slog.Info("hold phase complete. starting post-hold phase, draining to previous limits")
 			// Begin post-hold discharge back to previous upper limit (if snapshot < 100) or current configured upper.
 			// Ensure charging disabled to allow discharge. The post-hold phase never cuts the adapter
 			// again, so a failure here must end the calibration instead of waiting at full charge.
 			if err := d.disableAdapter(); err != nil {
-				logrus.WithError(err).Error("failed to disable adapter during hold phase")
+				slog.Error("failed to disable adapter during hold phase", "error", err)
 				st.LastError = err.Error()
 				// The limit is still 100 here. Write the snapshot back, as Cancel does, so the
 				// failed run does not leave the battery without a limit while it waits for
@@ -302,7 +301,7 @@ func (d *Daemon) applyCalibrationWithinLoop(charge int) bool {
 				conf.SetUpperLimit(st.SnapshotUpperLimit)
 				conf.SetLowerLimit(st.SnapshotLowerLimit)
 				if saveErr := conf.Save(); saveErr != nil {
-					logrus.WithError(saveErr).Warn("failed to save config after the calibration failed")
+					slog.Warn("failed to save config after the calibration failed", "error", saveErr)
 				}
 				d.restoreChargeControlAfterCalibration(st)
 				st.Phase = calibration.PhaseError
@@ -318,16 +317,16 @@ func (d *Daemon) applyCalibrationWithinLoop(charge int) bool {
 			target = conf.UpperLimit()
 		}
 		if charge <= target {
-			logrus.Info("post-hold phase complete. starting restore phase")
+			slog.Info("post-hold phase complete. starting restore phase")
 			st.Phase = calibration.PhaseRestore
 		}
 	case calibration.PhaseRestore:
-		logrus.WithFields(logrus.Fields{
-			"upperLimit":       st.SnapshotUpperLimit,
-			"lowerLimit":       st.SnapshotLowerLimit,
-			"isCharging":       st.SnapshotChargingOn,
-			"isAdapterEnabled": st.SnapshotAdapterOn,
-		}).Info("restoring previous battery config and finishing calibration")
+		slog.Info("restoring previous battery config and finishing calibration",
+			"upperLimit", st.SnapshotUpperLimit,
+			"lowerLimit", st.SnapshotLowerLimit,
+			"isCharging", st.SnapshotChargingOn,
+			"isAdapterEnabled", st.SnapshotAdapterOn,
+		)
 		conf.SetUpperLimit(st.SnapshotUpperLimit)
 		conf.SetLowerLimit(st.SnapshotLowerLimit)
 		if err := conf.Save(); err != nil {
@@ -343,7 +342,7 @@ func (d *Daemon) applyCalibrationWithinLoop(charge int) bool {
 			adapterErr = d.disableAdapter()
 		}
 		if adapterErr != nil {
-			logrus.WithError(adapterErr).Error("failed to restore adapter during calibration restore phase")
+			slog.Error("failed to restore adapter during calibration restore phase", "error", adapterErr)
 			st.LastError = adapterErr.Error()
 			st.Phase = calibration.PhaseError
 			break
@@ -381,7 +380,7 @@ func (d *Daemon) applyCalibrationWithinLoop(charge int) bool {
 			Ts: time.Now().Unix(),
 		})
 
-		logrus.WithField("event", events.CalibrationPhase).Debug("new event")
+		slog.Debug("new event", "event", events.CalibrationPhase)
 	}
 	return true
 }
@@ -449,7 +448,7 @@ func (d *Daemon) cancelCalibration() error {
 	conf.SetUpperLimit(st.SnapshotUpperLimit)
 	conf.SetLowerLimit(st.SnapshotLowerLimit)
 	if err := conf.Save(); err != nil {
-		logrus.WithError(err).Warn("failed to save config while canceling calibration")
+		slog.Warn("failed to save config while canceling calibration", "error", err)
 	}
 
 	d.restoreChargeControlAfterCalibration(st)
@@ -460,7 +459,7 @@ func (d *Daemon) cancelCalibration() error {
 		adapterErr = d.disableAdapter()
 	}
 	if adapterErr != nil {
-		logrus.WithError(adapterErr).Error("failed to restore adapter while canceling calibration")
+		slog.Error("failed to restore adapter while canceling calibration", "error", adapterErr)
 		st.LastError = adapterErr.Error()
 		st.Phase = calibration.PhaseError
 		d.persistCalibrationState()
@@ -501,7 +500,7 @@ func (d *Daemon) cancelCalibrationNoRestoreNoError() {
 		adapterErr = d.disableAdapter()
 	}
 	if adapterErr != nil {
-		logrus.WithError(adapterErr).Error("failed to restore adapter while canceling calibration")
+		slog.Error("failed to restore adapter while canceling calibration", "error", adapterErr)
 		st.LastError = adapterErr.Error()
 		st.Phase = calibration.PhaseError
 		d.persistCalibrationState()
@@ -617,7 +616,7 @@ func (d *Daemon) schedule(cronExpr string) ([]time.Time, error) {
 
 		conf.SetCron("")
 		if err := conf.Save(); err != nil {
-			logrus.WithError(err).Error("failed to save config")
+			slog.Error("failed to save config", "error", err)
 			return nil, fmt.Errorf("failed to save config: %w", err)
 		}
 		d.scheduler.Stop()
@@ -638,12 +637,12 @@ func (d *Daemon) schedule(cronExpr string) ([]time.Time, error) {
 
 	conf.SetCron(cronExpr)
 	if err := conf.Save(); err != nil {
-		logrus.WithError(err).Error("failed to save config")
+		slog.Error("failed to save config", "error", err)
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
 	if err := d.scheduler.Schedule(cronExpr); err != nil {
-		logrus.WithError(err).Error("failed to schedule calibration")
+		slog.Error("failed to schedule calibration", "error", err)
 		return nil, err
 	}
 	d.scheduler.Start()
@@ -668,7 +667,7 @@ func (d *Daemon) schedule(cronExpr string) ([]time.Time, error) {
 
 func (d *Daemon) postpone(duration time.Duration) error {
 	if err := d.scheduler.Postpone(duration); err != nil {
-		logrus.WithError(err).Error("failed to postpone calibration")
+		slog.Error("failed to postpone calibration", "error", err)
 		return err
 	}
 
@@ -682,7 +681,7 @@ func (d *Daemon) postpone(duration time.Duration) error {
 
 func (d *Daemon) skipNextSchedule() error {
 	if err := d.scheduler.Skip(); err != nil {
-		logrus.WithError(err).Error("failed to skip next scheduled calibration")
+		slog.Error("failed to skip next scheduled calibration", "error", err)
 		return err
 	}
 

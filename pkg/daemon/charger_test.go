@@ -2,10 +2,9 @@ package daemon
 
 import (
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
-
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
 )
@@ -288,8 +287,9 @@ func TestChargeControlRace(t *testing.T) {
 // readers the sleep callbacks use. This is the scenario reported in #158 and
 // must stay clean under `go test -race`.
 func TestReapplyChargeControlModeRace(t *testing.T) {
-	logrus.SetLevel(logrus.PanicLevel)
-	t.Cleanup(func() { logrus.SetLevel(logrus.InfoLevel) })
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 
 	// macOS 27 firmware: adapter works, charge keys gated. The adapter loop
 	// also reads the charge and the plug state, so the switch can succeed.

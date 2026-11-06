@@ -1,7 +1,7 @@
 package daemon
 
 import (
-	"github.com/sirupsen/logrus"
+	"log/slog"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/smc"
@@ -53,7 +53,7 @@ func (d *Daemon) ensureNativeChargeLimit(upper int) (bool, error) {
 	caps := d.getCapabilities()
 	if !caps.SupportsLimit(upper) {
 		snapped := caps.NearestSupportedLimit(upper)
-		logrus.WithFields(logrus.Fields{"configured": upper, "limit": snapped}).Debug("charge limit is not offered by macOS, using the next supported limit")
+		slog.Debug("charge limit is not offered by macOS, using the next supported limit", "configured", upper, "limit", snapped)
 		upper = snapped
 	}
 	if upper >= 100 {

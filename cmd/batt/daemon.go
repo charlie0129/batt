@@ -1,7 +1,8 @@
 package main
 
 import (
-	"github.com/sirupsen/logrus"
+	"log/slog"
+
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/daemon"
@@ -21,10 +22,10 @@ func NewDaemonCommand() *cobra.Command {
 		Short:   "Run batt daemon in the foreground",
 		GroupID: gAdvanced,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			logrus.WithFields(logrus.Fields{
-				"version": version.Version,
-				"commit":  version.GitCommit,
-			}).Info("batt daemon starting")
+			slog.Info("batt daemon starting",
+				"version", version.Version,
+				"commit", version.GitCommit,
+			)
 			return daemon.Run(configPath, unixSocketPath, alwaysAllowNonRootAccess)
 		},
 	}

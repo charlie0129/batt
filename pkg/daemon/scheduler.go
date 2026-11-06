@@ -2,11 +2,11 @@ package daemon
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/robfig/cron/v3"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -177,10 +177,10 @@ func (s *Scheduler) runScheduled() {
 		s.mu.Lock()
 		s.running = false
 		s.mu.Unlock()
-		logrus.Debug("scheduler stopped")
+		slog.Debug("scheduler stopped")
 	}()
 
-	logrus.Debug("scheduler started")
+	slog.Debug("scheduler started")
 
 	for {
 		leading := true
@@ -208,19 +208,19 @@ func (s *Scheduler) runScheduled() {
 				}
 
 				if leading {
-					logrus.Debugf("upcoming scheduled task at %s", nextRun.Format(time.DateTime))
+					slog.Debug(fmt.Sprintf("upcoming scheduled task at %s", nextRun.Format(time.DateTime)))
 					leading = false
 					runWait := time.Until(nextRun)
 					if runWait <= 0 {
 						runWait = overdueTaskDelay
-						logrus.Debugf("task overdue/due, delaying %s", runWait)
+						slog.Debug(fmt.Sprintf("task overdue/due, delaying %s", runWait))
 					}
 					timer.Reset(runWait)
 					s.sendNotify(time.Now().Add(runWait))
 					continue
 				}
 
-				logrus.Debugf("running scheduled task at %s", nextRun.Format(time.DateTime))
+				slog.Debug(fmt.Sprintf("running scheduled task at %s", nextRun.Format(time.DateTime)))
 
 				if s.PreCheck != nil {
 					if err := s.PreCheck(); err != nil {
@@ -231,7 +231,7 @@ func (s *Scheduler) runScheduled() {
 
 						attempts++
 						if attempts <= preCheckMaxTimes {
-							logrus.Debugf("precheck failed (%d/%d): %v; retrying in %s", attempts, preCheckMaxTimes, err, preCheckInterval)
+							slog.Debug(fmt.Sprintf("precheck failed (%d/%d): %v; retrying in %s", attempts, preCheckMaxTimes, err, preCheckInterval))
 							timer.Reset(preCheckInterval)
 							continue
 						}
@@ -257,10 +257,10 @@ func (s *Scheduler) runScheduled() {
 				s.mu.Unlock()
 				return
 			case msg := <-s.controlCh: // internal control messages
-				logrus.WithFields(logrus.Fields{
-					"kind": msg.kind,
-					"data": msg.data,
-				}).Debug("received control msg")
+				slog.Debug("received control msg",
+					"kind", msg.kind,
+					"data", msg.data,
+				)
 
 				switch msg.kind {
 				case ctrlRecalculate:
@@ -296,9 +296,9 @@ func (s *Scheduler) runScheduled() {
 					wait := time.Until(target)
 					if wait <= 0 {
 						wait = overdueTaskDelay
-						logrus.Debugf("system woke up, task overdue/due, delaying %s", wait)
+						slog.Debug(fmt.Sprintf("system woke up, task overdue/due, delaying %s", wait))
 					} else {
-						logrus.Debugf("system woke up, resetting timer to %s", wait)
+						slog.Debug(fmt.Sprintf("system woke up, resetting timer to %s", wait))
 					}
 					timer.Reset(wait)
 					continue

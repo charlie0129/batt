@@ -9,10 +9,9 @@ import "C"
 
 import (
 	"fmt"
+	"log/slog"
 	"runtime/cgo"
 	"unsafe"
-
-	"github.com/sirupsen/logrus"
 )
 
 type menuItem int
@@ -211,18 +210,18 @@ func showNotification(title, body string) {
 }
 
 func RegisterLoginItem() error {
-	logrus.Info("Registering application to start at login")
+	slog.Info("Registering application to start at login")
 	if bool(C.batt_register_login_item()) {
-		logrus.Info("Successfully registered as login item")
+		slog.Info("Successfully registered as login item")
 		return nil
 	}
 	return fmt.Errorf("failed to register application as login item")
 }
 
 func UnregisterLoginItem() error {
-	logrus.Info("Removing application from login items")
+	slog.Info("Removing application from login items")
 	if bool(C.batt_unregister_login_item()) {
-		logrus.Info("Successfully unregistered login item")
+		slog.Info("Successfully unregistered login item")
 		return nil
 	}
 	return fmt.Errorf("failed to unregister application as login item")
@@ -252,7 +251,7 @@ func controllerForHandle(handle C.uintptr_t) *menuController {
 
 func recoverNativeCallback(name string) {
 	if recovered := recover(); recovered != nil {
-		logrus.Errorf("panic in %s: %v", name, recovered)
+		slog.Error(fmt.Sprintf("panic in %s: %v", name, recovered))
 	}
 }
 

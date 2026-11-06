@@ -3,12 +3,11 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
 )
@@ -66,7 +65,7 @@ func (s *sleepHolds) init(path string) error {
 	s.path = path
 	_, _, err := s.loadSnapshotLocked()
 	if err != nil {
-		logrus.WithError(err).Error("unreadable or malformed sleep snapshot found; preserving file for recovery")
+		slog.Error("unreadable or malformed sleep snapshot found; preserving file for recovery", "error", err)
 	}
 	return err
 }
@@ -99,7 +98,7 @@ func (s *sleepHolds) restorePendingLocked() error {
 	if err := s.setting.SetDisabled(*snapshot.Previous); err != nil {
 		return err
 	}
-	logrus.Infof("restored SleepDisabled=%t left behind by a previous run", *snapshot.Previous)
+	slog.Info(fmt.Sprintf("restored SleepDisabled=%t left behind by a previous run", *snapshot.Previous))
 	return s.clearSnapshotLocked()
 }
 
@@ -148,18 +147,18 @@ func (s *sleepHolds) loadSnapshotLocked() (sleepDisabledSnapshot, bool, error) {
 		if os.IsNotExist(err) {
 			return snapshot, false, nil
 		}
-		logrus.WithError(err).Warn("failed to read sleep-disabled state")
+		slog.Warn("failed to read sleep-disabled state", "error", err)
 		return snapshot, false, &sleepSnapshotError{path: s.path, err: err}
 	}
 
 	if err := json.Unmarshal(b, &snapshot); err != nil {
-		logrus.WithError(err).Warn("malformed sleep-disabled state")
+		slog.Warn("malformed sleep-disabled state", "error", err)
 		return snapshot, false, &sleepSnapshotError{path: s.path, err: fmt.Errorf("malformed sleep-disabled state: %w", err)}
 	}
 
 	if snapshot.Previous == nil {
 		err := fmt.Errorf("missing 'previous' field in sleep-disabled state")
-		logrus.WithError(err).Warn("invalid sleep-disabled state")
+		slog.Warn("invalid sleep-disabled state", "error", err)
 		return snapshot, false, &sleepSnapshotError{path: s.path, err: err}
 	}
 
@@ -225,7 +224,7 @@ func (s *sleepHolds) clearSnapshotLocked() error {
 		return nil
 	}
 	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
-		logrus.WithError(err).Warn("failed to remove sleep-disabled state")
+		slog.Warn("failed to remove sleep-disabled state", "error", err)
 		return err
 	}
 	return nil
@@ -384,7 +383,7 @@ func (d *Daemon) disableAdapter() error {
 	if err := d.smc.DisableAdapter(); err != nil {
 		if tookHold {
 			if releaseErr := d.holds.release(sleepHoldAdapter); releaseErr != nil {
-				logrus.WithError(releaseErr).Error("failed to restore sleep after adapter disable failed")
+				slog.Error("failed to restore sleep after adapter disable failed", "error", releaseErr)
 				return fmt.Errorf("adapter disable failed (%w); sleep hold rollback also failed: %v", err, releaseErr)
 			}
 		}
@@ -406,7 +405,7 @@ func (d *Daemon) enableAdapter() error {
 	}
 
 	if err := d.holds.release(sleepHoldAdapter); err != nil {
-		logrus.WithError(err).Error("failed to restore sleep after enabling adapter")
+		slog.Error("failed to restore sleep after enabling adapter", "error", err)
 		return fmt.Errorf("failed to restore sleep after enabling adapter: %w", err)
 	}
 
