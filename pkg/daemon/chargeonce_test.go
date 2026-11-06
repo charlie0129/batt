@@ -3,45 +3,16 @@ package daemon
 import (
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/charlie0129/gosmc"
-
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
-	"github.com/charlie0129/batt/pkg/smc"
 	"github.com/charlie0129/batt/pkg/utils/ptr"
 )
-
-// stubBatteryCharge replaces the battery-charge test seam for one test.
-func stubBatteryCharge(t *testing.T, charge int) {
-	t.Helper()
-	previous := smcGetBatteryCharge
-	t.Cleanup(func() { smcGetBatteryCharge = previous })
-	smcGetBatteryCharge = func() (int, error) { return charge, nil }
-}
-
-// useChargeOnceDaemonState installs daemon globals a charge-control request
-// needs and restores them afterwards.
-func useChargeOnceDaemonState(t *testing.T, configured *mockConf, phase calibration.Phase) {
-	t.Helper()
-	previousConf, previousCapabilities := conf, capabilities
-	previousState, previousStatePath := calibrationState, calibrationStatePath
-	t.Cleanup(func() {
-		conf, capabilities = previousConf, previousCapabilities
-		calibrationState, calibrationStatePath = previousState, previousStatePath
-	})
-
-	conf = configured
-	capabilities = compatibility.Capabilities{ChargingControl: true}
-	calibrationState = &calibration.State{Phase: phase}
-	calibrationStatePath = ""
-}
 
 // The one-time charge routes, named so the tests below stay readable.
 const (
@@ -50,11 +21,20 @@ const (
 	chargeOnceCancelPath = "/charge-once/cancel"
 )
 
-func postChargeOnce(path string) *httptest.ResponseRecorder {
-	request := httptest.NewRequest(http.MethodPost, path, nil)
-	response := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(response, request)
-	return response
+// chargeOnceConf is an in-memory config with the given band.
+func chargeOnceConf(upper, lower int) *memConfig {
+	c := newMemConfig()
+	c.upper, c.lower = upper, lower
+	return c
+}
+
+// newChargeOnceFixture is a legacy Mac at charge percent with charging off,
+// running conf, with a calibration in phase.
+func newChargeOnceFixture(t *testing.T, conf *memConfig, charge int, phase calibration.Phase) *fixture {
+	t.Helper()
+	f := newFixture(t, firmwareLegacy, withConfig(conf), withCharge(charge), withCharging(false))
+	f.setCalibration(&calibration.State{Phase: phase})
+	return f
 }
 
 func TestResolveChargeOnceTarget(t *testing.T) {
@@ -76,7 +56,7 @@ func TestResolveChargeOnceTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveChargeOnceTarget(&mockConf{upper: tt.upper, lower: tt.upper - 2}, tt.full)
+			got, err := resolveChargeOnceTarget(chargeOnceConf(tt.upper, tt.upper-2), tt.full)
 			if err != tt.wantErr {
 				t.Fatalf("error = %v, want %v", err, tt.wantErr)
 			}
@@ -97,52 +77,36 @@ func TestChargeOnceStartedMessage(t *testing.T) {
 	}
 }
 
-func useChargeOnceLegacyAdmissionSMC(t *testing.T, charge int) {
-	t.Helper()
-	previousSMC, previousCharger := smcConn, charger
-	t.Cleanup(func() { smcConn, charger = previousSMC, previousCharger })
-	smcConn = legacyChargeMock(t, charge, false)
-	charger = chargeKeySwitch{}
-	capabilities.ChargeControlMode = compatibility.ChargeControlLegacy
-}
-
 func TestStartChargeOnceToLimitInsideHysteresisGap(t *testing.T) {
 	// 58% with a persistent 40-70% band: the charge sits in the gap where batt
 	// normally waits, so this is the case the feature exists for.
-	configured := &mockConf{upper: 70, lower: 40}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	stubBatteryCharge(t, 58)
-	useChargeOnceLegacyAdmissionSMC(t, 58)
+	conf := chargeOnceConf(70, 40)
+	f := newChargeOnceFixture(t, conf, 58, calibration.PhaseIdle)
 
-	response := postChargeOnce(chargeOnceLimitPath)
-	if response.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
+	f.mustServe(http.MethodPost, chargeOnceLimitPath, "", http.StatusCreated)
+	if conf.ChargeOnceTarget() != 70 {
+		t.Fatalf("chargeOnceTarget = %d, want 70", conf.ChargeOnceTarget())
 	}
-	if configured.chargeOnceTarget != 70 {
-		t.Fatalf("chargeOnceTarget = %d, want 70", configured.chargeOnceTarget)
+	if conf.UpperLimit() != 70 || conf.LowerLimit() != 40 {
+		t.Fatalf("configured band changed to %d/%d, want 70/40", conf.UpperLimit(), conf.LowerLimit())
 	}
-	if configured.upper != 70 || configured.lower != 40 {
-		t.Fatalf("configured band changed to %d/%d, want 70/40", configured.upper, configured.lower)
+	if !f.smc.chargingEnabled(t) {
+		t.Fatal("the first enforcement pass must start charging inside the gap")
 	}
 }
 
 func TestStartChargeOnceToFullKeepsConfiguredLimit(t *testing.T) {
-	configured := &mockConf{upper: 70, lower: 68}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	stubBatteryCharge(t, 70)
-	useChargeOnceLegacyAdmissionSMC(t, 70)
+	conf := chargeOnceConf(70, 68)
+	f := newChargeOnceFixture(t, conf, 70, calibration.PhaseIdle)
 
-	response := postChargeOnce(chargeOnceFullPath)
-	if response.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
-	}
-	if configured.chargeOnceTarget != 100 {
-		t.Fatalf("chargeOnceTarget = %d, want 100", configured.chargeOnceTarget)
+	f.mustServe(http.MethodPost, chargeOnceFullPath, "", http.StatusCreated)
+	if conf.ChargeOnceTarget() != 100 {
+		t.Fatalf("chargeOnceTarget = %d, want 100", conf.ChargeOnceTarget())
 	}
 	// Unlike "batt disable --for", a one-time charge never writes limit=100, so
 	// there is no saved limit that a crash could strand.
-	if configured.upper != 70 || !configured.disableUntil.IsZero() {
-		t.Fatalf("configured limit changed: %+v", configured)
+	if conf.UpperLimit() != 70 || !conf.DisableUntil().IsZero() {
+		t.Fatalf("configured limit changed: %+v", conf.snapshot())
 	}
 }
 
@@ -150,7 +114,7 @@ func TestStartChargeOnceRejections(t *testing.T) {
 	tests := []struct {
 		name    string
 		path    string
-		conf    mockConf
+		conf    func() *memConfig
 		phase   calibration.Phase
 		charge  int
 		wantErr string
@@ -158,52 +122,64 @@ func TestStartChargeOnceRejections(t *testing.T) {
 		{
 			name:    "already at the target",
 			path:    chargeOnceLimitPath,
-			conf:    mockConf{upper: 70, lower: 40},
+			conf:    func() *memConfig { return chargeOnceConf(70, 40) },
 			charge:  70,
 			wantErr: "already at 70%",
 		},
 		{
 			name:    "already full",
 			path:    chargeOnceFullPath,
-			conf:    mockConf{upper: 70, lower: 68},
+			conf:    func() *memConfig { return chargeOnceConf(70, 68) },
 			charge:  100,
 			wantErr: "already at 100%",
 		},
 		{
 			name:    "charge limit disabled",
 			path:    chargeOnceFullPath,
-			conf:    mockConf{upper: 100, lower: 98},
+			conf:    func() *memConfig { return chargeOnceConf(100, 98) },
 			charge:  50,
 			wantErr: "batt is not limiting charging",
 		},
 		{
 			name:    "calibration owns the charge limit",
 			path:    chargeOnceLimitPath,
-			conf:    mockConf{upper: 70, lower: 40},
+			conf:    func() *memConfig { return chargeOnceConf(70, 40) },
 			phase:   calibration.PhaseCharge,
 			charge:  58,
 			wantErr: ErrCalibrationControlsChargeLimit.Error(),
 		},
 		{
-			name:    "temporary disable is pending",
-			path:    chargeOnceFullPath,
-			conf:    mockConf{upper: 100, lower: 68, disableUntil: time.Now().Add(time.Hour), preDisableLimit: 70},
+			name: "temporary disable is pending",
+			path: chargeOnceFullPath,
+			conf: func() *memConfig {
+				c := chargeOnceConf(100, 68)
+				c.SetDisableTimer(time.Now().Add(time.Hour), 70)
+				return c
+			},
 			charge:  58,
 			wantErr: ErrTemporaryDisableInProgress.Error(),
 		},
 		{
-			name:    "one-time charge already running",
-			path:    chargeOnceFullPath,
-			conf:    mockConf{upper: 70, lower: 68, chargeOnceTarget: 70},
+			name: "one-time charge already running",
+			path: chargeOnceFullPath,
+			conf: func() *memConfig {
+				c := chargeOnceConf(70, 68)
+				c.SetChargeOnceTarget(70)
+				return c
+			},
 			charge:  58,
 			wantErr: ErrChargeOnceInProgress.Error(),
 		},
 		{
 			// Force discharge cuts the power the one-time charge needs, so it
 			// would sit there without making progress.
-			name:    "temporary adapter disable is pending",
-			path:    chargeOnceLimitPath,
-			conf:    mockConf{upper: 70, lower: 40, adapterDisableUntil: time.Now().Add(time.Hour)},
+			name: "temporary adapter disable is pending",
+			path: chargeOnceLimitPath,
+			conf: func() *memConfig {
+				c := chargeOnceConf(70, 40)
+				c.SetAdapterDisableTimer(time.Now().Add(time.Hour))
+				return c
+			},
 			charge:  58,
 			wantErr: ErrTemporaryAdapterDisableInProgress.Error(),
 		},
@@ -215,45 +191,42 @@ func TestStartChargeOnceRejections(t *testing.T) {
 			if phase == "" {
 				phase = calibration.PhaseIdle
 			}
-			configured := tt.conf
-			before := configured
-			useChargeOnceDaemonState(t, &configured, phase)
-			stubBatteryCharge(t, tt.charge)
+			conf := tt.conf()
+			before := conf.snapshot()
+			f := newChargeOnceFixture(t, conf, tt.charge, phase)
 
-			response := postChargeOnce(tt.path)
+			response := f.post(tt.path)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusBadRequest, response.Body.String())
 			}
 			if !strings.Contains(response.Body.String(), tt.wantErr) {
 				t.Fatalf("response does not explain the rejection: %s", response.Body.String())
 			}
-			if configured != before {
-				t.Fatalf("rejected request mutated config: %+v, want %+v", configured, before)
+			if after := conf.snapshot(); after != before {
+				t.Fatalf("rejected request mutated config: %+v, want %+v", after, before)
 			}
 		})
 	}
 }
 
 func TestCancelChargeOnceRestoresConfiguredBehavior(t *testing.T) {
-	configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: 100}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
+	conf := chargeOnceConf(70, 40)
+	conf.SetChargeOnceTarget(100)
+	f := newChargeOnceFixture(t, conf, 58, calibration.PhaseIdle)
 
-	response := postChargeOnce(chargeOnceCancelPath)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusOK, response.Body.String())
+	f.mustServe(http.MethodPost, chargeOnceCancelPath, "", http.StatusOK)
+	if conf.ChargeOnceTarget() != 0 {
+		t.Fatalf("chargeOnceTarget = %d, want 0", conf.ChargeOnceTarget())
 	}
-	if configured.chargeOnceTarget != 0 {
-		t.Fatalf("chargeOnceTarget = %d, want 0", configured.chargeOnceTarget)
-	}
-	if configured.upper != 70 || configured.lower != 40 {
-		t.Fatalf("configured band changed to %d/%d, want 70/40", configured.upper, configured.lower)
+	if conf.UpperLimit() != 70 || conf.LowerLimit() != 40 {
+		t.Fatalf("configured band changed to %d/%d, want 70/40", conf.UpperLimit(), conf.LowerLimit())
 	}
 }
 
 func TestCancelChargeOnceWithoutSession(t *testing.T) {
-	useChargeOnceDaemonState(t, &mockConf{upper: 70, lower: 40}, calibration.PhaseIdle)
+	f := newChargeOnceFixture(t, chargeOnceConf(70, 40), 58, calibration.PhaseIdle)
 
-	response := postChargeOnce(chargeOnceCancelPath)
+	response := f.post(chargeOnceCancelPath)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusBadRequest, response.Body.String())
 	}
@@ -263,28 +236,17 @@ func TestCancelChargeOnceWithoutSession(t *testing.T) {
 }
 
 func TestSetLimitCancelsChargeOnce(t *testing.T) {
-	configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: 100}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	useNativeCapabilities(t, 60, 70, 100)
-	useFakeNativeLimit(t, &fakeNativeLimit{limit: 100})
-	stubBatteryCharge(t, 58)
-	previousSMC := smcConn
-	t.Cleanup(func() { smcConn = previousSMC })
-	smcConn = smc.NewMockValues()
+	conf := chargeOnceConf(70, 40)
+	conf.SetChargeOnceTarget(100)
+	f := newFixture(t, firmwareGatedNoAdapter, withConfig(conf), withCharge(58),
+		withNative(&fakeNativeLimit{limit: 100}), withCapabilities(nativeCaps(60, 70, 100)))
 
-	request := httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader("60"))
-	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(response, request)
-
-	if response.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
+	f.mustServe(http.MethodPut, "/limit", "60", http.StatusCreated)
+	if conf.ChargeOnceTarget() != 0 {
+		t.Fatalf("chargeOnceTarget = %d, want 0 after an explicit limit change", conf.ChargeOnceTarget())
 	}
-	if configured.chargeOnceTarget != 0 {
-		t.Fatalf("chargeOnceTarget = %d, want 0 after an explicit limit change", configured.chargeOnceTarget)
-	}
-	if configured.upper != 60 {
-		t.Fatalf("upper = %d, want 60", configured.upper)
+	if conf.UpperLimit() != 60 {
+		t.Fatalf("upper = %d, want 60", conf.UpperLimit())
 	}
 }
 
@@ -296,37 +258,36 @@ func TestSupersedeChargeOnceSaveFailureKeepsTargetAndLimit(t *testing.T) {
 		{"timed disable", "/disable", `"1h"`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: 100, saveErr: errors.New("disk full")}
-			useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-			request := httptest.NewRequest(http.MethodPut, tt.path, strings.NewReader(tt.body))
-			request.Header.Set("Content-Type", "application/json")
-			response := httptest.NewRecorder()
-			setupRoutes().ServeHTTP(response, request)
+			conf := chargeOnceConf(70, 40)
+			conf.SetChargeOnceTarget(100)
+			conf.failSave(errors.New("disk full"))
+			f := newChargeOnceFixture(t, conf, 58, calibration.PhaseIdle)
+
+			response := f.put(tt.path, tt.body)
 			if response.Code != http.StatusInternalServerError {
 				t.Fatalf("status = %d, want 500: %s", response.Code, response.Body.String())
 			}
-			if configured.chargeOnceTarget != 100 || configured.upper != 70 || !configured.disableUntil.IsZero() {
-				t.Fatalf("failed save must keep original target and limit: %+v", configured)
+			if conf.ChargeOnceTarget() != 100 || conf.UpperLimit() != 70 || !conf.DisableUntil().IsZero() {
+				t.Fatalf("failed save must keep original target and limit: %+v", conf.snapshot())
 			}
 		})
 	}
 }
 
 func TestStartCalibrationRejectsChargeOnce(t *testing.T) {
-	configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: 100}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	capabilities = compatibility.Capabilities{ChargingControl: true, Calibration: true}
-	stubCalibrationSleep(t)
+	conf := chargeOnceConf(70, 40)
+	conf.SetChargeOnceTarget(100)
+	f := newChargeOnceFixture(t, conf, 58, calibration.PhaseIdle)
 
-	response := postChargeOnce("/calibration/start")
+	response := f.post("/calibration/start")
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusBadRequest, response.Body.String())
 	}
 	if !strings.Contains(response.Body.String(), ErrChargeOnceInProgress.Error()) {
 		t.Fatalf("response does not explain the conflict: %s", response.Body.String())
 	}
-	if calibrationState.Phase != calibration.PhaseIdle {
-		t.Fatalf("phase = %s, want idle", calibrationState.Phase)
+	if f.phase() != calibration.PhaseIdle {
+		t.Fatalf("phase = %s, want idle", f.phase())
 	}
 }
 
@@ -361,72 +322,21 @@ func TestCompleteChargeOnce(t *testing.T) {
 			if phase == "" {
 				phase = calibration.PhaseIdle
 			}
-			previousState, previousCapabilities := calibrationState, capabilities
-			t.Cleanup(func() { calibrationState, capabilities = previousState, previousCapabilities })
-			calibrationState = &calibration.State{Phase: phase}
+			conf := chargeOnceConf(70, 40)
+			conf.SetChargeOnceTarget(tt.target)
 			// The completion charge depends on the backend, so name it.
-			capabilities = compatibility.Capabilities{
-				ChargingControl:   true,
-				ChargeControlMode: compatibility.ChargeControlLegacy,
-			}
-			stubBatteryCharge(t, tt.charge)
+			f := newChargeOnceFixture(t, conf, tt.charge, phase)
 
-			configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: tt.target}
-			if got := completeChargeOnce(configured); got != tt.want {
+			if got := f.d.completeChargeOnce(); got != tt.want {
 				t.Fatalf("completeChargeOnce() = %v, want %v", got, tt.want)
 			}
-			if configured.chargeOnceTarget != tt.wantLeft {
-				t.Fatalf("chargeOnceTarget = %d, want %d", configured.chargeOnceTarget, tt.wantLeft)
+			if conf.ChargeOnceTarget() != tt.wantLeft {
+				t.Fatalf("chargeOnceTarget = %d, want %d", conf.ChargeOnceTarget(), tt.wantLeft)
 			}
-			if configured.upper != 70 || configured.lower != 40 {
-				t.Fatalf("configured band changed to %d/%d, want 70/40", configured.upper, configured.lower)
+			if conf.UpperLimit() != 70 || conf.LowerLimit() != 40 {
+				t.Fatalf("configured band changed to %d/%d, want 70/40", conf.UpperLimit(), conf.LowerLimit())
 			}
 		})
-	}
-}
-
-// legacyChargeMock builds an SMC mock for the direct charge-control backend.
-func legacyChargeMock(t *testing.T, charge int, chargingEnabled bool) *smc.AppleSMC {
-	t.Helper()
-	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
-		v, err := gosmc.NewValue(key, dataType, data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
-
-	chargingByte := byte(0x02)
-	if chargingEnabled {
-		chargingByte = 0x00
-	}
-	mock := smc.NewMockValues(
-		value(smc.ChargingKey1, gosmc.TypeUInt8, chargingByte),
-		value(smc.ChargingKey2, gosmc.TypeUInt8, chargingByte),
-		value(smc.BatteryChargeKey, gosmc.TypeUInt8, byte(charge)),
-		value(smc.ACPowerKey, gosmc.TypeUInt8, 1),
-	)
-	if err := mock.Open(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = mock.Close() })
-	return mock
-}
-
-func useLegacyLoopState(t *testing.T, mock *smc.AppleSMC, configured *mockConf) {
-	t.Helper()
-	previousSMC, previousConf, previousCapabilities := smcConn, conf, capabilities
-	previousState := calibrationState
-	t.Cleanup(func() {
-		smcConn, conf, capabilities = previousSMC, previousConf, previousCapabilities
-		calibrationState = previousState
-	})
-	smcConn = mock
-	conf = configured
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	capabilities = compatibility.Capabilities{
-		ChargingControl:   true,
-		ChargeControlMode: compatibility.ChargeControlLegacy,
 	}
 }
 
@@ -456,164 +366,102 @@ func TestLegacyMaintainLoopRespectsChargeOnceTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mock := legacyChargeMock(t, tt.charge, tt.charging)
-			useLegacyLoopState(t, mock, &mockConf{upper: 70, lower: 40, chargeOnceTarget: tt.target})
+			conf := chargeOnceConf(70, 40)
+			conf.SetChargeOnceTarget(tt.target)
+			f := newFixture(t, firmwareLegacy, withConfig(conf), withCharge(tt.charge), withCharging(tt.charging))
 
-			if !maintainLoopForced() {
+			if !f.d.maintainLoopForced() {
 				t.Fatal("legacy maintain loop failed")
 			}
-			charging, err := mock.IsChargingEnabled()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if charging != tt.wantCharging {
+			if charging := f.smc.chargingEnabled(t); charging != tt.wantCharging {
 				t.Fatalf("charging = %v, want %v", charging, tt.wantCharging)
 			}
 		})
 	}
 }
 
-// firmwareChargeMock builds an SMC mock for the firmware charge-control backend.
-func firmwareChargeMock(t *testing.T) *smc.AppleSMC {
-	t.Helper()
-	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
-		v, err := gosmc.NewValue(key, dataType, data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
-
-	mock := smc.NewMockValues(
-		value(smc.FirmwareChargeLimitActivationKey, gosmc.TypeUInt8, 0),
-		value(smc.FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
-		value(smc.FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
-	)
-	if err := mock.Open(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = mock.Close() })
-	return mock
-}
-
-func useFirmwareLoopState(t *testing.T, mock *smc.AppleSMC, configured *mockConf) {
-	t.Helper()
-	previousSMC, previousConf, previousCapabilities := smcConn, conf, capabilities
-	previousState := calibrationState
-	t.Cleanup(func() {
-		smcConn, conf, capabilities = previousSMC, previousConf, previousCapabilities
-		calibrationState = previousState
-	})
-	smcConn = mock
-	conf = configured
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	capabilities = compatibility.Capabilities{
-		ChargingControl:   true,
-		ChargeControlMode: compatibility.ChargeControlFirmware,
-	}
-}
-
 func TestFirmwareMaintainLoopAppliesChargeOnceBand(t *testing.T) {
-	mock := firmwareChargeMock(t)
-	configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: 70}
-	useFirmwareLoopState(t, mock, configured)
+	conf := chargeOnceConf(70, 40)
+	conf.SetChargeOnceTarget(70)
+	f := newFixture(t, firmwareManaged, withConfig(conf))
 
 	// The firmware API rejects lower >= upper, so a one-time charge to the
 	// configured limit uses the narrowest legal band below it.
-	if !maintainLoopForced() {
+	if !f.d.maintainLoopForced() {
 		t.Fatal("firmware maintain loop failed")
 	}
-	state, err := mock.GetFirmwareChargeLimit()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !state.Active || state.Lower != 69 || state.Upper != 70 {
+	if state := f.smc.firmwareLimit(t); !state.Active || state.Lower != 69 || state.Upper != 70 {
 		t.Fatalf("firmware state = %+v, want active 69/70", state)
 	}
 
 	// Charging to full hands the range back to the firmware default.
-	configured.chargeOnceTarget = 100
-	if !maintainLoopForced() {
+	conf.SetChargeOnceTarget(100)
+	if !f.d.maintainLoopForced() {
 		t.Fatal("firmware maintain loop failed")
 	}
-	state, err = mock.GetFirmwareChargeLimit()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.Active {
+	if state := f.smc.firmwareLimit(t); state.Active {
 		t.Fatalf("firmware limit is still active during a one-time charge to 100%%: %+v", state)
 	}
 
 	// Once the one-time charge ends, the configured band applies again.
-	configured.chargeOnceTarget = 0
-	if !maintainLoopForced() {
+	conf.ClearChargeOnceTarget()
+	if !f.d.maintainLoopForced() {
 		t.Fatal("firmware maintain loop failed")
 	}
-	state, err = mock.GetFirmwareChargeLimit()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !state.Active || state.Lower != 40 || state.Upper != 70 {
+	if state := f.smc.firmwareLimit(t); !state.Active || state.Lower != 40 || state.Upper != 70 {
 		t.Fatalf("firmware state = %+v, want active 40/70", state)
 	}
 }
 
 func TestAdapterModeOneTimeChargeRestoresWallPower(t *testing.T) {
-	configured := &mockConf{upper: 60, lower: 55, chargeOnceTarget: 100}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	useAdapterCapabilities(t)
-	adapterMockSMC(t, 65, true, false)
+	conf := chargeOnceConf(60, 55)
+	conf.SetChargeOnceTarget(100)
 	native := &fakeNativeLimit{supported: true, limit: 80, enabled: true}
-	useFakeNativeLimit(t, native)
+	f := newFixture(t, firmwareGated, withConfig(conf), withCharge(65), withAdapter(false),
+		withNative(native), withCapabilities(adapterCaps()))
 	fake := &fakeCharger{enabled: false}
-	useCharger(t, fake)
+	f.useCharger(fake)
 
-	if !maintainLoopForced() || fake.enables != 1 || !fake.enabled || native.enabled {
+	if !f.d.maintainLoopForced() || fake.enables != 1 || !fake.enabled || native.enabled {
 		t.Fatalf("adapter-mode charge must clear native limit and restore wall power: charger=%+v native=%+v", fake, native)
 	}
 }
 
 func TestAdapterChargeOnceAdmissionFailureRestoresNativeLimit(t *testing.T) {
-	configured := &mockConf{upper: 80, lower: 78}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	capabilities = compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter}
-	gatedSMC(t)              // adapter key works, but maintain cannot read battery charge
-	stubBatteryCharge(t, 60) // admission can read it through the test seam
-	previousCharger := charger
-	t.Cleanup(func() { charger = previousCharger })
-	charger = adapterSwitch{}
+	// Admission can read the battery charge, but the adapter loop's first
+	// enforcement pass fails, so the request must undo everything it did.
+	conf := chargeOnceConf(80, 78)
 	fake := &fakeNativeLimit{supported: true, limit: 80, enabled: true}
-	useFakeNativeLimit(t, fake)
+	f := newFixture(t, firmwareGated, withConfig(conf), withCharge(60), withNative(fake),
+		withCapabilities(compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter}))
+	f.smc.fail("IsPluggedIn", errors.New("AC key gated"))
 
-	response := postChargeOnce(chargeOnceFullPath)
-	if response.Code != http.StatusInternalServerError || configured.chargeOnceTarget != 0 || !fake.enabled || fake.limit != 80 {
-		t.Fatalf("failed adapter enforcement must restore native limit and target: status=%d, target=%d, native=%+v", response.Code, configured.chargeOnceTarget, fake)
+	response := f.post(chargeOnceFullPath)
+	if response.Code != http.StatusInternalServerError || conf.ChargeOnceTarget() != 0 || !fake.enabled || fake.limit != 80 {
+		t.Fatalf("failed adapter enforcement must restore native limit and target: status=%d, target=%d, native=%+v", response.Code, conf.ChargeOnceTarget(), fake)
 	}
 }
 
 func TestNativeChargeOnceToFullUsesNativeLimit(t *testing.T) {
-	configured := &mockConf{upper: 80, lower: 78}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	useNativeCapabilities(t, 80, 85, 90, 95, 100)
+	conf := chargeOnceConf(80, 78)
 	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true}
-	useFakeNativeLimit(t, fake)
-	stubBatteryCharge(t, 70)
-	stubAdapterEnabled(t, true, nil)
+	f := newFixture(t, firmwareGated, withConfig(conf), withCharge(70), withNative(fake),
+		withCapabilities(nativeCaps(80, 85, 90, 95, 100)))
 
-	if response := postChargeOnce(chargeOnceLimitPath); response.Code != http.StatusConflict {
+	if response := f.post(chargeOnceLimitPath); response.Code != http.StatusConflict {
 		t.Fatalf("native charge now must be rejected: status=%d body=%s", response.Code, response.Body.String())
 	}
-	if configured.chargeOnceTarget != 0 {
+	if conf.ChargeOnceTarget() != 0 {
 		t.Fatal("rejected native charge now must not persist a target")
 	}
-	if response := postChargeOnce(chargeOnceFullPath); response.Code != http.StatusCreated {
+	if response := f.post(chargeOnceFullPath); response.Code != http.StatusCreated {
 		t.Fatalf("native charge full must be accepted: status=%d body=%s", response.Code, response.Body.String())
 	}
-	if configured.chargeOnceTarget != 100 || fake.disables != 1 || fake.enabled {
-		t.Fatalf("native limit must be disabled until full: target=%d, limit=%+v", configured.chargeOnceTarget, fake)
+	if conf.ChargeOnceTarget() != 100 || fake.disables != 1 || fake.enabled {
+		t.Fatalf("native limit must be disabled until full: target=%d, limit=%+v", conf.ChargeOnceTarget(), fake)
 	}
-	configured.chargeOnceTarget = 0
-	if !maintainLoopForced() || !fake.enabled || fake.limit != 80 {
+	conf.ClearChargeOnceTarget()
+	if !f.d.maintainLoopForced() || !fake.enabled || fake.limit != 80 {
 		t.Fatalf("configured native limit must resume after completion: %+v", fake)
 	}
 }
@@ -638,13 +486,12 @@ func TestChargeOnceReachedTarget(t *testing.T) {
 		{name: "firmware charge to full reached", mode: compatibility.ChargeControlFirmware, target: 100, charge: 100, want: true},
 	}
 
+	f := newFixture(t, firmwareLegacy)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			previous := capabilities
-			t.Cleanup(func() { capabilities = previous })
-			capabilities = compatibility.Capabilities{ChargingControl: true, ChargeControlMode: tt.mode}
+			f.setCaps(compatibility.Capabilities{ChargingControl: true, ChargeControlMode: tt.mode})
 
-			if got := chargeOnceReachedTarget(tt.target, tt.charge); got != tt.want {
+			if got := f.d.chargeOnceReachedTarget(tt.target, tt.charge); got != tt.want {
 				t.Fatalf("chargeOnceReachedTarget(%d, %d) = %v, want %v", tt.target, tt.charge, got, tt.want)
 			}
 		})
@@ -655,61 +502,52 @@ func TestFirmwareChargeOnceCompletesAtTheTopOfItsBand(t *testing.T) {
 	// A one-time charge to the 80% limit started at 79% cannot move: the
 	// firmware only resumes charging below the lower bound of the 79/80 band it
 	// gets. It must still end and hand the configured band back.
-	mock := firmwareChargeMock(t)
-	configured := &mockConf{upper: 80, lower: 78, chargeOnceTarget: 80}
-	useFirmwareLoopState(t, mock, configured)
-	stubBatteryCharge(t, 79)
+	conf := chargeOnceConf(80, 78)
+	conf.SetChargeOnceTarget(80)
+	f := newFixture(t, firmwareManaged, withConfig(conf), withCharge(79))
 
-	if !maintainLoopForced() {
+	if !f.d.maintainLoopForced() {
 		t.Fatal("firmware maintain loop failed")
 	}
-	state, err := mock.GetFirmwareChargeLimit()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !state.Active || state.Lower != 79 || state.Upper != 80 {
+	if state := f.smc.firmwareLimit(t); !state.Active || state.Lower != 79 || state.Upper != 80 {
 		t.Fatalf("firmware state = %+v, want active 79/80", state)
 	}
 
-	if !completeChargeOnce(configured) {
+	if !f.d.completeChargeOnce() {
 		t.Fatal("completeChargeOnce() = false, want true at the top of the one-time band")
 	}
-	if configured.chargeOnceTarget != 0 {
-		t.Fatalf("chargeOnceTarget = %d, want 0", configured.chargeOnceTarget)
+	if conf.ChargeOnceTarget() != 0 {
+		t.Fatalf("chargeOnceTarget = %d, want 0", conf.ChargeOnceTarget())
 	}
 
 	// The configured band applies again, so the persistent limit is restored.
-	if !maintainLoopForced() {
+	if !f.d.maintainLoopForced() {
 		t.Fatal("firmware maintain loop failed")
 	}
-	state, err = mock.GetFirmwareChargeLimit()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !state.Active || state.Lower != 78 || state.Upper != 80 {
+	if state := f.smc.firmwareLimit(t); !state.Active || state.Lower != 78 || state.Upper != 80 {
 		t.Fatalf("firmware state = %+v, want active 78/80", state)
 	}
 }
 
 func TestCompleteChargeOnceKeepsTheTargetWhenSaveFails(t *testing.T) {
-	configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: 70, saveErr: errors.New("disk full")}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	capabilities.ChargeControlMode = compatibility.ChargeControlLegacy
-	stubBatteryCharge(t, 70)
+	conf := chargeOnceConf(70, 40)
+	conf.SetChargeOnceTarget(70)
+	conf.failSave(errors.New("disk full"))
+	f := newChargeOnceFixture(t, conf, 70, calibration.PhaseIdle)
 
-	if completeChargeOnce(configured) {
+	if f.d.completeChargeOnce() {
 		t.Fatal("completeChargeOnce() = true after a failed save, want false")
 	}
-	if configured.chargeOnceTarget != 70 {
-		t.Fatalf("chargeOnceTarget = %d, want 70 after a failed save", configured.chargeOnceTarget)
+	if conf.ChargeOnceTarget() != 70 {
+		t.Fatalf("chargeOnceTarget = %d, want 70 after a failed save", conf.ChargeOnceTarget())
 	}
 
-	configured.saveErr = nil
-	if !completeChargeOnce(configured) {
+	conf.failSave(nil)
+	if !f.d.completeChargeOnce() {
 		t.Fatal("completeChargeOnce() retry = false, want true")
 	}
-	if configured.chargeOnceTarget != 0 {
-		t.Fatalf("chargeOnceTarget = %d, want 0 after a successful retry", configured.chargeOnceTarget)
+	if conf.ChargeOnceTarget() != 0 {
+		t.Fatalf("chargeOnceTarget = %d, want 0 after a successful retry", conf.ChargeOnceTarget())
 	}
 }
 
@@ -717,39 +555,41 @@ func TestCancelChargeOnceKeepsTheTargetWhenSaveFails(t *testing.T) {
 	// The config file still holds the target after a failed save, so dropping
 	// it from memory would make a retry report that nothing is running while a
 	// restart resumes the cancelled one-time charge.
-	configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: 100, saveErr: errors.New("disk full")}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
+	conf := chargeOnceConf(70, 40)
+	conf.SetChargeOnceTarget(100)
+	conf.failSave(errors.New("disk full"))
+	f := newChargeOnceFixture(t, conf, 58, calibration.PhaseIdle)
 
-	response := postChargeOnce(chargeOnceCancelPath)
+	response := f.post(chargeOnceCancelPath)
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusInternalServerError, response.Body.String())
 	}
-	if configured.chargeOnceTarget != 100 {
-		t.Fatalf("chargeOnceTarget = %d, want 100 after a failed save", configured.chargeOnceTarget)
+	if conf.ChargeOnceTarget() != 100 {
+		t.Fatalf("chargeOnceTarget = %d, want 100 after a failed save", conf.ChargeOnceTarget())
 	}
 
 	// The retry after a working disk cancels as usual.
-	configured.saveErr = nil
-	response = postChargeOnce(chargeOnceCancelPath)
+	conf.failSave(nil)
+	response = f.post(chargeOnceCancelPath)
 	if response.Code != http.StatusOK {
 		t.Fatalf("retry status = %d, want %d; body: %s", response.Code, http.StatusOK, response.Body.String())
 	}
-	if configured.chargeOnceTarget != 0 {
-		t.Fatalf("chargeOnceTarget = %d, want 0", configured.chargeOnceTarget)
+	if conf.ChargeOnceTarget() != 0 {
+		t.Fatalf("chargeOnceTarget = %d, want 0", conf.ChargeOnceTarget())
 	}
 }
 
 func TestStartChargeOnceKeepsNoTargetWhenSaveFails(t *testing.T) {
-	configured := &mockConf{upper: 70, lower: 40, saveErr: errors.New("disk full")}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	stubBatteryCharge(t, 58)
+	conf := chargeOnceConf(70, 40)
+	conf.failSave(errors.New("disk full"))
+	f := newChargeOnceFixture(t, conf, 58, calibration.PhaseIdle)
 
-	response := postChargeOnce(chargeOnceLimitPath)
+	response := f.post(chargeOnceLimitPath)
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusInternalServerError, response.Body.String())
 	}
-	if configured.chargeOnceTarget != 0 {
-		t.Fatalf("chargeOnceTarget = %d, want 0 after a failed save", configured.chargeOnceTarget)
+	if conf.ChargeOnceTarget() != 0 {
+		t.Fatalf("chargeOnceTarget = %d, want 0 after a failed save", conf.ChargeOnceTarget())
 	}
 }
 
@@ -767,58 +607,35 @@ func TestForceDischargeRejectsChargeOnce(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			previousDisable := smcDisableAdapter
-			t.Cleanup(func() { smcDisableAdapter = previousDisable })
-			called := false
-			smcDisableAdapter = func() error {
-				called = true
-				return nil
-			}
+			conf := chargeOnceConf(70, 40)
+			conf.SetChargeOnceTarget(100)
+			f := newChargeOnceFixture(t, conf, 58, calibration.PhaseIdle)
 
-			configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: 100}
-			useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-			capabilities = compatibility.Capabilities{ChargingControl: true, AdapterControl: true}
-
-			request := httptest.NewRequest(http.MethodPut, tt.path, strings.NewReader(tt.body))
-			request.Header.Set("Content-Type", "application/json")
-			response := httptest.NewRecorder()
-			setupRoutes().ServeHTTP(response, request)
-
+			response := f.put(tt.path, tt.body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusBadRequest, response.Body.String())
 			}
 			if !strings.Contains(response.Body.String(), ErrChargeOnceInProgress.Error()) {
 				t.Fatalf("response does not explain the conflict: %s", response.Body.String())
 			}
-			if called {
+			if f.smc.callCount("DisableAdapter") != 0 {
 				t.Fatal("rejected force discharge still cut power")
 			}
-			if configured.chargeOnceTarget != 100 || !configured.adapterDisableUntil.IsZero() {
-				t.Fatalf("rejected force discharge changed state: %+v", configured)
+			if conf.ChargeOnceTarget() != 100 || !conf.AdapterDisableUntil().IsZero() {
+				t.Fatalf("rejected force discharge changed state: %+v", conf.snapshot())
 			}
 		})
 	}
 }
 
 func TestEnablingTheAdapterKeepsChargeOnce(t *testing.T) {
-	previousEnable := smcEnableAdapter
-	t.Cleanup(func() { smcEnableAdapter = previousEnable })
-	smcEnableAdapter = func() error { return nil }
+	conf := chargeOnceConf(70, 40)
+	conf.SetChargeOnceTarget(100)
+	f := newChargeOnceFixture(t, conf, 58, calibration.PhaseIdle)
 
-	configured := &mockConf{upper: 70, lower: 40, chargeOnceTarget: 100}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	capabilities = compatibility.Capabilities{ChargingControl: true, AdapterControl: true}
-
-	request := httptest.NewRequest(http.MethodPut, "/adapter", strings.NewReader("true"))
-	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(response, request)
-
-	if response.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
-	}
-	if configured.chargeOnceTarget != 100 {
-		t.Fatalf("chargeOnceTarget = %d, want 100", configured.chargeOnceTarget)
+	f.mustServe(http.MethodPut, "/adapter", "true", http.StatusCreated)
+	if conf.ChargeOnceTarget() != 100 {
+		t.Fatalf("chargeOnceTarget = %d, want 100", conf.ChargeOnceTarget())
 	}
 }
 
@@ -830,20 +647,10 @@ func TestStartChargeOnceWithAHandEditedLimit(t *testing.T) {
 		&config.RawFileConfig{Limit: ptr.To(5), LowerLimitDelta: ptr.To(2)},
 		filepath.Join(t.TempDir(), "batt.json"),
 	)
-	previousConf, previousCapabilities := conf, capabilities
-	previousState, previousStatePath := calibrationState, calibrationStatePath
-	t.Cleanup(func() {
-		conf, capabilities = previousConf, previousCapabilities
-		calibrationState, calibrationStatePath = previousState, previousStatePath
-	})
-	conf = configured
-	capabilities = compatibility.Capabilities{ChargingControl: true}
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	calibrationStatePath = ""
-	stubBatteryCharge(t, 3)
+	f := newFixture(t, firmwareLegacy, withConfig(configured), withCharge(3), withCharging(false))
 
 	for _, path := range []string{chargeOnceLimitPath, chargeOnceFullPath} {
-		response := postChargeOnce(path)
+		response := f.post(path)
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("%s status = %d, want %d; body: %s", path, response.Code, http.StatusBadRequest, response.Body.String())
 		}
@@ -855,20 +662,6 @@ func TestStartChargeOnceWithAHandEditedLimit(t *testing.T) {
 			t.Fatalf("%s started a one-time charge to %d%%", path, configured.ChargeOnceTarget())
 		}
 	}
-}
-
-// stubAdapterEnabled replaces the adapter-state test seam for one test and
-// reports whether the seam was read.
-func stubAdapterEnabled(t *testing.T, enabled bool, err error) *bool {
-	t.Helper()
-	previous := smcIsAdapterEnabled
-	t.Cleanup(func() { smcIsAdapterEnabled = previous })
-	asked := false
-	smcIsAdapterEnabled = func() (bool, error) {
-		asked = true
-		return enabled, err
-	}
-	return &asked
 }
 
 func TestStartChargeOnceChecksThePowerAdapter(t *testing.T) {
@@ -944,25 +737,29 @@ func TestStartChargeOnceChecksThePowerAdapter(t *testing.T) {
 			if path == "" {
 				path = chargeOnceLimitPath
 			}
-			configured := &mockConf{upper: 70, lower: 40, adapterDisableUntil: tt.adapterDisableUntil}
-			useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-			capabilities = compatibility.Capabilities{ChargingControl: true, AdapterControl: tt.adapterControl}
-			stubBatteryCharge(t, 58)
-			useChargeOnceLegacyAdmissionSMC(t, 58)
-			asked := stubAdapterEnabled(t, tt.adapterEnabled, tt.adapterErr)
+			conf := chargeOnceConf(70, 40)
+			conf.SetAdapterDisableTimer(tt.adapterDisableUntil)
+			f := newFixture(t, firmwareLegacy, withConfig(conf), withCharge(58), withCharging(false),
+				withAdapter(tt.adapterEnabled),
+				withCapabilities(compatibility.Capabilities{
+					ChargingControl:   true,
+					ChargeControlMode: compatibility.ChargeControlLegacy,
+					AdapterControl:    tt.adapterControl,
+				}))
+			f.smc.fail("IsAdapterEnabled", tt.adapterErr)
 
-			response := postChargeOnce(path)
+			response := f.post(path)
 			if response.Code != tt.wantCode {
 				t.Fatalf("status = %d, want %d; body: %s", response.Code, tt.wantCode, response.Body.String())
 			}
 			if !strings.Contains(response.Body.String(), tt.wantBody) {
 				t.Fatalf("response does not explain the outcome: %s", response.Body.String())
 			}
-			if configured.chargeOnceTarget != tt.wantTarget {
-				t.Fatalf("chargeOnceTarget = %d, want %d", configured.chargeOnceTarget, tt.wantTarget)
+			if conf.ChargeOnceTarget() != tt.wantTarget {
+				t.Fatalf("chargeOnceTarget = %d, want %d", conf.ChargeOnceTarget(), tt.wantTarget)
 			}
-			if *asked != tt.wantAsked {
-				t.Fatalf("read the power adapter state = %v, want %v", *asked, tt.wantAsked)
+			if asked := f.smc.callCount("IsAdapterEnabled") > 0; asked != tt.wantAsked {
+				t.Fatalf("read the power adapter state = %v, want %v", asked, tt.wantAsked)
 			}
 		})
 	}
@@ -971,13 +768,11 @@ func TestStartChargeOnceChecksThePowerAdapter(t *testing.T) {
 func TestChargeOnceConflictKeepsTheAdapterReadError(t *testing.T) {
 	// The request answers with a server error, so the cause has to survive for
 	// the log line and for anyone matching on it.
-	configured := &mockConf{upper: 70, lower: 40}
-	useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-	capabilities = compatibility.Capabilities{ChargingControl: true, AdapterControl: true}
+	f := newChargeOnceFixture(t, chargeOnceConf(70, 40), 58, calibration.PhaseIdle)
 	readErr := errors.New("smc read failed")
-	stubAdapterEnabled(t, true, readErr)
+	f.smc.fail("IsAdapterEnabled", readErr)
 
-	err := chargeOnceConflict(configured)
+	err := f.d.chargeOnceConflict()
 	if !errors.Is(err, readErr) {
 		t.Fatalf("conflict error = %v, want it to wrap %v", err, readErr)
 	}
@@ -990,7 +785,7 @@ func TestStartChargeOnceRejectsATargetAlreadyReached(t *testing.T) {
 	// right away, so admission asks the same question as completion.
 	tests := []struct {
 		name       string
-		mode       compatibility.ChargeControlMode
+		fw         firmware
 		path       string
 		charge     int
 		wantCode   int
@@ -999,7 +794,7 @@ func TestStartChargeOnceRejectsATargetAlreadyReached(t *testing.T) {
 	}{
 		{
 			name:     "firmware one percent below the limit",
-			mode:     compatibility.ChargeControlFirmware,
+			fw:       firmwareManaged,
 			path:     chargeOnceLimitPath,
 			charge:   79,
 			wantCode: http.StatusBadRequest,
@@ -1007,7 +802,7 @@ func TestStartChargeOnceRejectsATargetAlreadyReached(t *testing.T) {
 		},
 		{
 			name:       "legacy one percent below the limit",
-			mode:       compatibility.ChargeControlLegacy,
+			fw:         firmwareLegacy,
 			path:       chargeOnceLimitPath,
 			charge:     79,
 			wantCode:   http.StatusCreated,
@@ -1017,7 +812,7 @@ func TestStartChargeOnceRejectsATargetAlreadyReached(t *testing.T) {
 			// A one-time charge to 100% deactivates the limit instead of
 			// narrowing a band, so it has no percent to give away.
 			name:       "firmware one percent below full",
-			mode:       compatibility.ChargeControlFirmware,
+			fw:         firmwareManaged,
 			path:       chargeOnceFullPath,
 			charge:     99,
 			wantCode:   http.StatusCreated,
@@ -1027,29 +822,20 @@ func TestStartChargeOnceRejectsATargetAlreadyReached(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			configured := &mockConf{upper: 80, lower: 78}
-			useChargeOnceDaemonState(t, configured, calibration.PhaseIdle)
-			capabilities = compatibility.Capabilities{ChargingControl: true, ChargeControlMode: tt.mode}
-			stubBatteryCharge(t, tt.charge)
+			conf := chargeOnceConf(80, 78)
 			// An admitted one-time charge runs the maintain loop right away, so
-			// the backend under test needs its SMC mock.
-			previousSMC := smcConn
-			t.Cleanup(func() { smcConn = previousSMC })
-			if tt.mode == compatibility.ChargeControlFirmware {
-				smcConn = firmwareChargeMock(t)
-			} else {
-				smcConn = legacyChargeMock(t, tt.charge, false)
-			}
+			// the backend under test needs its simulated firmware.
+			f := newFixture(t, tt.fw, withConfig(conf), withCharge(tt.charge), withCharging(false))
 
-			response := postChargeOnce(tt.path)
+			response := f.post(tt.path)
 			if response.Code != tt.wantCode {
 				t.Fatalf("status = %d, want %d; body: %s", response.Code, tt.wantCode, response.Body.String())
 			}
 			if !strings.Contains(response.Body.String(), tt.wantBody) {
 				t.Fatalf("response does not explain the outcome: %s", response.Body.String())
 			}
-			if configured.chargeOnceTarget != tt.wantTarget {
-				t.Fatalf("chargeOnceTarget = %d, want %d", configured.chargeOnceTarget, tt.wantTarget)
+			if conf.ChargeOnceTarget() != tt.wantTarget {
+				t.Fatalf("chargeOnceTarget = %d, want %d", conf.ChargeOnceTarget(), tt.wantTarget)
 			}
 		})
 	}

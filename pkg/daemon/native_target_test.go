@@ -3,26 +3,11 @@ package daemon
 import (
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/charlie0129/gosmc"
-
-	"github.com/charlie0129/batt/pkg/config"
-	"github.com/charlie0129/batt/pkg/smc"
 )
-
-func mockNativeBatteryCharge(t *testing.T, charge int) {
-	t.Helper()
-	value, err := gosmc.NewValue(smc.BatteryChargeKey, gosmc.TypeUInt8, []byte{byte(charge)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	useMockSMC(t, value)
-}
 
 func TestNativeLimitUsesConfiguredTargetRegardlessOfCharge(t *testing.T) {
 	for _, tc := range []struct {
@@ -40,28 +25,21 @@ func TestNativeLimitUsesConfiguredTargetRegardlessOfCharge(t *testing.T) {
 		{"minimum native target", 8, 10, 80},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			file, path := useTempConfig(t)
-			fake := useExactNativeTargets(t)
-			fake.limit, fake.enabled = tc.previous, tc.previous < 100
-			mockNativeBatteryCharge(t, tc.charge)
-			r := httptest.NewRecorder()
-			setupRoutes().ServeHTTP(r, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader(strconv.Itoa(tc.target))))
-			if r.Code != http.StatusCreated || fake.limit != tc.target || !fake.enabled {
-				t.Fatalf("limit not applied: %d %s native=%+v", r.Code, r.Body.String(), fake)
+			f := newExactNativeFixture(t, withCharge(tc.charge))
+			f.native.limit, f.native.enabled = tc.previous, tc.previous < 100
+			r := f.put("/limit", strconv.Itoa(tc.target))
+			if r.Code != http.StatusCreated || f.native.limit != tc.target || !f.native.enabled {
+				t.Fatalf("limit not applied: %d %s native=%+v", r.Code, r.Body.String(), f.native)
 			}
 			wantMessage := fmt.Sprintf("set charging limit to %d%%, current charge: %d%%. macOS resumes charging once the battery drops about 5%% below the limit.", tc.target, tc.charge)
 			if tc.charge > tc.target {
 				wantMessage += " Current charge is above the limit; macOS may use battery power to discharge toward the target."
 			}
-			if strings.TrimSpace(r.Body.String()) != strconv.Quote(wantMessage) || file.UpperLimit() != tc.target {
-				t.Fatalf("unexpected native limit response or saved target: %s target=%d", r.Body.String(), file.UpperLimit())
+			if strings.TrimSpace(r.Body.String()) != strconv.Quote(wantMessage) || f.file.UpperLimit() != tc.target {
+				t.Fatalf("unexpected native limit response or saved target: %s target=%d", r.Body.String(), f.file.UpperLimit())
 			}
-			reloaded, err := config.NewFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			conf = reloaded
-			if !maintainLoopForced() || fake.limit != tc.target || !fake.enabled || fake.disables != 0 {
+			f.d.conf = f.reloadFile() // daemon restart
+			if !f.d.maintainLoopForced() || f.native.limit != tc.target || !f.native.enabled || f.native.disables != 0 {
 				t.Fatal("restart changed or released the configured target")
 			}
 		})
@@ -69,58 +47,51 @@ func TestNativeLimitUsesConfiguredTargetRegardlessOfCharge(t *testing.T) {
 }
 
 func TestNativeTargetDoesNotFollowUnpluggedBattery(t *testing.T) {
-	file, _ := useTempConfig(t)
-	file.SetUpperLimit(55)
-	file.SetLowerLimit(50)
-	fake := useExactNativeTargets(t)
-	stubAdapter(t, false)
+	f := newExactNativeFixture(t, withPluggedIn(false), withAdapter(false))
+	f.file.SetUpperLimit(55)
+	f.file.SetLowerLimit(50)
 	for _, charge := range []int{52, 51, 49, 8} {
-		mockNativeBatteryCharge(t, charge)
-		if !maintainLoopForced() || fake.limit != 55 {
-			t.Fatalf("unplugged battery at %d%% changed the target to %d%%", charge, fake.limit)
+		f.smc.setCharge(t, charge)
+		if !f.d.maintainLoopForced() || f.native.limit != 55 {
+			t.Fatalf("unplugged battery at %d%% changed the target to %d%%", charge, f.native.limit)
 		}
 	}
-	stubAdapter(t, true)
-	if !maintainLoopForced() || fake.limit != 55 || len(fake.setCalls) != 1 {
+	f.smc.setPluggedIn(t, true)
+	f.smc.setAdapter(t, true)
+	if !f.d.maintainLoopForced() || f.native.limit != 55 || len(f.native.setCalls) != 1 {
 		t.Fatal("reconnect changed or rewrote the target")
 	}
 }
 
 func TestNativeLowerLimitIsUnsupported(t *testing.T) {
-	file, _ := useTempConfig(t)
-	file.SetUpperLimit(55)
-	file.SetLowerLimit(50)
-	fake := useExactNativeTargets(t)
-	r := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(r, httptest.NewRequest(http.MethodPut, "/lower-limit-delta", strings.NewReader("10")))
-	if r.Code != http.StatusConflict || file.LowerLimit() != 50 || len(fake.setCalls) != 0 {
+	f := newExactNativeFixture(t)
+	f.file.SetUpperLimit(55)
+	f.file.SetLowerLimit(50)
+	r := f.put("/lower-limit-delta", "10")
+	if r.Code != http.StatusConflict || f.file.LowerLimit() != 50 || len(f.native.setCalls) != 0 {
 		t.Fatalf("native lower limit accepted: %d %s", r.Code, r.Body.String())
 	}
 }
 
 func TestNativeMinimumTargetIgnoresSavedLowerLimitDelta(t *testing.T) {
-	file, _ := useTempConfig(t)
-	file.SetUpperLimit(80)
-	file.SetLowerLimit(30)
-	fake := useExactNativeTargets(t)
-	r := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(r, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader("10")))
-	if r.Code != http.StatusCreated || fake.limit != 10 || file.UpperLimit() != 10 {
+	f := newExactNativeFixture(t)
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(30)
+	r := f.put("/limit", "10")
+	if r.Code != http.StatusCreated || f.native.limit != 10 || f.file.UpperLimit() != 10 {
 		t.Fatalf("saved delta blocked minimum native target: %d %s", r.Code, r.Body.String())
 	}
 }
 
 func TestNativeMinimumTargetSaveFailureRestoresLimits(t *testing.T) {
-	file, path := useTempConfig(t)
-	file.SetUpperLimit(80)
-	file.SetLowerLimit(30)
-	fake := useExactNativeTargets(t)
-	if err := os.Mkdir(path, 0755); err != nil {
+	f := newExactNativeFixture(t)
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(30)
+	if err := os.Mkdir(f.path, 0755); err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(r, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader("10")))
-	if r.Code != http.StatusInternalServerError || file.UpperLimit() != 80 || file.LowerLimit() != 30 || len(fake.setCalls) != 0 {
-		t.Fatalf("failed save changed limits: %d %s config=%d/%d", r.Code, r.Body.String(), file.UpperLimit(), file.LowerLimit())
+	r := f.put("/limit", "10")
+	if r.Code != http.StatusInternalServerError || f.file.UpperLimit() != 80 || f.file.LowerLimit() != 30 || len(f.native.setCalls) != 0 {
+		t.Fatalf("failed save changed limits: %d %s config=%d/%d", r.Code, r.Body.String(), f.file.UpperLimit(), f.file.LowerLimit())
 	}
 }

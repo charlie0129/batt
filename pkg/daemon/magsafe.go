@@ -3,15 +3,16 @@ package daemon
 import (
 	"errors"
 
-	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 	"github.com/sirupsen/logrus"
 
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
-var systemIsCharging = func() (bool, error) {
-	info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true})
+// systemIsCharging reports whether macOS says the battery is charging right
+// now. Firmware and native modes cannot tell from batt's own switch state.
+func (d *Daemon) systemIsCharging() (bool, error) {
+	info, err := d.battery.SystemInfo()
 	if err != nil {
 		return false, err
 	}
@@ -23,15 +24,15 @@ var systemIsCharging = func() (bool, error) {
 
 // maintainManagedMagSafeLED reflects actual charging in firmware and native
 // modes, independent of whether macOS is currently enforcing a charge limit.
-func maintainManagedMagSafeLED() {
-	if !getCapabilities().MagSafeLED {
+func (d *Daemon) maintainManagedMagSafeLED() {
+	if !d.getCapabilities().MagSafeLED {
 		return
 	}
 
 	var target smc.MagSafeLedState
-	switch conf.ControlMagSafeLED() {
+	switch d.conf.ControlMagSafeLED() {
 	case config.ControlMagSafeModeEnabled:
-		charging, err := systemIsCharging()
+		charging, err := d.systemIsCharging()
 		if err != nil {
 			logrus.WithError(err).Error("failed to read battery charging state for MagSafe LED")
 			return
@@ -46,7 +47,7 @@ func maintainManagedMagSafeLED() {
 		return
 	}
 
-	current, err := smcConn.Read(smc.MagSafeLedKey)
+	current, err := d.smc.Read(smc.MagSafeLedKey)
 	if err != nil {
 		logrus.WithError(err).Error("failed to read MagSafe LED state")
 		return
@@ -56,7 +57,7 @@ func maintainManagedMagSafeLED() {
 		return
 	}
 	if current.Bytes[0] != byte(target) {
-		if err := smcConn.SetMagSafeLedState(target); err != nil {
+		if err := d.smc.SetMagSafeLedState(target); err != nil {
 			logrus.WithError(err).Error("failed to set MagSafe LED state")
 		}
 	}
@@ -65,11 +66,11 @@ func maintainManagedMagSafeLED() {
 // releaseMagSafeLEDOnExit returns the LED to system control. The SMC keeps
 // the last state batt wrote after the daemon exits, so without this the LED
 // stays green or off even when macOS charges again.
-func releaseMagSafeLEDOnExit() error {
-	maintainLoopInnerLock.Lock()
-	defer maintainLoopInnerLock.Unlock()
-	if !getCapabilities().MagSafeLED || conf.ControlMagSafeLED() == config.ControlMagSafeModeDisabled {
+func (d *Daemon) releaseMagSafeLEDOnExit() error {
+	d.loopMu.Lock()
+	defer d.loopMu.Unlock()
+	if !d.getCapabilities().MagSafeLED || d.conf.ControlMagSafeLED() == config.ControlMagSafeModeDisabled {
 		return nil
 	}
-	return smcConn.SetMagSafeLedState(smc.LEDSystem)
+	return d.smc.SetMagSafeLedState(smc.LEDSystem)
 }

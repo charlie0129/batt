@@ -10,111 +10,24 @@ import (
 	"github.com/charlie0129/batt/pkg/compatibility"
 )
 
-// fakeSleepSetting replaces the IOKit calls with an in-memory value and records
-// how often the setting was actually written.
-type fakeSleepSetting struct {
-	value         bool
-	writes        int
-	writtenValues []bool
-	getErr        error
-	setErr        error
-	setErrFor     *bool // fail only when writing this value
-}
-
-func (f *fakeSleepSetting) get() (bool, error) {
-	if f.getErr != nil {
-		return false, f.getErr
-	}
-	return f.value, nil
-}
-
-func (f *fakeSleepSetting) set(disabled bool) error {
-	if f.setErr != nil && (f.setErrFor == nil || *f.setErrFor == disabled) {
-		return f.setErr
-	}
-	f.value = disabled
-	f.writes++
-	f.writtenValues = append(f.writtenValues, disabled)
-	return nil
-}
-
-func stubSleepDisabled(t *testing.T, initial bool) *fakeSleepSetting {
+// newTestHolds builds a sleep-hold set over a fake setting, for tests of the
+// bookkeeping alone.
+func newTestHolds(t *testing.T, initial bool) (*sleepHolds, *fakeSleepSetting) {
 	t.Helper()
-
-	previousGet, previousSet := getSleepDisabled, setSleepDisabled
-	t.Cleanup(func() {
-		getSleepDisabled, setSleepDisabled = previousGet, previousSet
-		sleepHolds = map[string]bool{}
-		sleepDisabledPrevious = false
-		sleepDisabledPath = ""
-	})
-
-	sleepHolds = map[string]bool{}
-	sleepDisabledPrevious = false
-	sleepDisabledPath = filepath.Join(t.TempDir(), "batt.sleep.json")
-
 	fake := &fakeSleepSetting{value: initial}
-	getSleepDisabled = fake.get
-	setSleepDisabled = fake.set
-	return fake
+	h := newSleepHolds(fake)
+	h.path = filepath.Join(t.TempDir(), "batt.sleep.json")
+	return h, fake
 }
 
-// stubAdapter replaces the raw SMC calls and tracks adapter state.
-type fakeAdapter struct {
-	enabled    bool
-	disableErr error
-	enableErr  error
-}
-
-func stubAdapter(t *testing.T, enabled bool) *fakeAdapter {
+// newSleepFixture is a legacy Mac whose SleepDisabled setting starts at
+// sleepDisabled and whose adapter starts on or off.
+func newSleepFixture(t *testing.T, sleepDisabled, adapterOn, preventSleep bool) *fixture {
 	t.Helper()
-
-	previousDisable, previousEnable := rawDisableAdapter, rawEnableAdapter
-	previousConf := conf
-	previousIsAdapter := smcIsAdapterEnabled
-	previousCap := capabilities
-	previousEnableAdapter := smcEnableAdapter
-	previousDisableAdapter := smcDisableAdapter
-	smcEnableAdapter = enableAdapterWithSleepPolicy
-	smcDisableAdapter = disableAdapterWithSleepPolicy
-	t.Cleanup(func() {
-		rawDisableAdapter, rawEnableAdapter = previousDisable, previousEnable
-		conf = previousConf
-		smcIsAdapterEnabled = previousIsAdapter
-		capabilities = previousCap
-		smcEnableAdapter = previousEnableAdapter
-		smcDisableAdapter = previousDisableAdapter
-	})
-
-	capabilities.AdapterControl = true
-	fake := &fakeAdapter{enabled: enabled}
-	rawDisableAdapter = func() error {
-		if fake.disableErr != nil {
-			return fake.disableErr
-		}
-		fake.enabled = false
-		return nil
-	}
-	rawEnableAdapter = func() error {
-		if fake.enableErr != nil {
-			return fake.enableErr
-		}
-		fake.enabled = true
-		return nil
-	}
-	smcIsAdapterEnabled = func() (bool, error) {
-		return fake.enabled, nil
-	}
-	return fake
+	f := newFixture(t, firmwareLegacy, withSleepDisabled(sleepDisabled), withAdapter(adapterOn))
+	f.mem.SetPreventSleepOnAdapterDisable(preventSleep)
+	return f
 }
-
-// sleepPolicyConf is a config whose only relevant knob is the new setting.
-type sleepPolicyConf struct {
-	mockConf
-	prevent bool
-}
-
-func (c *sleepPolicyConf) PreventSleepOnAdapterDisable() bool { return c.prevent }
 
 // ---------------------------------------------------------------------------
 // Hold bookkeeping
@@ -124,112 +37,112 @@ func TestHoldSleepIsIdempotentPerReason(t *testing.T) {
 	// Regression: batt's call sites are not transition-guarded. Several disable
 	// adapter input unconditionally, so the same reason arrives repeatedly. A
 	// counted hold would never reach zero again.
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 
 	for i := 0; i < 5; i++ {
-		if err := holdSleep(sleepHoldAdapter); err != nil {
-			t.Fatalf("holdSleep #%d: %v", i, err)
+		if err := h.hold(sleepHoldAdapter); err != nil {
+			t.Fatalf("hold #%d: %v", i, err)
 		}
 	}
-	if !fake.value {
+	if !fake.disabled() {
 		t.Fatal("sleep should be disabled")
 	}
-	if fake.writes != 1 {
-		t.Fatalf("setting written %d times, want 1", fake.writes)
+	if fake.writeCount() != 1 {
+		t.Fatalf("setting written %d times, want 1", fake.writeCount())
 	}
 
-	if err := releaseSleep(sleepHoldAdapter); err != nil {
-		t.Fatalf("releaseSleep: %v", err)
+	if err := h.release(sleepHoldAdapter); err != nil {
+		t.Fatalf("release: %v", err)
 	}
-	if fake.value {
+	if fake.disabled() {
 		t.Fatal("a single release must undo repeated holds of the same reason")
 	}
-	if len(sleepHolds) != 0 {
-		t.Fatalf("holds left over: %v", sleepHolds)
+	if h.count() != 0 {
+		t.Fatalf("holds left over: %v", h.holds)
 	}
 }
 
 func TestIndependentReasonsEachHold(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 
-	if err := holdSleep(sleepHoldAdapter); err != nil {
+	if err := h.hold(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if err := holdSleep("some-other-reason"); err != nil {
+	if err := h.hold("some-other-reason"); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := releaseSleep(sleepHoldAdapter); err != nil {
+	if err := h.release(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if !fake.value {
+	if !fake.disabled() {
 		t.Fatal("sleep must stay disabled while another reason holds")
 	}
 
-	if err := releaseSleep("some-other-reason"); err != nil {
+	if err := h.release("some-other-reason"); err != nil {
 		t.Fatal(err)
 	}
-	if fake.value {
+	if fake.disabled() {
 		t.Fatal("sleep should be restored once the last reason is gone")
 	}
 }
 
 func TestReleaseSleepHonoursUserSetting(t *testing.T) {
-	fake := stubSleepDisabled(t, true) // user disabled sleep themselves
+	h, fake := newTestHolds(t, true) // user disabled sleep themselves
 
-	if err := holdSleep(sleepHoldAdapter); err != nil {
+	if err := h.hold(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if fake.writes != 0 {
-		t.Fatalf("nothing to write when already disabled, got %d writes", fake.writes)
+	if fake.writeCount() != 0 {
+		t.Fatalf("nothing to write when already disabled, got %d writes", fake.writeCount())
 	}
 
-	if err := releaseSleep(sleepHoldAdapter); err != nil {
+	if err := h.release(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if !fake.value {
+	if !fake.disabled() {
 		t.Fatal("must not re-enable sleep the user had disabled")
 	}
 }
 
 func TestReleaseWithoutHoldIsNoop(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 
-	if err := releaseSleep(sleepHoldAdapter); err != nil {
+	if err := h.release(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if fake.writes != 0 {
-		t.Fatalf("unbalanced release wrote the setting %d times", fake.writes)
+	if fake.writeCount() != 0 {
+		t.Fatalf("unbalanced release wrote the setting %d times", fake.writeCount())
 	}
 }
 
 func TestReleaseAllSleepHoldsDropsEveryReason(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 
 	for _, reason := range []string{sleepHoldAdapter, "a", "b"} {
-		if err := holdSleep(reason); err != nil {
+		if err := h.hold(reason); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := releaseAllSleepHolds(); err != nil {
+	if err := h.releaseAll(); err != nil {
 		t.Fatal(err)
 	}
-	if fake.value {
-		t.Fatal("releaseAllSleepHolds must restore the setting")
+	if fake.disabled() {
+		t.Fatal("releaseAll must restore the setting")
 	}
-	if len(sleepHolds) != 0 {
-		t.Fatalf("holds left over: %v", sleepHolds)
+	if h.count() != 0 {
+		t.Fatalf("holds left over: %v", h.holds)
 	}
 }
 
 func TestReleaseAllWithoutHoldsIsNoop(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 
-	if err := releaseAllSleepHolds(); err != nil {
+	if err := h.releaseAll(); err != nil {
 		t.Fatal(err)
 	}
-	if fake.writes != 0 {
-		t.Fatalf("wrote the setting %d times without holds", fake.writes)
+	if fake.writeCount() != 0 {
+		t.Fatalf("wrote the setting %d times without holds", fake.writeCount())
 	}
 }
 
@@ -238,31 +151,31 @@ func TestReleaseAllWithoutHoldsIsNoop(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHoldSleepPropagatesReadFailure(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 	fake.getErr = errors.New("IOPMCopySystemPowerSettings returned NULL")
 
-	if err := holdSleep(sleepHoldAdapter); err == nil {
+	if err := h.hold(sleepHoldAdapter); err == nil {
 		t.Fatal("expected the read failure to propagate")
 	}
-	if len(sleepHolds) != 0 {
+	if h.count() != 0 {
 		t.Fatal("no hold may be recorded when the read failed")
 	}
-	if _, err := os.Stat(sleepDisabledPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(h.path); !os.IsNotExist(err) {
 		t.Fatal("no snapshot may be left behind when the read failed")
 	}
 }
 
 func TestHoldSleepCleansUpAfterWriteFailure(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 	fake.setErr = errors.New("IOPMSetSystemPowerSetting failed")
 
-	if err := holdSleep(sleepHoldAdapter); err == nil {
+	if err := h.hold(sleepHoldAdapter); err == nil {
 		t.Fatal("expected the write failure to propagate")
 	}
-	if len(sleepHolds) != 0 {
+	if h.count() != 0 {
 		t.Fatal("no hold may be recorded when the write failed")
 	}
-	if _, err := os.Stat(sleepDisabledPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(h.path); !os.IsNotExist(err) {
 		t.Fatal("a failed hold must not leave a snapshot behind")
 	}
 }
@@ -271,9 +184,9 @@ func TestFailedReleaseKeepsHoldAndSnapshot(t *testing.T) {
 	// If the restore write fails, ownership must not be dropped: otherwise the
 	// next hold would snapshot batt's own leftover value as "user intent" and
 	// sleep would stay disabled forever.
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 
-	if err := holdSleep(sleepHoldAdapter); err != nil {
+	if err := h.hold(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
 
@@ -281,59 +194,59 @@ func TestFailedReleaseKeepsHoldAndSnapshot(t *testing.T) {
 	fake.setErr = errors.New("IOPMSetSystemPowerSetting failed")
 	fake.setErrFor = &restoreValue
 
-	if err := releaseSleep(sleepHoldAdapter); err == nil {
+	if err := h.release(sleepHoldAdapter); err == nil {
 		t.Fatal("expected the restore failure to propagate")
 	}
-	if !sleepHolds[sleepHoldAdapter] {
+	if !h.holding(sleepHoldAdapter) {
 		t.Fatal("the hold must be kept when the restore failed")
 	}
-	if _, err := os.Stat(sleepDisabledPath); err != nil {
+	if _, err := os.Stat(h.path); err != nil {
 		t.Fatalf("snapshot must survive a failed restore: %v", err)
 	}
 
 	// Once the write works again, the retry restores and cleans up.
 	fake.setErr = nil
 	fake.setErrFor = nil
-	if err := releaseSleep(sleepHoldAdapter); err != nil {
+	if err := h.release(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if fake.value {
+	if fake.disabled() {
 		t.Fatal("retry should have restored sleep")
 	}
-	if _, err := os.Stat(sleepDisabledPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(h.path); !os.IsNotExist(err) {
 		t.Fatal("snapshot should be gone after a successful retry")
 	}
 }
 
 func TestFailedSnapshotRemovalPreservesPreExistingSleepSetting(t *testing.T) {
-	fake := stubSleepDisabled(t, true)
-	if err := holdSleep(sleepHoldAdapter); err != nil {
+	h, fake := newTestHolds(t, true)
+	if err := h.hold(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(sleepDisabledPath); err != nil {
+	if err := os.Remove(h.path); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(sleepDisabledPath, 0o700); err != nil {
+	if err := os.Mkdir(h.path, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	blocker := filepath.Join(sleepDisabledPath, "blocker")
+	blocker := filepath.Join(h.path, "blocker")
 	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := releaseSleep(sleepHoldAdapter); err == nil {
+	if err := h.release(sleepHoldAdapter); err == nil {
 		t.Fatal("expected snapshot removal to fail")
 	}
-	if !sleepHolds[sleepHoldAdapter] || !sleepDisabledPrevious || !fake.value {
+	if !h.holding(sleepHoldAdapter) || !h.previous || !fake.disabled() {
 		t.Fatal("failed removal must preserve the hold and original SleepDisabled=true")
 	}
 	if err := os.Remove(blocker); err != nil {
 		t.Fatal(err)
 	}
-	if err := releaseSleep(sleepHoldAdapter); err != nil {
+	if err := h.release(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if !fake.value || fake.writes != 0 {
+	if !fake.disabled() || fake.writeCount() != 0 {
 		t.Fatal("retry must not change the user's original SleepDisabled=true")
 	}
 }
@@ -341,19 +254,19 @@ func TestFailedSnapshotRemovalPreservesPreExistingSleepSetting(t *testing.T) {
 func TestPendingSnapshotWinsOverLiveValue(t *testing.T) {
 	// A snapshot on disk means an earlier restore did not complete. The live
 	// value is batt's leftover, not the user's setting, and must not be adopted.
-	fake := stubSleepDisabled(t, true)
+	h, fake := newTestHolds(t, true)
 
-	if err := os.WriteFile(sleepDisabledPath, []byte(`{"previous":false}`), 0o600); err != nil {
+	if err := os.WriteFile(h.path, []byte(`{"previous":false}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := holdSleep(sleepHoldAdapter); err != nil {
+	if err := h.hold(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if err := releaseSleep(sleepHoldAdapter); err != nil {
+	if err := h.release(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if fake.value {
+	if fake.disabled() {
 		t.Fatal("restore must use the pending snapshot, not the leftover live value")
 	}
 }
@@ -363,37 +276,36 @@ func TestPendingSnapshotWinsOverLiveValue(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSnapshotIsPersistedAndClearedAgain(t *testing.T) {
-	stubSleepDisabled(t, false)
-	path := sleepDisabledPath
+	h, _ := newTestHolds(t, false)
 
-	if err := holdSleep(sleepHoldAdapter); err != nil {
+	if err := h.hold(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path); err != nil {
+	if _, err := os.Stat(h.path); err != nil {
 		t.Fatalf("snapshot should exist while sleep is held: %v", err)
 	}
 
-	if err := releaseSleep(sleepHoldAdapter); err != nil {
+	if err := h.release(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
+	if _, err := os.Stat(h.path); !os.IsNotExist(err) {
 		t.Fatalf("snapshot should be gone after restore, got %v", err)
 	}
 }
 
 func TestRecoverSleepDisabledRestoresSnapshotLeftBehind(t *testing.T) {
-	fake := stubSleepDisabled(t, true) // daemon was killed with sleep disabled
-	path := sleepDisabledPath
+	fake := &fakeSleepSetting{value: true} // daemon was killed with sleep disabled
+	path := filepath.Join(t.TempDir(), "batt.sleep.json")
 
 	if err := os.WriteFile(path, []byte(`{"previous":false}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := RecoverSleepDisabled(path); err != nil {
+	if err := recoverSleepDisabled(path, fake); err != nil {
 		t.Fatal(err)
 	}
 
-	if fake.value {
+	if fake.disabled() {
 		t.Fatal("recovery must restore the pre-crash value")
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -402,15 +314,15 @@ func TestRecoverSleepDisabledRestoresSnapshotLeftBehind(t *testing.T) {
 }
 
 func TestRecoverSleepDisabledKeepsSnapshotWhenRestoreFails(t *testing.T) {
-	fake := stubSleepDisabled(t, true)
-	path := sleepDisabledPath
+	fake := &fakeSleepSetting{value: true}
+	path := filepath.Join(t.TempDir(), "batt.sleep.json")
 	fake.setErr = errors.New("IOPMSetSystemPowerSetting failed")
 
 	if err := os.WriteFile(path, []byte(`{"previous":false}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := RecoverSleepDisabled(path); err == nil {
+	if err := recoverSleepDisabled(path, fake); err == nil {
 		t.Fatal("expected recovery to fail")
 	}
 
@@ -420,29 +332,28 @@ func TestRecoverSleepDisabledKeepsSnapshotWhenRestoreFails(t *testing.T) {
 }
 
 func TestStartupReconcileKeepsSleepDisabledWithoutGap(t *testing.T) {
-	fake := stubSleepDisabled(t, true)
-	adapter := stubAdapter(t, false)
-	conf = &sleepPolicyConf{prevent: true}
-	capabilities.AdapterControl = true
-	path := sleepDisabledPath
+	// SleepDisabled is still on from the previous run, the adapter is still
+	// cut, and the snapshot says the user had sleep enabled.
+	f := newSleepFixture(t, true, false, true)
+	path := f.sleepPath()
 
 	if err := os.WriteFile(path, []byte(`{"previous":false}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := initSleepDisabledState(path); err != nil {
+	if err := f.d.holds.init(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := reconcileAdapterSleepPolicy(); err != nil {
+	if err := f.d.reconcileAdapterSleepPolicy(); err != nil {
 		t.Fatal(err)
 	}
 
-	if adapter.enabled {
+	if f.smc.adapterEnabled(t) {
 		t.Fatal("adapter should remain disabled")
 	}
-	if !fake.value || !sleepHolds[sleepHoldAdapter] {
+	if !f.sleep.disabled() || !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("startup must retain sleep protection for the disabled adapter")
 	}
-	for _, value := range fake.writtenValues {
+	for _, value := range f.sleep.writtenValues {
 		if !value {
 			t.Fatal("startup briefly restored sleep before reacquiring the hold")
 		}
@@ -450,48 +361,71 @@ func TestStartupReconcileKeepsSleepDisabledWithoutGap(t *testing.T) {
 }
 
 func TestReloadReconcilesSleepImmediately(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, false)
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, false, false, true)
 
-	if err := reconcileReloadedSleepPolicy(); err != nil {
+	if err := f.d.reconcileReloadedSleepPolicy(); err != nil {
 		t.Fatal(err)
 	}
-	if adapter.enabled || !sleep.value || !sleepHolds[sleepHoldAdapter] {
+	if f.smc.adapterEnabled(t) || !f.sleep.disabled() || !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("reload must hold sleep before returning while wall power is cut")
 	}
 }
 
-func TestStartupSleepPolicyFailureRestoresWallPower(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, false)
-	conf = &sleepPolicyConf{prevent: true}
-	sleep.setErr = errors.New("IOPM unavailable")
+func TestReloadAppliesTheReloadedConfig(t *testing.T) {
+	// SIGHUP re-reads the file and applies what takes effect without a
+	// restart: unsupported settings are dropped and the sleep policy follows
+	// the new setting.
+	f := newFixture(t, firmwareLegacy, withFileConfig(), withAdapter(false))
+	f.file.SetPreventSleepOnAdapterDisable(true)
+	if err := f.file.Save(); err != nil {
+		t.Fatal(err)
+	}
 
-	if err := ensureStartupSleepPolicy(); err == nil {
+	if err := f.d.reload(); err != nil {
+		t.Fatal(err)
+	}
+	if !f.holdsSleep(sleepHoldAdapter) || !f.sleep.disabled() {
+		t.Fatal("reload must apply the new sleep policy to the cut adapter")
+	}
+
+	f.file.SetPreventSleepOnAdapterDisable(false)
+	if err := f.file.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.reload(); err != nil {
+		t.Fatal(err)
+	}
+	if f.holdsSleep(sleepHoldAdapter) || f.sleep.disabled() {
+		t.Fatal("reload must release the hold once the setting is off")
+	}
+}
+
+func TestStartupSleepPolicyFailureRestoresWallPower(t *testing.T) {
+	f := newSleepFixture(t, false, false, true)
+	f.sleep.setErr = errors.New("IOPM unavailable")
+
+	if err := f.d.ensureStartupSleepPolicy(); err == nil {
 		t.Fatal("startup must fail when sleep protection cannot be established")
 	}
-	if !adapter.enabled {
+	if !f.smc.adapterEnabled(t) {
 		t.Fatal("startup failure must restore wall power before returning")
 	}
 }
 
 func TestStartupSleepPolicyFailureKeepsSnapshotWhenAdapterCannotRestore(t *testing.T) {
-	stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, false)
-	conf = &sleepPolicyConf{prevent: true}
-	if err := os.WriteFile(sleepDisabledPath, []byte("malformed"), 0o600); err != nil {
+	f := newSleepFixture(t, false, false, true)
+	if err := os.WriteFile(f.sleepPath(), []byte("malformed"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	adapter.enableErr = errors.New("SMC unavailable")
+	f.smc.fail("EnableAdapter", errors.New("SMC unavailable"))
 
-	if err := ensureStartupSleepPolicy(); err == nil {
+	if err := f.d.ensureStartupSleepPolicy(); err == nil {
 		t.Fatal("startup must fail when neither sleep protection nor wall power can be restored")
 	}
-	if adapter.enabled {
-		t.Fatal("adapter mock must still be disabled")
+	if f.smc.adapterEnabled(t) {
+		t.Fatal("adapter must still be disabled")
 	}
-	if _, err := os.Stat(sleepDisabledPath); err != nil {
+	if _, err := os.Stat(f.sleepPath()); err != nil {
 		t.Fatalf("failed recovery must preserve the snapshot: %v", err)
 	}
 }
@@ -499,37 +433,32 @@ func TestStartupSleepPolicyFailureKeepsSnapshotWhenAdapterCannotRestore(t *testi
 // A broken note about the old sleep setting must not keep the daemon from
 // starting. The charge limit does not depend on it. The file stays in place.
 func TestStartupContinuesWhenSnapshotIsMalformed(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	stubAdapter(t, true)
-	conf = &sleepPolicyConf{prevent: false}
-	if err := os.WriteFile(sleepDisabledPath, []byte("{trunc"), 0o600); err != nil {
+	f := newSleepFixture(t, false, true, false)
+	if err := os.WriteFile(f.sleepPath(), []byte("{trunc"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := ensureStartupSleepPolicy(); err != nil {
+	if err := f.d.ensureStartupSleepPolicy(); err != nil {
 		t.Fatalf("a malformed snapshot must not stop the daemon: %v", err)
 	}
-	if b, err := os.ReadFile(sleepDisabledPath); err != nil || string(b) != "{trunc" {
+	if b, err := os.ReadFile(f.sleepPath()); err != nil || string(b) != "{trunc" {
 		t.Fatalf("the malformed snapshot must stay untouched for manual recovery: %q, %v", b, err)
 	}
-	if sleep.writes != 0 {
-		t.Fatalf("nothing may be written for a malformed snapshot, got %d", sleep.writes)
+	if f.sleep.writeCount() != 0 {
+		t.Fatalf("nothing may be written for a malformed snapshot, got %d", f.sleep.writeCount())
 	}
 }
 
 func TestStartupContinuesWhenSnapshotIsMalformedWithoutAdapterControl(t *testing.T) {
-	stubSleepDisabled(t, false)
-	stubAdapter(t, true)
-	capabilities = compatibility.Capabilities{}
-	conf = &sleepPolicyConf{prevent: false}
-	if err := os.WriteFile(sleepDisabledPath, []byte("{trunc"), 0o600); err != nil {
+	f := newFixture(t, firmwareLegacy, withCapabilities(compatibility.Capabilities{}))
+	if err := os.WriteFile(f.sleepPath(), []byte("{trunc"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := ensureStartupSleepPolicy(); err != nil {
+	if err := f.d.ensureStartupSleepPolicy(); err != nil {
 		t.Fatalf("a malformed snapshot must not stop the daemon: %v", err)
 	}
-	if _, err := os.Stat(sleepDisabledPath); err != nil {
+	if _, err := os.Stat(f.sleepPath()); err != nil {
 		t.Fatalf("the malformed snapshot must be preserved: %v", err)
 	}
 }
@@ -537,139 +466,134 @@ func TestStartupContinuesWhenSnapshotIsMalformedWithoutAdapterControl(t *testing
 func TestStartupWithMalformedSnapshotRestoresWallPowerAndContinues(t *testing.T) {
 	// The adapter is cut and the feature is on, but no hold can be taken while
 	// the snapshot is unreadable. Wall power comes back, and the daemon starts.
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, false)
-	conf = &sleepPolicyConf{prevent: true}
-	if err := os.WriteFile(sleepDisabledPath, []byte("{trunc"), 0o600); err != nil {
+	f := newSleepFixture(t, false, false, true)
+	if err := os.WriteFile(f.sleepPath(), []byte("{trunc"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := ensureStartupSleepPolicy(); err != nil {
+	if err := f.d.ensureStartupSleepPolicy(); err != nil {
 		t.Fatalf("a malformed snapshot must not stop the daemon: %v", err)
 	}
-	if !adapter.enabled {
+	if !f.smc.adapterEnabled(t) {
 		t.Fatal("wall power must come back when protection cannot be taken")
 	}
-	if sleep.writes != 0 {
-		t.Fatalf("nothing may be written for a malformed snapshot, got %d", sleep.writes)
+	if f.sleep.writeCount() != 0 {
+		t.Fatalf("nothing may be written for a malformed snapshot, got %d", f.sleep.writeCount())
 	}
-	if _, err := os.Stat(sleepDisabledPath); err != nil {
+	if _, err := os.Stat(f.sleepPath()); err != nil {
 		t.Fatalf("the malformed snapshot must be preserved: %v", err)
 	}
 }
 
 func TestUnusableSnapshotErrorNamesTheFile(t *testing.T) {
-	stubSleepDisabled(t, false)
-	if err := os.WriteFile(sleepDisabledPath, []byte("{trunc"), 0o600); err != nil {
+	h, _ := newTestHolds(t, false)
+	if err := os.WriteFile(h.path, []byte("{trunc"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	err := holdSleep("test-reason")
+	err := h.hold("test-reason")
 	if err == nil {
-		t.Fatal("holdSleep must fail while the snapshot is malformed")
+		t.Fatal("hold must fail while the snapshot is malformed")
 	}
-	if !strings.Contains(err.Error(), sleepDisabledPath) {
+	if !strings.Contains(err.Error(), h.path) {
 		t.Fatalf("the error must name the file so the user can find it: %v", err)
 	}
 }
 
 func TestInitPreservesMalformedSnapshot(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
-	path := sleepDisabledPath
+	h, fake := newTestHolds(t, false)
 
-	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+	if err := os.WriteFile(h.path, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	err := initSleepDisabledState(path)
+	err := h.init(h.path)
 	if err == nil {
 		t.Fatal("expected error on malformed snapshot")
 	}
 
-	if _, statErr := os.Stat(path); statErr != nil {
+	if _, statErr := os.Stat(h.path); statErr != nil {
 		t.Fatalf("a malformed snapshot must be preserved for recovery, got: %v", statErr)
 	}
-	if fake.writes != 0 {
-		t.Fatalf("nothing should be written for a malformed snapshot, got %d", fake.writes)
+	if fake.writeCount() != 0 {
+		t.Fatalf("nothing should be written for a malformed snapshot, got %d", fake.writeCount())
 	}
 }
 
 func TestInitPreservesMissingPreviousField(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
-	path := sleepDisabledPath
+	h, fake := newTestHolds(t, false)
 
-	if err := os.WriteFile(path, []byte(`{"other": 123}`), 0o600); err != nil {
+	if err := os.WriteFile(h.path, []byte(`{"other": 123}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	err := initSleepDisabledState(path)
+	err := h.init(h.path)
 	if err == nil {
 		t.Fatal("expected error on missing previous field")
 	}
 
-	if _, statErr := os.Stat(path); statErr != nil {
+	if _, statErr := os.Stat(h.path); statErr != nil {
 		t.Fatalf("snapshot with missing previous must be preserved, got: %v", statErr)
 	}
-	if fake.writes != 0 {
-		t.Fatalf("nothing should be written when previous field is missing, got %d", fake.writes)
+	if fake.writeCount() != 0 {
+		t.Fatalf("nothing should be written when previous field is missing, got %d", fake.writeCount())
 	}
 }
 
 func TestTakeFirstHoldFailsWhenSnapshotMalformed(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
-	path := sleepDisabledPath
+	h, fake := newTestHolds(t, false)
 
-	if err := os.WriteFile(path, []byte(`{"previous": null}`), 0o600); err != nil {
+	if err := os.WriteFile(h.path, []byte(`{"previous": null}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := holdSleep("test-reason"); err == nil {
-		t.Fatal("holdSleep must fail when existing snapshot is malformed")
+	if err := h.hold("test-reason"); err == nil {
+		t.Fatal("hold must fail when existing snapshot is malformed")
 	}
 
-	if fake.writes != 0 {
-		t.Fatalf("setSleepDisabled must not be called when snapshot is malformed, got %d", fake.writes)
+	if fake.writeCount() != 0 {
+		t.Fatalf("SetDisabled must not be called when snapshot is malformed, got %d", fake.writeCount())
 	}
-	if _, statErr := os.Stat(path); statErr != nil {
+	if _, statErr := os.Stat(h.path); statErr != nil {
 		t.Fatalf("malformed snapshot must be preserved, got: %v", statErr)
 	}
 }
 
 func TestTakeFirstHoldFailsWhenPersistenceFails(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 	// Point to a directory that cannot be created or written to
-	sleepDisabledPath = filepath.Join(t.TempDir(), "nonexistent", "batt.sleep.json")
+	h.path = filepath.Join(t.TempDir(), "nonexistent", "batt.sleep.json")
 
-	if err := holdSleep("test-reason"); err == nil {
-		t.Fatal("holdSleep must fail when persistence fails")
+	if err := h.hold("test-reason"); err == nil {
+		t.Fatal("hold must fail when persistence fails")
 	}
 
-	if fake.writes != 0 {
-		t.Fatalf("setSleepDisabled must not be called when persistence fails, got %d", fake.writes)
+	if fake.writeCount() != 0 {
+		t.Fatalf("SetDisabled must not be called when persistence fails, got %d", fake.writeCount())
 	}
-	if len(sleepHolds) != 0 {
-		t.Fatalf("no holds should be recorded on persistence failure, got %v", sleepHolds)
+	if h.count() != 0 {
+		t.Fatalf("no holds should be recorded on persistence failure, got %v", h.holds)
 	}
 }
 
 func TestReleaseAllSleepHoldsPreservesHoldsOnRestoreFailure(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 
-	if err := holdSleep("reason-a"); err != nil {
+	if err := h.hold("reason-a"); err != nil {
 		t.Fatal(err)
 	}
-	if err := holdSleep("reason-b"); err != nil {
+	if err := h.hold("reason-b"); err != nil {
 		t.Fatal(err)
 	}
 
 	fake.setErr = errors.New("IOPMSetSystemPowerSetting failed")
 
-	if err := releaseAllSleepHolds(); err == nil {
-		t.Fatal("expected releaseAllSleepHolds to fail when restore fails")
+	if err := h.releaseAll(); err == nil {
+		t.Fatal("expected releaseAll to fail when restore fails")
 	}
 
-	if len(sleepHolds) == 0 {
-		t.Fatal("releaseAllSleepHolds must retain holds in memory when restore fails")
+	if h.count() == 0 {
+		t.Fatal("releaseAll must retain holds in memory when restore fails")
 	}
 }
 
@@ -686,8 +610,9 @@ func TestAtomicSnapshotWritePreservesValidSnapshotOnFailure(t *testing.T) {
 	}
 	defer func() { _ = os.Chmod(dir, 0o700) }()
 
-	sleepDisabledPath = validPath
-	err := persistSleepDisabledSnapshotLocked(true)
+	h := newSleepHolds(&fakeSleepSetting{})
+	h.path = validPath
+	err := h.persistSnapshotLocked(true)
 	if err == nil {
 		t.Fatal("expected persistence failure on read-only dir")
 	}
@@ -703,14 +628,13 @@ func TestAtomicSnapshotWritePreservesValidSnapshotOnFailure(t *testing.T) {
 }
 
 func TestSnapshotPermissionsAre0600(t *testing.T) {
-	stubSleepDisabled(t, false)
-	path := sleepDisabledPath
+	h, _ := newTestHolds(t, false)
 
-	if err := holdSleep("test-reason"); err != nil {
+	if err := h.hold("test-reason"); err != nil {
 		t.Fatal(err)
 	}
 
-	info, err := os.Stat(path)
+	info, err := os.Stat(h.path)
 	if err != nil {
 		t.Fatalf("snapshot file must exist: %v", err)
 	}
@@ -720,12 +644,14 @@ func TestSnapshotPermissionsAre0600(t *testing.T) {
 }
 
 func TestInitWithoutSnapshotDoesNothing(t *testing.T) {
-	fake := stubSleepDisabled(t, false)
+	h, fake := newTestHolds(t, false)
 
-	initSleepDisabledState(filepath.Join(t.TempDir(), "absent.json"))
+	if err := h.init(filepath.Join(t.TempDir(), "absent.json")); err != nil {
+		t.Fatal(err)
+	}
 
-	if fake.writes != 0 {
-		t.Fatalf("wrote the setting %d times without a snapshot", fake.writes)
+	if fake.writeCount() != 0 {
+		t.Fatalf("wrote the setting %d times without a snapshot", fake.writeCount())
 	}
 }
 
@@ -734,84 +660,76 @@ func TestInitWithoutSnapshotDoesNothing(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAdapterPolicyHoldsSleepWhenEnabled(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, true)
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, false, true, true)
 
-	if err := disableAdapterWithSleepPolicy(); err != nil {
+	if err := f.d.disableAdapter(); err != nil {
 		t.Fatal(err)
 	}
-	if adapter.enabled {
+	if f.smc.adapterEnabled(t) {
 		t.Fatal("adapter should be disabled")
 	}
-	if !sleep.value {
+	if !f.sleep.disabled() {
 		t.Fatal("sleep should be held while adapter input is cut")
 	}
 
-	if err := enableAdapterWithSleepPolicy(); err != nil {
+	if err := f.d.enableAdapter(); err != nil {
 		t.Fatal(err)
 	}
-	if !adapter.enabled {
+	if !f.smc.adapterEnabled(t) {
 		t.Fatal("adapter should be enabled again")
 	}
-	if sleep.value {
+	if f.sleep.disabled() {
 		t.Fatal("sleep should be restored once the adapter is back")
 	}
 }
 
 func TestAdapterPolicyIsInertWhenSettingOff(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, true)
-	conf = &sleepPolicyConf{prevent: false}
+	f := newSleepFixture(t, false, true, false)
 
-	if err := disableAdapterWithSleepPolicy(); err != nil {
+	if err := f.d.disableAdapter(); err != nil {
 		t.Fatal(err)
 	}
-	if adapter.enabled {
+	if f.smc.adapterEnabled(t) {
 		t.Fatal("adapter should still be disabled")
 	}
-	if sleep.writes != 0 {
+	if f.sleep.writeCount() != 0 {
 		t.Fatal("the setting must not be touched when the feature is off")
 	}
-	if len(sleepHolds) != 0 {
-		t.Fatalf("no hold expected, got %v", sleepHolds)
+	if f.d.holds.count() != 0 {
+		t.Fatalf("no hold expected, got %v", f.d.holds.holds)
 	}
 }
 
 func TestAdapterPolicySurvivesRepeatedDisable(t *testing.T) {
 	// Mirrors calibration restore, cancel and the /adapter endpoint, which all
 	// call disable without checking the current state.
-	sleep := stubSleepDisabled(t, false)
-	stubAdapter(t, true)
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, false, true, true)
 
 	for i := 0; i < 4; i++ {
-		if err := disableAdapterWithSleepPolicy(); err != nil {
+		if err := f.d.disableAdapter(); err != nil {
 			t.Fatalf("disable #%d: %v", i, err)
 		}
 	}
-	if err := enableAdapterWithSleepPolicy(); err != nil {
+	if err := f.d.enableAdapter(); err != nil {
 		t.Fatal(err)
 	}
-	if sleep.value {
+	if f.sleep.disabled() {
 		t.Fatal("one enable must undo repeated disables, or the Mac never sleeps again")
 	}
 }
 
 func TestAdapterPolicyRollsBackHoldWhenSMCFails(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, true)
-	adapter.disableErr = errors.New("SMC write failed")
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, false, true, true)
+	f.smc.fail("DisableAdapter", errors.New("SMC write failed"))
 
-	if err := disableAdapterWithSleepPolicy(); err == nil {
+	if err := f.d.disableAdapter(); err == nil {
 		t.Fatal("expected the SMC failure to propagate")
 	}
-	if sleep.value {
+	if f.sleep.disabled() {
 		t.Fatal("sleep must be restored when the adapter could not be disabled")
 	}
-	if len(sleepHolds) != 0 {
-		t.Fatalf("no hold may survive a failed disable, got %v", sleepHolds)
+	if f.d.holds.count() != 0 {
+		t.Fatalf("no hold may survive a failed disable, got %v", f.d.holds.holds)
 	}
 }
 
@@ -819,36 +737,32 @@ func TestAdapterPolicyKeepsEarlierHoldWhenRedundantDisableFails(t *testing.T) {
 	// The main loop and calibration disable the adapter on every cycle, also
 	// when it is already off. A failed write on such a call leaves the adapter
 	// cut, so it must not drop the hold an earlier call took.
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, true)
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, false, true, true)
 
-	if err := disableAdapterWithSleepPolicy(); err != nil {
+	if err := f.d.disableAdapter(); err != nil {
 		t.Fatal(err)
 	}
-	adapter.disableErr = errors.New("SMC write failed")
-	if err := disableAdapterWithSleepPolicy(); err == nil {
+	f.smc.fail("DisableAdapter", errors.New("SMC write failed"))
+	if err := f.d.disableAdapter(); err == nil {
 		t.Fatal("expected the SMC failure to propagate")
 	}
 
-	if adapter.enabled {
+	if f.smc.adapterEnabled(t) {
 		t.Fatal("the failed write must leave the adapter cut")
 	}
-	if !sleep.value || !sleepHolds[sleepHoldAdapter] {
-		t.Fatalf("the hold of the earlier disable must survive: sleepDisabled=%v holds=%v", sleep.value, sleepHolds)
+	if !f.sleep.disabled() || !f.holdsSleep(sleepHoldAdapter) {
+		t.Fatalf("the hold of the earlier disable must survive: sleepDisabled=%v holds=%v", f.sleep.disabled(), f.d.holds.holds)
 	}
 }
 
 func TestAdapterPolicyAbortsWhenHoldFails(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	sleep.setErr = errors.New("IOPMSetSystemPowerSetting failed")
-	adapter := stubAdapter(t, true)
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, false, true, true)
+	f.sleep.setErr = errors.New("IOPMSetSystemPowerSetting failed")
 
-	if err := disableAdapterWithSleepPolicy(); err == nil {
+	if err := f.d.disableAdapter(); err == nil {
 		t.Fatal("expected an error when the sleep hold could not be taken")
 	}
-	if !adapter.enabled {
+	if !f.smc.adapterEnabled(t) {
 		t.Fatal("adapter input must stay on if Clamshell cannot be protected")
 	}
 }
@@ -856,215 +770,183 @@ func TestAdapterPolicyAbortsWhenHoldFails(t *testing.T) {
 func TestAdapterPolicyReleasesHoldAfterSettingSwitchedOff(t *testing.T) {
 	// The user may switch the feature off while a hold is active. The enable
 	// path must still release it.
-	sleep := stubSleepDisabled(t, false)
-	stubAdapter(t, true)
-	c := &sleepPolicyConf{prevent: true}
-	conf = c
+	f := newSleepFixture(t, false, true, true)
 
-	if err := disableAdapterWithSleepPolicy(); err != nil {
+	if err := f.d.disableAdapter(); err != nil {
 		t.Fatal(err)
 	}
-	c.prevent = false
+	f.mem.SetPreventSleepOnAdapterDisable(false)
 
-	if err := enableAdapterWithSleepPolicy(); err != nil {
+	if err := f.d.enableAdapter(); err != nil {
 		t.Fatal(err)
 	}
-	if sleep.value {
+	if f.sleep.disabled() {
 		t.Fatal("the hold must be released even after the setting was switched off")
 	}
 }
 
 func TestAdapterPolicyKeepsHoldWhenEnableFails(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, true)
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, false, true, true)
 
-	if err := disableAdapterWithSleepPolicy(); err != nil {
+	if err := f.d.disableAdapter(); err != nil {
 		t.Fatal(err)
 	}
 
-	adapter.enableErr = errors.New("SMC write failed")
-	if err := enableAdapterWithSleepPolicy(); err == nil {
+	f.smc.fail("EnableAdapter", errors.New("SMC write failed"))
+	if err := f.d.enableAdapter(); err == nil {
 		t.Fatal("expected the SMC failure to propagate")
 	}
-	if !sleep.value {
+	if !f.sleep.disabled() {
 		t.Fatal("sleep must stay held while adapter input is still cut")
 	}
-	if !sleepHolds[sleepHoldAdapter] {
+	if !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("the hold must survive a failed enable")
 	}
 }
 
 func TestReconcileAdapterSleepPolicy_AcquiresHoldWhenAdapterDisabledAndOptionEnabled(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	stubAdapter(t, false) // adapter is disabled
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, false, false, true) // adapter is disabled
 
-	if err := reconcileAdapterSleepPolicy(); err != nil {
+	if err := f.d.reconcileAdapterSleepPolicy(); err != nil {
 		t.Fatalf("reconcile failed: %v", err)
 	}
 
-	if !sleepHolds[sleepHoldAdapter] {
+	if !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("expected sleep hold to be acquired")
 	}
-	if !sleep.value {
+	if !f.sleep.disabled() {
 		t.Fatal("expected SleepDisabled to be set to true")
 	}
 }
 
 func TestReconcileAdapterSleepPolicy_ReleasesHoldWhenAdapterEnabled(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, false)
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, false, false, true)
 
-	if err := reconcileAdapterSleepPolicy(); err != nil {
+	if err := f.d.reconcileAdapterSleepPolicy(); err != nil {
 		t.Fatal(err)
 	}
-	if !sleepHolds[sleepHoldAdapter] {
+	if !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("hold should be active while adapter is disabled")
 	}
 
 	// Now adapter becomes enabled
-	adapter.enabled = true
-	if err := reconcileAdapterSleepPolicy(); err != nil {
+	f.smc.setAdapter(t, true)
+	if err := f.d.reconcileAdapterSleepPolicy(); err != nil {
 		t.Fatal(err)
 	}
-	if sleepHolds[sleepHoldAdapter] {
+	if f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("hold should be released once adapter is enabled")
 	}
-	if sleep.value {
+	if f.sleep.disabled() {
 		t.Fatal("SleepDisabled should be restored to false")
 	}
 }
 
 func TestReconcileAdapterSleepPolicy_ReleasesHoldWhenOptionDisabled(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	stubAdapter(t, false) // adapter remains disabled
-	c := &sleepPolicyConf{prevent: true}
-	conf = c
+	f := newSleepFixture(t, false, false, true) // adapter remains disabled
 
-	if err := reconcileAdapterSleepPolicy(); err != nil {
+	if err := f.d.reconcileAdapterSleepPolicy(); err != nil {
 		t.Fatal(err)
 	}
-	if !sleepHolds[sleepHoldAdapter] {
+	if !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("hold should be active while setting is enabled")
 	}
 
 	// User disables setting while adapter is still cut
-	c.prevent = false
-	if err := reconcileAdapterSleepPolicy(); err != nil {
+	f.mem.SetPreventSleepOnAdapterDisable(false)
+	if err := f.d.reconcileAdapterSleepPolicy(); err != nil {
 		t.Fatal(err)
 	}
-	if sleepHolds[sleepHoldAdapter] {
+	if f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("hold should be released once setting is disabled")
 	}
-	if sleep.value {
+	if f.sleep.disabled() {
 		t.Fatal("SleepDisabled should be restored to false")
 	}
 }
 
 func TestReconcileAdapterSleepPolicy_PreExistingSleepDisabled(t *testing.T) {
-	sleep := stubSleepDisabled(t, true) // user originally had SleepDisabled=true
-	adapter := stubAdapter(t, false)
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, true, false, true) // user originally had SleepDisabled=true
 
-	if err := reconcileAdapterSleepPolicy(); err != nil {
+	if err := f.d.reconcileAdapterSleepPolicy(); err != nil {
 		t.Fatal(err)
 	}
-	if !sleep.value {
+	if !f.sleep.disabled() {
 		t.Fatal("pre-existing SleepDisabled=true must remain true")
 	}
 
-	adapter.enabled = true
-	if err := reconcileAdapterSleepPolicy(); err != nil {
+	f.smc.setAdapter(t, true)
+	if err := f.d.reconcileAdapterSleepPolicy(); err != nil {
 		t.Fatal(err)
 	}
-	if !sleep.value {
+	if !f.sleep.disabled() {
 		t.Fatal("pre-existing SleepDisabled=true must still remain true after release")
 	}
 }
 
 func TestReconcileAdapterSleepPolicy_RetriesFailedRelease(t *testing.T) {
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, false)
-	conf = &sleepPolicyConf{prevent: true}
+	f := newSleepFixture(t, false, false, true)
 
-	if err := reconcileAdapterSleepPolicy(); err != nil {
+	if err := f.d.reconcileAdapterSleepPolicy(); err != nil {
 		t.Fatal(err)
 	}
 
-	adapter.enabled = true
-	sleep.setErr = errors.New("IOPMSetSystemPowerSetting failed")
+	f.smc.setAdapter(t, true)
+	f.sleep.setErr = errors.New("IOPMSetSystemPowerSetting failed")
 
-	if err := reconcileAdapterSleepPolicy(); err == nil {
+	if err := f.d.reconcileAdapterSleepPolicy(); err == nil {
 		t.Fatal("expected reconcile to fail when release fails")
 	}
-	if !sleepHolds[sleepHoldAdapter] {
+	if !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("hold must be preserved for retry")
 	}
 
 	// Retry succeeds
-	sleep.setErr = nil
-	if err := reconcileAdapterSleepPolicy(); err != nil {
+	f.sleep.setErr = nil
+	if err := f.d.reconcileAdapterSleepPolicy(); err != nil {
 		t.Fatalf("retry should succeed: %v", err)
 	}
-	if sleepHolds[sleepHoldAdapter] {
+	if f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("hold should now be released")
 	}
 }
 
 func TestShutdownAdapterAndSleep_AdapterEnableFailurePreservesHolds(t *testing.T) {
-	previousCap := capabilities
-	t.Cleanup(func() {
-		capabilities = previousCap
-		sleepHolds = map[string]bool{}
-	})
+	f := newSleepFixture(t, false, true, true)
 
-	sleep := stubSleepDisabled(t, false)
-	adapter := stubAdapter(t, true)
-	capabilities = compatibility.Capabilities{AdapterControl: true}
-
-	if err := holdSleep(sleepHoldAdapter); err != nil {
+	if err := f.d.holds.hold(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
 
-	adapter.enableErr = errors.New("SMC enable failed")
+	f.smc.fail("EnableAdapter", errors.New("SMC enable failed"))
 
-	if err := shutdownAdapterAndSleep(); err == nil {
+	if err := f.d.shutdownAdapterAndSleep(); err == nil {
 		t.Fatal("expected shutdownAdapterAndSleep to return error when adapter enable fails")
 	}
 
-	if !sleepHolds[sleepHoldAdapter] {
+	if !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("sleep holds must be preserved when adapter enable fails on shutdown")
 	}
-	if !sleep.value {
+	if !f.sleep.disabled() {
 		t.Fatal("sleep must remain held when adapter enable fails on shutdown")
 	}
 }
 
 func TestShutdownAdapterAndSleep_SuccessfulEnableReleasesHolds(t *testing.T) {
-	previousCap := capabilities
-	t.Cleanup(func() {
-		capabilities = previousCap
-		sleepHolds = map[string]bool{}
-	})
+	f := newSleepFixture(t, false, true, true)
 
-	sleep := stubSleepDisabled(t, false)
-	stubAdapter(t, true)
-	capabilities = compatibility.Capabilities{AdapterControl: true}
-
-	if err := holdSleep(sleepHoldAdapter); err != nil {
+	if err := f.d.holds.hold(sleepHoldAdapter); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := shutdownAdapterAndSleep(); err != nil {
+	if err := f.d.shutdownAdapterAndSleep(); err != nil {
 		t.Fatalf("shutdownAdapterAndSleep failed: %v", err)
 	}
 
-	if len(sleepHolds) != 0 {
-		t.Fatalf("sleep holds should be cleared after successful shutdown, got: %v", sleepHolds)
+	if f.d.holds.count() != 0 {
+		t.Fatalf("sleep holds should be cleared after successful shutdown, got: %v", f.d.holds.holds)
 	}
-	if sleep.value {
+	if f.sleep.disabled() {
 		t.Fatal("sleep setting must be restored after successful shutdown")
 	}
 }

@@ -89,15 +89,20 @@ func formatDuration(d time.Duration) string {
 
 // TimeSeriesRecorder records the last N maintain loop times.
 type TimeSeriesRecorder struct {
-	MaxRecordCount        int
+	MaxRecordCount int
+	// Interval is the expected spacing of records. Two records further apart
+	// than Interval plus a second are not continuous.
+	Interval              time.Duration
 	LastMaintainLoopTimes []time.Time
 	mu                    *sync.Mutex
 }
 
-// NewTimeSeriesRecorder returns a new TimeSeriesRecorder.
-func NewTimeSeriesRecorder(maxRecordCount int) *TimeSeriesRecorder {
+// NewTimeSeriesRecorder returns a new TimeSeriesRecorder for records expected
+// every interval.
+func NewTimeSeriesRecorder(maxRecordCount int, interval time.Duration) *TimeSeriesRecorder {
 	return &TimeSeriesRecorder{
 		MaxRecordCount:        maxRecordCount,
+		Interval:              interval,
 		LastMaintainLoopTimes: make([]time.Time, 0),
 		mu:                    &sync.Mutex{},
 	}
@@ -162,13 +167,13 @@ func (r *TimeSeriesRecorder) GetRecordsIn(last time.Duration) int {
 	defer r.mu.Unlock()
 
 	// The last record must be within the last duration.
-	if len(r.LastMaintainLoopTimes) > 0 && time.Since(r.LastMaintainLoopTimes[len(r.LastMaintainLoopTimes)-1]) >= loopInterval+time.Second {
+	if len(r.LastMaintainLoopTimes) > 0 && time.Since(r.LastMaintainLoopTimes[len(r.LastMaintainLoopTimes)-1]) >= r.Interval+time.Second {
 		return 0
 	}
 
 	// Find continuous records from the end of the list.
 	// Continuous records are defined as the time difference between
-	// two adjacent records is less than loopInterval+1 second.
+	// two adjacent records is less than Interval+1 second.
 	count := 0
 	for i := len(r.LastMaintainLoopTimes) - 1; i >= 0; i-- {
 		record := r.LastMaintainLoopTimes[i]
@@ -181,7 +186,7 @@ func (r *TimeSeriesRecorder) GetRecordsIn(last time.Duration) int {
 			theRecordAfter = r.LastMaintainLoopTimes[i+1]
 		}
 
-		if theRecordAfter.Sub(record) >= loopInterval+time.Second {
+		if theRecordAfter.Sub(record) >= r.Interval+time.Second {
 			break
 		}
 		count++

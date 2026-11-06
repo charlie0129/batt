@@ -3,143 +3,31 @@ package daemon
 import (
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/charlie0129/gosmc"
-
 	"github.com/charlie0129/batt/pkg/compatibility"
-	"github.com/charlie0129/batt/pkg/config"
-	"github.com/charlie0129/batt/pkg/smc"
 )
 
-// fakeNativeLimit stands in for PowerUIAgent.
-type fakeNativeLimit struct {
-	supported  bool
-	limits     []int
-	limit      int
-	enabled    bool
-	registered bool
-	exact      bool
-	err        error
-	setCalls   []int
-	disables   int
-}
-
-func (f *fakeNativeLimit) Supported() bool            { return f.supported }
-func (f *fakeNativeLimit) SupportsExactTargets() bool { return f.exact }
-
-func (f *fakeNativeLimit) AvailableLimits() ([]int, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	return append([]int(nil), f.limits...), nil
-}
-
-func (f *fakeNativeLimit) Limit() (int, bool, error) {
-	if f.err != nil {
-		return 0, false, f.err
-	}
-	return f.limit, f.enabled, nil
-}
-
-func (f *fakeNativeLimit) SetLimit(limit int) error {
-	if f.err != nil {
-		return f.err
-	}
-	f.setCalls = append(f.setCalls, limit)
-	f.limit = limit
-	f.enabled = limit < 100
-	return nil
-}
-
-func (f *fakeNativeLimit) Disable() error {
-	if f.err != nil {
-		return f.err
-	}
-	if !f.enabled && !f.registered {
-		return nil
-	}
-	f.disables++
-	f.limit = 100
-	f.enabled = false
-	f.registered = false
-	return nil
-}
-
-func useFakeNativeLimit(t *testing.T, fake *fakeNativeLimit) {
+// newExactNativeFixture is a macOS 27 Mac whose charge keys are gated, whose
+// adapter key works, and whose PowerUIAgent accepts exact targets. It uses a
+// real config file.
+func newExactNativeFixture(t *testing.T, opts ...fixtureOption) *fixture {
 	t.Helper()
-	previous := nativeLimit
-	t.Cleanup(func() { nativeLimit = previous })
-	nativeLimit = fake
-}
-
-func useNativeCapabilities(t *testing.T, limits ...int) {
-	t.Helper()
-	previous := capabilities
-	t.Cleanup(func() { capabilities = previous })
-	capabilities = compatibility.Capabilities{
-		ChargingControl:   true,
-		ChargeControlMode: compatibility.ChargeControlNative,
-		SupportedLimits:   limits,
-		AdapterControl:    true,
-		Calibration:       true,
+	opts = append([]fixtureOption{withFileConfig(), withNative(exactNative())}, opts...)
+	f := newFixture(t, firmwareGated, opts...)
+	if caps := f.caps(); !caps.NativeExactTargets || caps.ChargeControlMode != compatibility.ChargeControlNative {
+		t.Fatalf("exact native capabilities not detected: %+v", caps)
 	}
-}
-
-func useTempConfig(t *testing.T) (*config.File, string) {
-	t.Helper()
-	path := t.TempDir() + "/batt.json"
-	file, err := config.NewFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	previous := conf
-	t.Cleanup(func() { conf = previous })
-	conf = file
-	return file, path
-}
-
-// gatedSMC mimics macOS 27 beta 4+ firmware: adapter control works, but no
-// charge-control key is usable.
-func gatedSMC(t *testing.T) *smc.AppleSMC {
-	t.Helper()
-	adapter, err := gosmc.NewValue(smc.AdapterKey3, gosmc.TypeUInt8, []byte{0})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return useMockSMC(t, adapter)
-}
-
-// gatedSMCNoAdapter mimics firmware where neither the charge keys nor the
-// adapter key is usable, so only the native macOS limit could remain.
-func gatedSMCNoAdapter(t *testing.T) *smc.AppleSMC {
-	t.Helper()
-	return useMockSMC(t)
-}
-
-func useMockSMC(t *testing.T, values ...gosmc.Value) *smc.AppleSMC {
-	t.Helper()
-	mock := smc.NewMockValues(values...)
-	if err := mock.Open(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = mock.Close() })
-	previous := smcConn
-	t.Cleanup(func() { smcConn = previous })
-	smcConn = mock
-	return mock
+	return f
 }
 
 func TestDetectCapabilitiesPrefersAdapterWhenOptedIn(t *testing.T) {
-	gatedSMC(t)
-	file, _ := useTempConfig(t)
-	file.SetAdapterMode(true)
-	useFakeNativeLimit(t, &fakeNativeLimit{supported: true, limits: []int{80, 90, 100}})
+	f := newFixture(t, firmwareGated, withFileConfig(), withNative(sliderNative(80, 90, 100)))
+	f.file.SetAdapterMode(true)
 
-	got := detectCapabilities()
+	got := f.d.detectCapabilities()
 	if got.ChargeControlMode != compatibility.ChargeControlAdapter || !got.ChargingControl {
 		t.Fatalf("mode = %+v, want adapter", got)
 	}
@@ -161,20 +49,10 @@ func TestDetectCapabilitiesPrefersAdapterWhenOptedIn(t *testing.T) {
 }
 
 func TestDetectCapabilitiesAdapterModeOffersMagSafeLED(t *testing.T) {
-	adapter, err := gosmc.NewValue(smc.AdapterKey3, gosmc.TypeUInt8, []byte{0})
-	if err != nil {
-		t.Fatal(err)
-	}
-	led, err := gosmc.NewValue(smc.MagSafeLedKey, gosmc.TypeUInt8, []byte{0})
-	if err != nil {
-		t.Fatal(err)
-	}
-	useMockSMC(t, adapter, led)
-	file, _ := useTempConfig(t)
-	file.SetAdapterMode(true)
-	useFakeNativeLimit(t, &fakeNativeLimit{supported: true, limits: []int{80, 90, 100}})
+	f := newFixture(t, firmwareGated.withMagSafe(true), withFileConfig(), withNative(sliderNative(80, 90, 100)))
+	f.file.SetAdapterMode(true)
 
-	got := detectCapabilities()
+	got := f.d.detectCapabilities()
 	if got.ChargeControlMode != compatibility.ChargeControlAdapter {
 		t.Fatalf("mode = %+v, want adapter", got)
 	}
@@ -184,22 +62,19 @@ func TestDetectCapabilitiesAdapterModeOffersMagSafeLED(t *testing.T) {
 }
 
 func TestDetectCapabilitiesRequiresAdapterOptIn(t *testing.T) {
-	gatedSMC(t)
-	useTempConfig(t) // AdapterMode defaults to false
-	useFakeNativeLimit(t, &fakeNativeLimit{supported: true, limits: []int{80, 100}})
+	// AdapterMode defaults to false.
+	f := newFixture(t, firmwareGated, withFileConfig(), withNative(sliderNative(80, 100)))
 
-	got := detectCapabilities()
+	got := f.d.detectCapabilities()
 	if got.ChargeControlMode != compatibility.ChargeControlNative {
 		t.Fatalf("without opt-in, adapter must not be selected; got %s", got.ChargeControlMode)
 	}
 }
 
 func TestDetectCapabilitiesFallsBackToNativeLimit(t *testing.T) {
-	gatedSMCNoAdapter(t)
-	useTempConfig(t)
-	useFakeNativeLimit(t, &fakeNativeLimit{supported: true, limits: []int{100, 80, 90}})
+	f := newFixture(t, firmwareGatedNoAdapter, withFileConfig(), withNative(sliderNative(100, 80, 90)))
 
-	got := detectCapabilities()
+	got := f.d.detectCapabilities()
 	if got.ChargeControlMode != compatibility.ChargeControlNative || !got.ChargingControl {
 		t.Fatalf("mode = %+v, want native", got)
 	}
@@ -215,30 +90,22 @@ func TestDetectCapabilitiesFallsBackToNativeLimit(t *testing.T) {
 }
 
 func TestDetectCapabilitiesNativeModeOffersMagSafeLED(t *testing.T) {
-	led, err := gosmc.NewValue(smc.MagSafeLedKey, gosmc.TypeUInt8, []byte{0})
-	if err != nil {
-		t.Fatal(err)
-	}
-	useMockSMC(t, led)
-	useTempConfig(t)
-	useFakeNativeLimit(t, &fakeNativeLimit{supported: true, limits: []int{80, 100}})
+	f := newFixture(t, firmwareGatedNoAdapter.withMagSafe(true), withFileConfig(), withNative(sliderNative(80, 100)))
 
-	got := detectCapabilities()
+	got := f.d.detectCapabilities()
 	if got.ChargeControlMode != compatibility.ChargeControlNative || !got.MagSafeLED {
 		t.Fatalf("native mode must offer MagSafe LED control: %+v", got)
 	}
 }
 
 func TestDetectCapabilitiesStaysUnsupportedWithoutNativeLimit(t *testing.T) {
-	useTempConfig(t)
 	for name, fake := range map[string]*fakeNativeLimit{
 		"not supported": {supported: false},
 		"limits error":  {supported: true, err: errors.New("xpc down")},
 		"no limits":     {supported: true},
 	} {
-		gatedSMCNoAdapter(t)
-		useFakeNativeLimit(t, fake)
-		got := detectCapabilities()
+		f := newFixture(t, firmwareGatedNoAdapter, withFileConfig(), withNative(fake))
+		got := f.d.detectCapabilities()
 		if got.ChargeControlMode != compatibility.ChargeControlUnsupported || got.ChargingControl || got.Calibration {
 			t.Errorf("%s: capabilities = %+v, want unsupported", name, got)
 		}
@@ -246,237 +113,192 @@ func TestDetectCapabilitiesStaysUnsupportedWithoutNativeLimit(t *testing.T) {
 }
 
 func TestDetectCapabilitiesOffersExactNativeTargets(t *testing.T) {
-	useTempConfig(t)
-	gatedSMCNoAdapter(t)
-	useFakeNativeLimit(t, &fakeNativeLimit{supported: true, exact: true, limits: []int{50, 55, 100}})
-	got := detectCapabilities()
+	f := newFixture(t, firmwareGatedNoAdapter, withFileConfig(),
+		withNative(&fakeNativeLimit{supported: true, exact: true, limits: []int{50, 55, 100}}))
+	got := f.d.detectCapabilities()
 	if !got.NativeExactTargets || got.Supports(compatibility.FeatureLowerLimit) || got.SleepHooks {
 		t.Fatalf("incorrect exact-native capabilities: %+v", got)
 	}
 }
 
 func TestDisableUnsupportedConfiguredFeaturesRaisesLimit(t *testing.T) {
-	file, path := useTempConfig(t)
-	file.SetUpperLimit(60)
-	useNativeCapabilities(t, 80, 85, 90, 95, 100)
+	f := newFixture(t, firmwareGatedNoAdapter, withFileConfig(), withCapabilities(nativeCaps(80, 85, 90, 95, 100)))
+	f.file.SetUpperLimit(60)
 
-	disableUnsupportedConfiguredFeatures()
+	f.d.disableUnsupportedConfiguredFeatures()
 
-	if file.UpperLimit() != 80 || file.LowerLimit() != 78 {
-		t.Fatalf("limits = %d/%d, want 80/78", file.UpperLimit(), file.LowerLimit())
+	if f.file.UpperLimit() != 80 || f.file.LowerLimit() != 78 {
+		t.Fatalf("limits = %d/%d, want 80/78", f.file.UpperLimit(), f.file.LowerLimit())
 	}
-	reloaded, err := config.NewFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reloaded.UpperLimit() != 80 {
+	if reloaded := f.reloadFile(); reloaded.UpperLimit() != 80 {
 		t.Fatalf("raised limit was not persisted, got %d", reloaded.UpperLimit())
 	}
 
 	// Supported and disabled limits are left alone.
-	file.SetUpperLimit(85)
-	disableUnsupportedConfiguredFeatures()
-	if file.UpperLimit() != 85 {
-		t.Fatalf("supported limit changed to %d", file.UpperLimit())
+	f.file.SetUpperLimit(85)
+	f.d.disableUnsupportedConfiguredFeatures()
+	if f.file.UpperLimit() != 85 {
+		t.Fatalf("supported limit changed to %d", f.file.UpperLimit())
 	}
-	file.SetUpperLimit(100)
-	disableUnsupportedConfiguredFeatures()
-	if file.UpperLimit() != 100 {
-		t.Fatalf("disabled limit changed to %d", file.UpperLimit())
+	f.file.SetUpperLimit(100)
+	f.d.disableUnsupportedConfiguredFeatures()
+	if f.file.UpperLimit() != 100 {
+		t.Fatalf("disabled limit changed to %d", f.file.UpperLimit())
 	}
 }
 
 func TestEnsureNativeChargeLimit(t *testing.T) {
-	useNativeCapabilities(t, 80, 85, 90, 95, 100)
-
 	fake := &fakeNativeLimit{limit: 100}
-	useFakeNativeLimit(t, fake)
-	changed, err := ensureNativeChargeLimit(80)
+	f := newFixture(t, firmwareGatedNoAdapter, withNative(fake), withCapabilities(nativeCaps(80, 85, 90, 95, 100)))
+
+	changed, err := f.d.ensureNativeChargeLimit(80)
 	if err != nil || !changed || fake.limit != 80 || !fake.enabled {
 		t.Fatalf("first apply: changed=%v err=%v fake=%+v", changed, err, fake)
 	}
 
-	changed, err = ensureNativeChargeLimit(80)
+	changed, err = f.d.ensureNativeChargeLimit(80)
 	if err != nil || changed || len(fake.setCalls) != 1 {
 		t.Fatalf("matching limit must not be rewritten: changed=%v err=%v calls=%v", changed, err, fake.setCalls)
 	}
 
 	// The user changed the limit in System Settings; batt takes it back.
 	fake.limit = 90
-	changed, err = ensureNativeChargeLimit(80)
+	changed, err = f.d.ensureNativeChargeLimit(80)
 	if err != nil || !changed || fake.limit != 80 {
 		t.Fatalf("drift was not corrected: changed=%v err=%v fake=%+v", changed, err, fake)
 	}
 
 	// Unsupported values are raised, never lowered.
-	changed, err = ensureNativeChargeLimit(81)
+	changed, err = f.d.ensureNativeChargeLimit(81)
 	if err != nil || !changed || fake.limit != 85 {
 		t.Fatalf("81 should apply 85: changed=%v err=%v fake=%+v", changed, err, fake)
 	}
 
 	// 100 disables the limit and is idempotent.
-	changed, err = ensureNativeChargeLimit(100)
+	changed, err = f.d.ensureNativeChargeLimit(100)
 	if err != nil || !changed || fake.enabled || fake.disables != 1 {
 		t.Fatalf("100 should disable: changed=%v err=%v fake=%+v", changed, err, fake)
 	}
-	changed, err = ensureNativeChargeLimit(100)
+	changed, err = f.d.ensureNativeChargeLimit(100)
 	if err != nil || changed || fake.disables != 1 {
 		t.Fatalf("disable must be idempotent: changed=%v err=%v fake=%+v", changed, err, fake)
 	}
 
 	fake.err = errors.New("xpc down")
-	if _, err := ensureNativeChargeLimit(80); err == nil {
+	if _, err := f.d.ensureNativeChargeLimit(80); err == nil {
 		t.Fatal("errors from PowerUIAgent must be reported")
 	}
 }
 
 func TestMaintainManagedChargeLimitNative(t *testing.T) {
-	file, _ := useTempConfig(t)
-	useNativeCapabilities(t, 80, 85, 90, 95, 100)
 	fake := &fakeNativeLimit{limit: 100}
-	useFakeNativeLimit(t, fake)
+	f := newFixture(t, firmwareGatedNoAdapter, withFileConfig(), withNative(fake), withCapabilities(nativeCaps(80, 85, 90, 95, 100)))
 
-	file.SetUpperLimit(90)
-	if !maintainManagedChargeLimit() || fake.limit != 90 || !fake.enabled {
+	f.file.SetUpperLimit(90)
+	if !f.d.maintainManagedChargeLimit() || fake.limit != 90 || !fake.enabled {
 		t.Fatalf("limit was not applied: %+v", fake)
 	}
 
-	file.SetUpperLimit(100)
-	if !maintainManagedChargeLimit() || fake.enabled {
+	f.file.SetUpperLimit(100)
+	if !f.d.maintainManagedChargeLimit() || fake.enabled {
 		t.Fatalf("limit was not disabled: %+v", fake)
 	}
 }
 
 func TestAdapterModeTransitionDisablesNativeLimit(t *testing.T) {
-	adapterMockSMC(t, 60, true, true)
-	file, _ := useTempConfig(t)
 	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true}
-	useFakeNativeLimit(t, fake)
-	useNativeCapabilities(t, 80, 85, 90, 95, 100)
-	previousCharger := charger
-	t.Cleanup(func() { charger = previousCharger })
+	f := newFixture(t, firmwareGated, withFileConfig(), withCharge(60), withNative(fake),
+		withCapabilities(nativeCaps(80, 85, 90, 95, 100)))
 
-	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("true"))
-	response := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(response, request)
-	if response.Code != http.StatusCreated || fake.enabled || !file.AdapterMode() || capabilities.ChargeControlMode != compatibility.ChargeControlAdapter {
-		t.Fatalf("entering adapter mode must clear native limit: status=%d, native=%+v, mode=%s", response.Code, fake, capabilities.ChargeControlMode)
+	response := f.put("/adapter-mode", "true")
+	if response.Code != http.StatusCreated || fake.enabled || !f.file.AdapterMode() || f.caps().ChargeControlMode != compatibility.ChargeControlAdapter {
+		t.Fatalf("entering adapter mode must clear native limit: status=%d, native=%+v, mode=%s", response.Code, fake, f.caps().ChargeControlMode)
 	}
 }
 
 func TestAdapterModeReconciliationFailureRestoresNativeMode(t *testing.T) {
-	gatedSMC(t) // adapter key exists, but the missing battery key makes enforcement fail
-	file, path := useTempConfig(t)
+	// The adapter key works, but the adapter loop cannot read the battery
+	// charge, so enforcing the new mode fails.
 	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true}
-	useFakeNativeLimit(t, fake)
-	useNativeCapabilities(t, 80, 85, 90, 95, 100)
-	previousCharger := charger
-	t.Cleanup(func() { charger = previousCharger })
+	f := newFixture(t, firmwareGated, withFileConfig(), withNative(fake),
+		withCapabilities(nativeCaps(80, 85, 90, 95, 100)))
+	f.smc.fail("GetBatteryCharge", errors.New("battery key gated"))
 
-	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("true"))
-	response := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(response, request)
-	if response.Code != http.StatusInternalServerError || file.AdapterMode() || capabilities.ChargeControlMode != compatibility.ChargeControlNative || !fake.enabled || fake.limit != 80 {
-		t.Fatalf("failed adapter backend must restore native 80%% limit: status=%d, native=%+v, mode=%s", response.Code, fake, capabilities.ChargeControlMode)
+	response := f.put("/adapter-mode", "true")
+	if response.Code != http.StatusInternalServerError || f.file.AdapterMode() || f.caps().ChargeControlMode != compatibility.ChargeControlNative || !fake.enabled || fake.limit != 80 {
+		t.Fatalf("failed adapter backend must restore native 80%% limit: status=%d, native=%+v, mode=%s", response.Code, fake, f.caps().ChargeControlMode)
 	}
-	reloaded, err := config.NewFile(path)
-	if err != nil || reloaded.AdapterMode() {
-		t.Fatalf("adapter-mode setting must roll back on disk: config=%v, err=%v", reloaded, err)
+	if reloaded := f.reloadFile(); reloaded.AdapterMode() {
+		t.Fatal("adapter-mode setting must roll back on disk")
 	}
 }
 
 func TestAdapterModeTransitionFailureRollsBack(t *testing.T) {
-	gatedSMC(t)
-	file, path := useTempConfig(t)
 	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true, err: errors.New("PowerUI unavailable")}
-	useFakeNativeLimit(t, fake)
-	useNativeCapabilities(t, 80, 85, 90, 95, 100)
-	previousCharger := charger
-	t.Cleanup(func() { charger = previousCharger })
+	f := newFixture(t, firmwareGated, withFileConfig(), withNative(fake),
+		withCapabilities(nativeCaps(80, 85, 90, 95, 100)))
 
-	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("true"))
-	response := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(response, request)
-	if response.Code != http.StatusInternalServerError || file.AdapterMode() || capabilities.ChargeControlMode != compatibility.ChargeControlNative {
-		t.Fatalf("failed native reset must keep native mode: status=%d, mode=%s", response.Code, capabilities.ChargeControlMode)
+	response := f.put("/adapter-mode", "true")
+	if response.Code != http.StatusInternalServerError || f.file.AdapterMode() || f.caps().ChargeControlMode != compatibility.ChargeControlNative {
+		t.Fatalf("failed native reset must keep native mode: status=%d, mode=%s", response.Code, f.caps().ChargeControlMode)
 	}
-	reloaded, err := config.NewFile(path)
-	if err != nil || reloaded.AdapterMode() {
-		t.Fatalf("adapter-mode setting must roll back on disk: config=%v, err=%v", reloaded, err)
+	if reloaded := f.reloadFile(); reloaded.AdapterMode() {
+		t.Fatal("adapter-mode setting must roll back on disk")
 	}
 }
 
 func TestLeavingAdapterModeRequiresWallPowerRestore(t *testing.T) {
-	gatedSMCNoAdapter(t) // missing adapter key makes EnableAdapter fail
-	file, path := useTempConfig(t)
-	file.SetAdapterMode(true)
-	if err := file.Save(); err != nil {
+	// Without an adapter key, wall power cannot be restored.
+	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: false}
+	f := newFixture(t, firmwareGatedNoAdapter, withFileConfig(), withNative(fake),
+		withCapabilities(compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter}))
+	f.file.SetAdapterMode(true)
+	if err := f.file.Save(); err != nil {
 		t.Fatal(err)
 	}
-	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: false}
-	useFakeNativeLimit(t, fake)
-	previousCap, previousCharger := capabilities, charger
-	t.Cleanup(func() { capabilities, charger = previousCap, previousCharger })
-	capabilities = compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter}
-	charger = adapterSwitch{}
 
-	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("false"))
-	response := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(response, request)
-	if response.Code != http.StatusInternalServerError || !file.AdapterMode() || capabilities.ChargeControlMode != compatibility.ChargeControlAdapter {
-		t.Fatalf("failed adapter restore must not change mode: status=%d, mode=%s", response.Code, capabilities.ChargeControlMode)
+	response := f.put("/adapter-mode", "false")
+	if response.Code != http.StatusInternalServerError || !f.file.AdapterMode() || f.caps().ChargeControlMode != compatibility.ChargeControlAdapter {
+		t.Fatalf("failed adapter restore must not change mode: status=%d, mode=%s", response.Code, f.caps().ChargeControlMode)
 	}
-	reloaded, err := config.NewFile(path)
-	if err != nil || !reloaded.AdapterMode() {
-		t.Fatalf("adapter-mode setting must roll back on disk: config=%v, err=%v", reloaded, err)
+	if reloaded := f.reloadFile(); !reloaded.AdapterMode() {
+		t.Fatal("adapter-mode setting must roll back on disk")
 	}
 }
 
 func TestLeavingAdapterModeCancelsUnsupportedOneTimeTarget(t *testing.T) {
-	gatedSMC(t)
-	file, path := useTempConfig(t)
-	file.SetAdapterMode(true)
-	file.SetChargeOnceTarget(80)
-	if err := file.Save(); err != nil {
+	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true}
+	f := newFixture(t, firmwareGated, withFileConfig(), withNative(fake),
+		withCapabilities(compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter}))
+	f.file.SetAdapterMode(true)
+	f.file.SetChargeOnceTarget(80)
+	if err := f.file.Save(); err != nil {
 		t.Fatal(err)
 	}
-	fake := &fakeNativeLimit{supported: true, limits: []int{80, 85, 90, 95, 100}, limit: 80, enabled: true}
-	useFakeNativeLimit(t, fake)
-	previousCap, previousCharger := capabilities, charger
-	t.Cleanup(func() { capabilities, charger = previousCap, previousCharger })
-	capabilities = compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter}
-	charger = adapterSwitch{}
 
-	request := httptest.NewRequest(http.MethodPut, "/adapter-mode", strings.NewReader("false"))
-	response := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(response, request)
-	if response.Code != http.StatusCreated || file.AdapterMode() || file.ChargeOnceTarget() != 0 || capabilities.ChargeControlMode != compatibility.ChargeControlNative {
-		t.Fatalf("native transition must drop unsupported target: status=%d, mode=%s, target=%d", response.Code, capabilities.ChargeControlMode, file.ChargeOnceTarget())
+	response := f.put("/adapter-mode", "false")
+	if response.Code != http.StatusCreated || f.file.AdapterMode() || f.file.ChargeOnceTarget() != 0 || f.caps().ChargeControlMode != compatibility.ChargeControlNative {
+		t.Fatalf("native transition must drop unsupported target: status=%d, mode=%s, target=%d", response.Code, f.caps().ChargeControlMode, f.file.ChargeOnceTarget())
 	}
-	reloaded, err := config.NewFile(path)
-	if err != nil || reloaded.ChargeOnceTarget() != 0 {
-		t.Fatalf("unsupported target must be cleared on disk: config=%v, err=%v", reloaded, err)
+	if reloaded := f.reloadFile(); reloaded.ChargeOnceTarget() != 0 {
+		t.Fatal("unsupported target must be cleared on disk")
 	}
 }
 
 func TestResetChargeControlNative(t *testing.T) {
-	useNativeCapabilities(t, 80, 100)
 	fake := &fakeNativeLimit{limit: 80, enabled: true}
-	useFakeNativeLimit(t, fake)
+	f := newFixture(t, firmwareGatedNoAdapter, withNative(fake), withCapabilities(nativeCaps(80, 100)))
 
-	if err := resetChargeControl(); err != nil || fake.enabled {
+	if err := f.d.resetChargeControl(); err != nil || fake.enabled {
 		t.Fatalf("reset: err=%v fake=%+v", err, fake)
 	}
 }
 
 func TestSetLimitRejectsUnsupportedNativeLimit(t *testing.T) {
-	useTempConfig(t)
-	useNativeCapabilities(t, 80, 85, 90, 95, 100)
-	useFakeNativeLimit(t, &fakeNativeLimit{limit: 100})
+	f := newFixture(t, firmwareGatedNoAdapter, withFileConfig(), withNative(&fakeNativeLimit{limit: 100}),
+		withCapabilities(nativeCaps(80, 85, 90, 95, 100)))
 
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader("70"))
-	setupRoutes().ServeHTTP(recorder, request)
+	recorder := f.put("/limit", "70")
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
 	}
@@ -484,9 +306,7 @@ func TestSetLimitRejectsUnsupportedNativeLimit(t *testing.T) {
 		t.Fatalf("error must list the supported limits, got %s", recorder.Body.String())
 	}
 
-	recorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodPut, "/lower-limit-delta", strings.NewReader("5"))
-	setupRoutes().ServeHTTP(recorder, request)
+	recorder = f.put("/lower-limit-delta", "5")
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("lower-limit-delta status = %d, want %d; body=%s", recorder.Code, http.StatusConflict, recorder.Body.String())
 	}
@@ -495,24 +315,16 @@ func TestSetLimitRejectsUnsupportedNativeLimit(t *testing.T) {
 func TestNativeExactLimitsAreAppliedWithoutAdapterControl(t *testing.T) {
 	for _, target := range []int{10, 55, 60, 69, 79, 81, 99} {
 		t.Run(strconv.Itoa(target), func(t *testing.T) {
-			file, path := useTempConfig(t)
-			limits := make([]int, 91)
-			for i := range limits {
-				limits[i] = 10 + i
+			f := newExactNativeFixture(t)
+			response := f.put("/limit", strconv.Itoa(target))
+			if response.Code != http.StatusCreated || f.native.limit != target || !f.native.enabled {
+				t.Fatalf("target %d: status=%d body=%s native=%+v", target, response.Code, response.Body.String(), f.native)
 			}
-			fake := useExactNativeTargets(t)
-			capabilities.SupportedLimits = limits
-			response := httptest.NewRecorder()
-			setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader(strconv.Itoa(target))))
-			if response.Code != http.StatusCreated || fake.limit != target || !fake.enabled {
-				t.Fatalf("target %d: status=%d body=%s native=%+v", target, response.Code, response.Body.String(), fake)
+			f.d.disableUnsupportedConfiguredFeatures()
+			if reloaded := f.reloadFile(); reloaded.UpperLimit() != target || f.file.AdapterMode() {
+				t.Fatalf("exact limit not retained or adapter selected: config=%+v", reloaded)
 			}
-			disableUnsupportedConfiguredFeatures()
-			reloaded, err := config.NewFile(path)
-			if err != nil || reloaded.UpperLimit() != target || file.AdapterMode() {
-				t.Fatalf("exact limit not retained or adapter selected: config=%+v err=%v", reloaded, err)
-			}
-			if !maintainManagedChargeLimit() || len(fake.setCalls) != 1 {
+			if !f.d.maintainManagedChargeLimit() || len(f.native.setCalls) != 1 {
 				t.Fatal("unchanged target rewritten")
 			}
 		})
@@ -520,15 +332,13 @@ func TestNativeExactLimitsAreAppliedWithoutAdapterControl(t *testing.T) {
 }
 
 func TestSetNativeLimitReportsApplicationFailure(t *testing.T) {
-	file, _ := useTempConfig(t)
-	fake := useExactNativeTargets(t)
-	fake.err = errors.New("agent unavailable")
-	response := httptest.NewRecorder()
-	setupRoutes().ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/limit", strings.NewReader("69")))
+	f := newExactNativeFixture(t)
+	f.native.err = errors.New("agent unavailable")
+	response := f.put("/limit", "69")
 	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "applying it failed") {
 		t.Fatalf("failed apply reported as success: %d %s", response.Code, response.Body.String())
 	}
-	if file.UpperLimit() != 69 {
+	if f.file.UpperLimit() != 69 {
 		t.Fatal("saved target lost; daemon must be able to retry it")
 	}
 }

@@ -12,17 +12,17 @@ import (
 	"github.com/charlie0129/batt/pkg/config"
 )
 
-func detectCapabilities() compatibility.Capabilities {
-	mode := smcConn.ChargeControlMode()
-	adapter := smcConn.IsAdapterControlCapable()
+func (d *Daemon) detectCapabilities() compatibility.Capabilities {
+	mode := d.smc.ChargeControlMode()
+	adapter := d.smc.IsAdapterControlCapable()
 	var supportedLimits []int
 	if mode == compatibility.ChargeControlUnsupported {
 		// Adapter mode is opt-in; otherwise fall back to the native limit.
 		switch {
-		case adapter && conf.AdapterMode():
+		case adapter && d.conf.AdapterMode():
 			mode = compatibility.ChargeControlAdapter
 		default:
-			mode, supportedLimits = detectNativeChargeControl()
+			mode, supportedLimits = d.detectNativeChargeControl()
 		}
 	}
 	legacy := mode == compatibility.ChargeControlLegacy
@@ -31,14 +31,14 @@ func detectCapabilities() compatibility.Capabilities {
 	return compatibility.Capabilities{
 		ChargingControl:    mode != compatibility.ChargeControlUnsupported,
 		ChargeControlMode:  mode,
-		NativeExactTargets: mode == compatibility.ChargeControlNative && nativeLimit.SupportsExactTargets(),
+		NativeExactTargets: mode == compatibility.ChargeControlNative && d.native.SupportsExactTargets(),
 		SupportedLimits:    supportedLimits,
 		// The legacy and adapter loops both run while awake and rely on the
 		// sleep hooks to avoid overcharging during sleep.
 		SleepHooks: active,
 		// Active modes use batt's switch state; firmware and native modes use
 		// the actual charging state reported by macOS.
-		MagSafeLED: (active || managed) && smcConn.CheckMagSafeExistence(),
+		MagSafeLED: (active || managed) && d.smc.CheckMagSafeExistence(),
 		// In adapter mode batt owns the adapter to enforce the limit, so the
 		// manual adapter/force-discharge feature is hidden to avoid conflicts.
 		AdapterControl: adapter && mode != compatibility.ChargeControlAdapter,
@@ -52,53 +52,53 @@ func detectCapabilities() compatibility.Capabilities {
 // reapplyChargeControlMode re-detects capabilities after the adapter-mode
 // setting changed, restores wall power when leaving adapter mode, and enforces
 // the new mode immediately.
-func reapplyChargeControlMode() error {
-	maintainLoopInnerLock.Lock()
-	previous, previousCharger := loadChargeControl()
+func (d *Daemon) reapplyChargeControlMode() error {
+	d.loopMu.Lock()
+	previous, previousCharger := d.loadChargeControl()
 	prev := previous.ChargeControlMode
-	next := detectCapabilities()
+	next := d.detectCapabilities()
 	if prev == compatibility.ChargeControlNative && next.ChargeControlMode == compatibility.ChargeControlAdapter {
-		if _, err := ensureNativeChargeLimitDisabled(); err != nil {
-			maintainLoopInnerLock.Unlock()
+		if _, err := d.ensureNativeChargeLimitDisabled(); err != nil {
+			d.loopMu.Unlock()
 			return fmt.Errorf("failed to disable native limit before entering adapter mode: %w", err)
 		}
 	}
 	if prev == compatibility.ChargeControlAdapter && next.ChargeControlMode != compatibility.ChargeControlAdapter {
-		if err := smcEnableAdapter(); err != nil {
-			maintainLoopInnerLock.Unlock()
+		if err := d.enableAdapter(); err != nil {
+			d.loopMu.Unlock()
 			return fmt.Errorf("failed to restore adapter when leaving adapter mode: %w", err)
 		}
 	}
-	if err := reconcileAdapterSleepPolicy(); err != nil {
-		maintainLoopInnerLock.Unlock()
-		return restoreAdapterAfterPolicyError(err)
+	if err := d.reconcileAdapterSleepPolicy(); err != nil {
+		d.loopMu.Unlock()
+		return d.restoreAdapterAfterPolicyError(err)
 	}
-	storeChargeControl(next, selectCharger(next.ChargeControlMode))
-	maintainLoopInnerLock.Unlock()
+	d.storeChargeControl(next, d.selectCharger(next.ChargeControlMode))
+	d.loopMu.Unlock()
 
-	if !maintainLoopForced() {
-		maintainLoopInnerLock.Lock()
-		storeChargeControl(previous, previousCharger)
-		maintainLoopInnerLock.Unlock()
-		if !maintainLoopForced() {
+	if !d.maintainLoopForced() {
+		d.loopMu.Lock()
+		d.storeChargeControl(previous, previousCharger)
+		d.loopMu.Unlock()
+		if !d.maintainLoopForced() {
 			return fmt.Errorf("failed to enforce %s charge-control mode; previous %s mode could not be restored either", next.ChargeControlMode, prev)
 		}
 		return fmt.Errorf("failed to enforce %s charge-control mode; previous %s mode restored", next.ChargeControlMode, prev)
 	}
 
 	logrus.WithFields(capabilityLogFields(next)).Info("reapplied charge control mode")
-	disableUnsupportedConfiguredFeatures()
+	d.disableUnsupportedConfiguredFeatures()
 	return nil
 }
 
 // detectNativeChargeControl falls back to the charge limit built into macOS
 // when the SMC keys are gated (macOS 27 beta 4+ firmware). It only reports the
 // native mode when PowerUIAgent supports the limit and lists usable values.
-func detectNativeChargeControl() (compatibility.ChargeControlMode, []int) {
-	if !nativeLimit.Supported() {
+func (d *Daemon) detectNativeChargeControl() (compatibility.ChargeControlMode, []int) {
+	if !d.native.Supported() {
 		return compatibility.ChargeControlUnsupported, nil
 	}
-	limits, err := nativeLimit.AvailableLimits()
+	limits, err := d.native.AvailableLimits()
 	if err != nil {
 		logrus.WithError(err).Warn("macOS reports a manual charge limit but its supported values could not be read")
 		return compatibility.ChargeControlUnsupported, nil
@@ -123,37 +123,39 @@ func capabilityLogFields(capabilities compatibility.Capabilities) logrus.Fields 
 	}
 }
 
-func disableUnsupportedCalibrationState() {
-	if getCapabilities().Calibration {
+func (d *Daemon) disableUnsupportedCalibrationState() {
+	if d.getCapabilities().Calibration {
 		return
 	}
-	calibrationMu.Lock()
-	defer calibrationMu.Unlock()
-	if calibrationState.Phase == calibration.PhaseIdle {
+	d.calibrationMu.Lock()
+	defer d.calibrationMu.Unlock()
+	if d.calibrationState.Phase == calibration.PhaseIdle {
 		return
 	}
-	logrus.WithField("phase", calibrationState.Phase).Info("discarding unsupported persisted calibration state")
-	releaseCalibrationSleepAssertion()
+	logrus.WithField("phase", d.calibrationState.Phase).Info("discarding unsupported persisted calibration state")
+	d.releaseCalibrationSleepAssertion()
 	// Calibration may have temporarily changed the configured limit to 100%.
 	// Restore its saved limits without touching unsupported charging/adapter
 	// keys before discarding the workflow state.
-	if calibrationState.SnapshotUpperLimit >= 10 && calibrationState.SnapshotUpperLimit <= 100 &&
-		calibrationState.SnapshotLowerLimit >= 0 && calibrationState.SnapshotLowerLimit < calibrationState.SnapshotUpperLimit {
-		conf.SetUpperLimit(calibrationState.SnapshotUpperLimit)
-		conf.SetLowerLimit(calibrationState.SnapshotLowerLimit)
-		if err := conf.Save(); err != nil {
+	st := d.calibrationState
+	if st.SnapshotUpperLimit >= 10 && st.SnapshotUpperLimit <= 100 &&
+		st.SnapshotLowerLimit >= 0 && st.SnapshotLowerLimit < st.SnapshotUpperLimit {
+		d.conf.SetUpperLimit(st.SnapshotUpperLimit)
+		d.conf.SetLowerLimit(st.SnapshotLowerLimit)
+		if err := d.conf.Save(); err != nil {
 			logrus.WithError(err).Error("failed to restore limits from unsupported calibration state")
 		}
 	}
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	persistCalibrationState()
+	d.calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
+	d.persistCalibrationState()
 }
 
 // disableUnsupportedConfiguredFeatures prevents settings left behind by an
 // OS/firmware upgrade from activating features that are unsafe on the current
 // hardware. It intentionally persists the disabled values.
-func disableUnsupportedConfiguredFeatures() {
-	caps := getCapabilities()
+func (d *Daemon) disableUnsupportedConfiguredFeatures() {
+	caps := d.getCapabilities()
+	conf := d.conf
 	changed := false
 	if !caps.SleepHooks {
 		if conf.PreventIdleSleep() {
@@ -208,8 +210,8 @@ func disableUnsupportedConfiguredFeatures() {
 	logrus.WithFields(capabilityLogFields(caps)).Info("disabled unsupported configured features")
 }
 
-func requireCapability(c *gin.Context, feature compatibility.Feature) bool {
-	if getCapabilities().Supports(feature) {
+func (d *Daemon) requireCapability(c *gin.Context, feature compatibility.Feature) bool {
+	if d.getCapabilities().Supports(feature) {
 		return true
 	}
 	err := fmt.Errorf("%s is not supported on this Mac", feature)
@@ -218,6 +220,6 @@ func requireCapability(c *gin.Context, feature compatibility.Feature) bool {
 	return false
 }
 
-func getCompatibility(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, getCapabilities())
+func (d *Daemon) getCompatibility(c *gin.Context) {
+	c.IndentedJSON(http.StatusOK, d.getCapabilities())
 }

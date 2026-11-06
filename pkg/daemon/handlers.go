@@ -10,19 +10,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"github.com/peterneutron/powerkit-go/pkg/powerkit"
-
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
-	"github.com/charlie0129/batt/pkg/powerui"
 	"github.com/charlie0129/batt/pkg/smc"
 	"github.com/charlie0129/batt/pkg/version"
 )
 
-func getConfig(c *gin.Context) {
-	fc, err := config.NewRawFileConfigFromConfig(conf)
+func (d *Daemon) getConfig(c *gin.Context) {
+	fc, err := config.NewRawFileConfigFromConfig(d.conf)
 	if err != nil {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -30,12 +27,12 @@ func getConfig(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, fc)
 }
 
-func getLimit(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, conf.UpperLimit())
+func (d *Daemon) getLimit(c *gin.Context) {
+	c.IndentedJSON(http.StatusOK, d.conf.UpperLimit())
 }
 
-func setLimit(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureChargingControl) {
+func (d *Daemon) setLimit(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureChargingControl) {
 		return
 	}
 	var l int
@@ -51,7 +48,7 @@ func setLimit(c *gin.Context) {
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-	caps := getCapabilities()
+	caps := d.getCapabilities()
 	if !caps.SupportsLimit(l) {
 		err := fmt.Errorf("this Mac only offers charge limits of %s, got %d", compatibility.FormatLimits(caps.SupportedLimits), l)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
@@ -59,16 +56,17 @@ func setLimit(c *gin.Context) {
 		return
 	}
 
-	chargeControlTransitionMu.Lock()
-	defer chargeControlTransitionMu.Unlock()
+	d.transitionMu.Lock()
+	defer d.transitionMu.Unlock()
 
-	if calibrationOwnsChargeLimit() {
+	if d.calibrationOwnsChargeLimit() {
 		err := ErrCalibrationControlsChargeLimit
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
+	conf := d.conf
 	previousLimit, previousLower := conf.UpperLimit(), conf.LowerLimit()
 	delta := previousLimit - previousLower
 	if caps.ChargeControlMode != compatibility.ChargeControlNative && l-delta < 11 {
@@ -86,7 +84,7 @@ func setLimit(c *gin.Context) {
 	conf.SetUpperLimit(l)
 	// An explicit limit change overrides any pending scheduled re-enabling.
 	conf.ClearDisableTimer()
-	superseded := supersedeChargeOnce()
+	superseded := d.supersedeChargeOnce()
 	if err := conf.Save(); err != nil {
 		conf.SetUpperLimit(previousLimit)
 		if conf.LowerLimit() != previousLower {
@@ -105,12 +103,12 @@ func setLimit(c *gin.Context) {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	reportSupersededChargeOnce(superseded, fmt.Sprintf("charge limit set to %d%%", l))
+	d.reportSupersededChargeOnce(superseded, fmt.Sprintf("charge limit set to %d%%", l))
 
 	logrus.Infof("set charging limit to %d", l)
 
 	var msg string
-	charge, err := smcConn.GetBatteryCharge()
+	charge, err := d.smc.GetBatteryCharge()
 	switch {
 	case caps.ChargeControlMode == compatibility.ChargeControlNative:
 		msg = fmt.Sprintf("set charging limit to %d%%", l)
@@ -127,7 +125,7 @@ func setLimit(c *gin.Context) {
 		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%, current charge: %d%%", conf.UpperLimit(), conf.LowerLimit(), charge)
 		if charge > conf.UpperLimit() {
 			switch {
-			case isManagedChargeControl():
+			case d.isManagedChargeControl():
 				msg += ". Current charge is above the limit; macOS may use battery power until it falls within the configured range."
 			case caps.ChargeControlMode == compatibility.ChargeControlAdapter:
 				msg += ". Current charge is above the limit, so batt will cut wall power and run from the battery until it drops to the lower limit."
@@ -142,7 +140,7 @@ func setLimit(c *gin.Context) {
 	}
 
 	// Immediate single maintain loop, to avoid waiting for the next loop
-	if applied := maintainLoopForced(); !applied && caps.NativeExactTargets {
+	if applied := d.maintainLoopForced(); !applied && caps.NativeExactTargets {
 		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -172,8 +170,8 @@ func resolveDisableLimit(conf config.Config) (int, bool) {
 	return limit, true
 }
 
-func setDisableFor(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureChargingControl) {
+func (d *Daemon) setDisableFor(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureChargingControl) {
 		return
 	}
 	var raw string
@@ -183,30 +181,31 @@ func setDisableFor(c *gin.Context) {
 		return
 	}
 
-	d, err := time.ParseDuration(raw)
+	dur, err := time.ParseDuration(raw)
 	if err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	if d <= 0 {
-		err := fmt.Errorf("duration must be positive, got %s", d)
+	if dur <= 0 {
+		err := fmt.Errorf("duration must be positive, got %s", dur)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	chargeControlTransitionMu.Lock()
-	defer chargeControlTransitionMu.Unlock()
+	d.transitionMu.Lock()
+	defer d.transitionMu.Unlock()
 
-	if calibrationOwnsChargeLimit() {
+	if d.calibrationOwnsChargeLimit() {
 		err := ErrCalibrationControlsChargeLimit
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
+	conf := d.conf
 	prevLimit, ok := resolveDisableLimit(conf)
 	if !ok {
 		err := fmt.Errorf("batt is already disabled and no previous charge limit is recorded, nothing to restore. Set a limit first with 'batt limit <percentage>'")
@@ -215,10 +214,10 @@ func setDisableFor(c *gin.Context) {
 		return
 	}
 
-	until := time.Now().Add(d).Truncate(time.Second)
+	until := time.Now().Add(dur).Truncate(time.Second)
 	previousLimit := conf.UpperLimit()
 	previousUntil, previousPreLimit := conf.DisableUntil(), conf.PreDisableLimit()
-	superseded := supersedeChargeOnce()
+	superseded := d.supersedeChargeOnce()
 	conf.SetUpperLimit(100)
 	conf.SetDisableTimer(until, prevLimit)
 	if err := conf.Save(); err != nil {
@@ -236,14 +235,14 @@ func setDisableFor(c *gin.Context) {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	reportSupersededChargeOnce(superseded, "charge limit temporarily disabled")
+	d.reportSupersededChargeOnce(superseded, "charge limit temporarily disabled")
 
 	logrus.WithFields(logrus.Fields{
 		"until":     until.Format(time.DateTime),
 		"prevLimit": prevLimit,
 	}).Infof("disabled batt temporarily")
 
-	if applied := maintainLoopForced(); !applied && getCapabilities().NativeExactTargets {
+	if applied := d.maintainLoopForced(); !applied && d.getCapabilities().NativeExactTargets {
 		err := fmt.Errorf("temporary disable was saved, but releasing charge control failed; the daemon will retry")
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -253,80 +252,46 @@ func setDisableFor(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("batt disabled, charge limit will be restored to %d%% at %s", prevLimit, until.Format(time.DateTime)))
 }
 
-func setPreventIdleSleep(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureSleepHooks) {
+// setBoolSetting is the shared body of the simple boolean setters: it binds
+// the request, applies set, and persists the config.
+func (d *Daemon) setBoolSetting(c *gin.Context, feature compatibility.Feature, name string, set func(bool)) {
+	if !d.requireCapability(c, feature) {
 		return
 	}
-	var p bool
-	if err := c.BindJSON(&p); err != nil {
+	var value bool
+	if err := c.BindJSON(&value); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	conf.SetPreventIdleSleep(p)
-	if err := conf.Save(); err != nil {
+	set(value)
+	if err := d.conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	logrus.Infof("set prevent idle sleep to %t", p)
+	logrus.Infof("set %s to %t", name, value)
 
 	c.IndentedJSON(http.StatusCreated, "ok")
 }
 
-func setDisableChargingPreSleep(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureSleepHooks) {
-		return
-	}
-	var d bool
-	if err := c.BindJSON(&d); err != nil {
-		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		_ = c.AbortWithError(http.StatusBadRequest, err)
-		return
-	}
-
-	conf.SetDisableChargingPreSleep(d)
-	if err := conf.Save(); err != nil {
-		logrus.Errorf("saveConfig failed: %v", err)
-		c.IndentedJSON(http.StatusInternalServerError, err.Error())
-		_ = c.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
-
-	logrus.Infof("set disable charging pre sleep to %t", d)
-
-	c.IndentedJSON(http.StatusCreated, "ok")
+func (d *Daemon) setPreventIdleSleep(c *gin.Context) {
+	d.setBoolSetting(c, compatibility.FeatureSleepHooks, "prevent idle sleep", d.conf.SetPreventIdleSleep)
 }
 
-func setPreventSystemSleep(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureSleepHooks) {
-		return
-	}
-	var p bool
-	if err := c.BindJSON(&p); err != nil {
-		c.IndentedJSON(http.StatusBadRequest, err.Error())
-		_ = c.AbortWithError(http.StatusBadRequest, err)
-		return
-	}
-
-	conf.SetPreventSystemSleep(p)
-	if err := conf.Save(); err != nil {
-		logrus.Errorf("saveConfig failed: %v", err)
-		c.IndentedJSON(http.StatusInternalServerError, err.Error())
-		_ = c.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
-
-	logrus.Infof("set prevent system sleep to %t", p)
-
-	c.IndentedJSON(http.StatusCreated, "ok")
+func (d *Daemon) setDisableChargingPreSleep(c *gin.Context) {
+	d.setBoolSetting(c, compatibility.FeatureSleepHooks, "disable charging pre sleep", d.conf.SetDisableChargingPreSleep)
 }
 
-func setPreventSleepOnAdapterDisable(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureAdapterSleepPolicy) {
+func (d *Daemon) setPreventSystemSleep(c *gin.Context) {
+	d.setBoolSetting(c, compatibility.FeatureSleepHooks, "prevent system sleep", d.conf.SetPreventSystemSleep)
+}
+
+func (d *Daemon) setPreventSleepOnAdapterDisable(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureAdapterSleepPolicy) {
 		return
 	}
 	var requested bool
@@ -336,13 +301,13 @@ func setPreventSleepOnAdapterDisable(c *gin.Context) {
 		return
 	}
 
-	chargeControlTransitionMu.Lock()
-	defer chargeControlTransitionMu.Unlock()
+	d.transitionMu.Lock()
+	defer d.transitionMu.Unlock()
 
-	adapterPolicyMu.Lock()
-	defer adapterPolicyMu.Unlock()
+	d.adapterPolicyMu.Lock()
+	defer d.adapterPolicyMu.Unlock()
 
-	adapterEnabled, err := smcIsAdapterEnabled()
+	adapterEnabled, err := d.smc.IsAdapterEnabled()
 	if err != nil {
 		logrus.WithError(err).Error("failed to check adapter state for prevent-sleep setting")
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -350,11 +315,12 @@ func setPreventSleepOnAdapterDisable(c *gin.Context) {
 		return
 	}
 
+	conf := d.conf
 	current := conf.PreventSleepOnAdapterDisable()
 
 	if requested {
 		if !adapterEnabled {
-			if err := holdSleep(sleepHoldAdapter); err != nil {
+			if err := d.holds.hold(sleepHoldAdapter); err != nil {
 				logrus.WithError(err).Error("failed to acquire sleep hold before saving config")
 				c.IndentedJSON(http.StatusInternalServerError, err.Error())
 				_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -365,7 +331,7 @@ func setPreventSleepOnAdapterDisable(c *gin.Context) {
 		if err := conf.Save(); err != nil {
 			conf.SetPreventSleepOnAdapterDisable(current)
 			if !adapterEnabled && !current {
-				_ = releaseSleep(sleepHoldAdapter)
+				_ = d.holds.release(sleepHoldAdapter)
 			}
 			logrus.Errorf("saveConfig failed: %v", err)
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -381,7 +347,7 @@ func setPreventSleepOnAdapterDisable(c *gin.Context) {
 			_ = c.AbortWithError(http.StatusInternalServerError, err)
 			return
 		}
-		if err := releaseSleep(sleepHoldAdapter); err != nil {
+		if err := d.holds.release(sleepHoldAdapter); err != nil {
 			logrus.WithError(err).Error("failed to release sleep hold after disabling setting")
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())
 			_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -394,38 +360,39 @@ func setPreventSleepOnAdapterDisable(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, "ok")
 }
 
-func setAdapter(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureAdapterControl) {
+func (d *Daemon) setAdapter(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureAdapterControl) {
 		return
 	}
-	var d bool
-	if err := c.BindJSON(&d); err != nil {
+	var enable bool
+	if err := c.BindJSON(&enable); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	chargeControlTransitionMu.Lock()
-	defer chargeControlTransitionMu.Unlock()
+	d.transitionMu.Lock()
+	defer d.transitionMu.Unlock()
 
-	if calibrationOwnsChargeLimit() {
+	if d.calibrationOwnsChargeLimit() {
 		err := ErrCalibrationControlsAdapter
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
+	conf := d.conf
 	// Cutting power stops a one-time charge from making any progress, and an
 	// indefinite adapter disable records no deadline that could resume it.
-	if !d && conf.ChargeOnceTarget() != 0 {
+	if !enable && conf.ChargeOnceTarget() != 0 {
 		err := ErrChargeOnceInProgress
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	if d {
-		if err := smcEnableAdapter(); err != nil {
+	if enable {
+		if err := d.enableAdapter(); err != nil {
 			logrus.Errorf("enablePowerAdapter failed: %v", err)
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())
 			_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -433,7 +400,7 @@ func setAdapter(c *gin.Context) {
 		}
 		logrus.Infof("enabled power adapter")
 	} else {
-		if err := smcDisableAdapter(); err != nil {
+		if err := d.disableAdapter(); err != nil {
 			logrus.Errorf("disablePowerAdapter failed: %v", err)
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())
 			_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -454,8 +421,8 @@ func setAdapter(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, "ok")
 }
 
-func setAdapterDisableFor(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureAdapterControl) {
+func (d *Daemon) setAdapterDisableFor(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureAdapterControl) {
 		return
 	}
 	var raw string
@@ -465,29 +432,30 @@ func setAdapterDisableFor(c *gin.Context) {
 		return
 	}
 
-	d, err := time.ParseDuration(raw)
+	dur, err := time.ParseDuration(raw)
 	if err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-	if d <= 0 {
-		err := fmt.Errorf("duration must be positive, got %s", d)
+	if dur <= 0 {
+		err := fmt.Errorf("duration must be positive, got %s", dur)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	chargeControlTransitionMu.Lock()
-	defer chargeControlTransitionMu.Unlock()
+	d.transitionMu.Lock()
+	defer d.transitionMu.Unlock()
 
-	if calibrationOwnsChargeLimit() {
+	if d.calibrationOwnsChargeLimit() {
 		err := ErrCalibrationControlsAdapter
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
+	conf := d.conf
 	// Cutting power stops a one-time charge from making any progress.
 	if conf.ChargeOnceTarget() != 0 {
 		err := ErrChargeOnceInProgress
@@ -496,7 +464,7 @@ func setAdapterDisableFor(c *gin.Context) {
 		return
 	}
 
-	until := time.Now().Add(d).Truncate(time.Second)
+	until := time.Now().Add(dur).Truncate(time.Second)
 	// Persist the recovery deadline before cutting power so a daemon crash
 	// cannot leave the adapter disabled without a scheduled enable.
 	conf.SetAdapterDisableTimer(until)
@@ -507,7 +475,7 @@ func setAdapterDisableFor(c *gin.Context) {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	if err := smcDisableAdapter(); err != nil {
+	if err := d.disableAdapter(); err != nil {
 		conf.ClearAdapterDisableTimer()
 		if saveErr := conf.Save(); saveErr != nil {
 			logrus.Errorf("failed to clear adapter disable timer after SMC error: %v", saveErr)
@@ -522,11 +490,11 @@ func setAdapterDisableFor(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("power adapter disabled, it will be enabled at %s", until.Format(time.DateTime)))
 }
 
-func getAdapter(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureAdapterControl) {
+func (d *Daemon) getAdapter(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureAdapterControl) {
 		return
 	}
-	enabled, err := smcIsAdapterEnabled()
+	enabled, err := d.smc.IsAdapterEnabled()
 	if err != nil {
 		logrus.Errorf("getAdapter failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -537,15 +505,15 @@ func getAdapter(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, enabled)
 }
 
-func getCharging(c *gin.Context) {
-	caps := getCapabilities()
+func (d *Daemon) getCharging(c *gin.Context) {
+	caps := d.getCapabilities()
 	if caps.ChargeControlMode != compatibility.ChargeControlLegacy {
 		err := fmt.Errorf("direct charging state is not available in %s charge-control mode", caps.ChargeControlMode)
 		c.IndentedJSON(http.StatusConflict, err.Error())
 		_ = c.AbortWithError(http.StatusConflict, err)
 		return
 	}
-	charging, err := smcConn.IsChargingEnabled()
+	charging, err := d.smc.IsChargingEnabled()
 	if err != nil {
 		logrus.Errorf("getCharging failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -556,9 +524,9 @@ func getCharging(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, charging)
 }
 
-func getBatteryInfo(c *gin.Context) {
-	// Use powerkit-go to retrieve current system info (IOKit only is sufficient here)
-	info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
+func (d *Daemon) getBatteryInfo(c *gin.Context) {
+	// IOKit alone is sufficient here.
+	info, err := d.battery.SystemInfo()
 	if err != nil || info == nil || info.IOKit == nil {
 		if err == nil {
 			err = errors.New("no IOKit data available")
@@ -591,8 +559,8 @@ func getBatteryInfo(c *gin.Context) {
 		ChargeRate:     chargeRateMilliW,
 		DesignVoltage:  info.IOKit.Battery.Voltage,
 	}
-	if getCapabilities().ChargeControlMode == compatibility.ChargeControlNative {
-		if active, err := powerui.FullChargeOverride(); err == nil {
+	if d.getCapabilities().ChargeControlMode == compatibility.ChargeControlNative {
+		if active, err := d.battery.FullChargeOverride(); err == nil {
 			resp.ChargingToFullOverride = &active
 		} else {
 			logrus.WithError(err).Debug("Full-charge override state unavailable")
@@ -602,31 +570,32 @@ func getBatteryInfo(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, resp)
 }
 
-func setLowerLimitDelta(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureLowerLimit) {
+func (d *Daemon) setLowerLimitDelta(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureLowerLimit) {
 		return
 	}
-	var d int
-	if err := c.BindJSON(&d); err != nil {
+	var delta int
+	if err := c.BindJSON(&delta); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	if d < 0 {
-		err := fmt.Errorf("lower limit delta must be positive, got %d", d)
+	conf := d.conf
+	if delta < 0 {
+		err := fmt.Errorf("lower limit delta must be positive, got %d", delta)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-	if conf.UpperLimit()-d < 10 {
-		err := fmt.Errorf("lower limit delta must be less than limit - 10, got %d", d)
+	if conf.UpperLimit()-delta < 10 {
+		err := fmt.Errorf("lower limit delta must be less than limit - 10, got %d", delta)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	conf.SetLowerLimit(conf.UpperLimit() - d)
+	conf.SetLowerLimit(conf.UpperLimit() - delta)
 	if err := conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -634,19 +603,19 @@ func setLowerLimitDelta(c *gin.Context) {
 		return
 	}
 
-	ret := fmt.Sprintf("set lower limit delta to %d, current upper/lower limit is %d%%/%d%%", d, conf.UpperLimit(), conf.LowerLimit())
+	ret := fmt.Sprintf("set lower limit delta to %d, current upper/lower limit is %d%%/%d%%", delta, conf.UpperLimit(), conf.LowerLimit())
 	logrus.Info(ret)
-	maintainLoopForced()
+	d.maintainLoopForced()
 
 	c.IndentedJSON(http.StatusCreated, ret)
 }
 
-func setControlMagSafeLED(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureMagSafeLED) {
+func (d *Daemon) setControlMagSafeLED(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureMagSafeLED) {
 		return
 	}
 	// Check if MasSafe is supported first. If not, return error.
-	if !smcConn.CheckMagSafeExistence() {
+	if !d.smc.CheckMagSafeExistence() {
 		logrus.Errorf("setControlMagSafeLED called but there is no MasSafe LED on this device")
 		err := fmt.Errorf("there is no MasSafe on this device. You can only enable this setting on a compatible device, e.g. MacBook Pro 14-inch 2021")
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -661,22 +630,22 @@ func setControlMagSafeLED(c *gin.Context) {
 		return
 	}
 
-	maintainLoopInnerLock.Lock()
-	defer maintainLoopInnerLock.Unlock()
-	if !requireCapability(c, compatibility.FeatureMagSafeLED) {
+	d.loopMu.Lock()
+	defer d.loopMu.Unlock()
+	if !d.requireCapability(c, compatibility.FeatureMagSafeLED) {
 		return
 	}
 
-	conf.SetControlMagSafeLED(mode)
-	if err := conf.Save(); err != nil {
+	d.conf.SetControlMagSafeLED(mode)
+	if err := d.conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	if isManagedChargeControl() && mode == config.ControlMagSafeModeDisabled {
-		if err := smcConn.SetMagSafeLedState(smc.LEDSystem); err != nil {
+	if d.isManagedChargeControl() && mode == config.ControlMagSafeModeDisabled {
+		if err := d.smc.SetMagSafeLedState(smc.LEDSystem); err != nil {
 			logrus.WithError(err).Error("failed to return MagSafe LED control to the system")
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())
 			_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -689,8 +658,8 @@ func setControlMagSafeLED(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("ControlMagSafeLED set to %s. You should be able to see the effect in a few minutes.", mode))
 }
 
-func getCurrentCharge(c *gin.Context) {
-	charge, err := smcConn.GetBatteryCharge()
+func (d *Daemon) getCurrentCharge(c *gin.Context) {
+	charge, err := d.smc.GetBatteryCharge()
 	if err != nil {
 		logrus.Errorf("getCurrentCharge failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -701,10 +670,10 @@ func getCurrentCharge(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, charge)
 }
 
-func getPluggedIn(c *gin.Context) {
-	pluggedIn, err := smcConn.IsPluggedIn()
+func (d *Daemon) getPluggedIn(c *gin.Context) {
+	pluggedIn, err := d.smc.IsPluggedIn()
 	if err != nil {
-		logrus.Errorf("getCurrentCharge failed: %v", err)
+		logrus.Errorf("getPluggedIn failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -713,28 +682,29 @@ func getPluggedIn(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, pluggedIn)
 }
 
-func getChargingControlCapable(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, getCapabilities().ChargingControl)
+func (d *Daemon) getChargingControlCapable(c *gin.Context) {
+	c.IndentedJSON(http.StatusOK, d.getCapabilities().ChargingControl)
 }
 
-func setAdapterMode(c *gin.Context) {
+func (d *Daemon) setAdapterMode(c *gin.Context) {
 	var enabled bool
 	if err := c.BindJSON(&enabled); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		return
 	}
 
-	chargeControlTransitionMu.Lock()
-	defer chargeControlTransitionMu.Unlock()
+	d.transitionMu.Lock()
+	defer d.transitionMu.Unlock()
 
+	conf := d.conf
 	previous := conf.AdapterMode()
 	previousTarget := conf.ChargeOnceTarget()
 	conf.SetAdapterMode(enabled)
 	// Native macOS cannot force a one-time target below 100%. Cancel such an
 	// adapter-mode target in the same config update as the mode change.
 	clearTarget := previousTarget > 0 && previousTarget < 100 &&
-		getCapabilities().ChargeControlMode == compatibility.ChargeControlAdapter &&
-		detectCapabilities().ChargeControlMode == compatibility.ChargeControlNative
+		d.getCapabilities().ChargeControlMode == compatibility.ChargeControlAdapter &&
+		d.detectCapabilities().ChargeControlMode == compatibility.ChargeControlNative
 	if clearTarget {
 		conf.ClearChargeOnceTarget()
 	}
@@ -746,7 +716,7 @@ func setAdapterMode(c *gin.Context) {
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := reapplyChargeControlMode(); err != nil {
+	if err := d.reapplyChargeControlMode(); err != nil {
 		conf.SetAdapterMode(previous)
 		if clearTarget {
 			conf.SetChargeOnceTarget(previousTarget)
@@ -758,31 +728,26 @@ func setAdapterMode(c *gin.Context) {
 		return
 	}
 	if clearTarget {
-		reportSupersededChargeOnce(previousTarget, "adapter mode disabled")
+		d.reportSupersededChargeOnce(previousTarget, "adapter mode disabled")
 	}
-	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("adapter mode set to %t, charge control is now %s", enabled, getCapabilities().ChargeControlMode))
+	c.IndentedJSON(http.StatusCreated, fmt.Sprintf("adapter mode set to %t, charge control is now %s", enabled, d.getCapabilities().ChargeControlMode))
 }
 
-func getVersion(c *gin.Context) {
+func (d *Daemon) getVersion(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, version.Version)
 }
 
-func getPowerTelemetry(c *gin.Context) {
-	// Use powerkit-go to fetch a snapshot of system power state
-	c.Header("X-Deprecated", "true")
-	c.Header("X-Deprecation-Info", "Use /telemetry?power=1 instead; /power-telemetry will be removed in a future release")
-	info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
+// powerTelemetry builds the GUI's simplified telemetry from an IOKit snapshot.
+func (d *Daemon) powerTelemetry() (powerinfo.PowerTelemetry, error) {
+	var snapshot powerinfo.PowerTelemetry
+	info, err := d.battery.SystemInfo()
 	if err != nil || info == nil || info.IOKit == nil {
 		if err == nil {
 			err = errors.New("failed to fetch IOKit power data")
 		}
-		logrus.Errorf("getPowerTelemetry failed: %v", err)
-		_ = c.AbortWithError(http.StatusInternalServerError, err)
-		return
+		return snapshot, err
 	}
 
-	// Build simplified telemetry expected by the GUI
-	var snapshot powerinfo.PowerTelemetry
 	snapshot.Adapter.InputVoltage = info.IOKit.Adapter.InputVoltage
 	snapshot.Adapter.InputAmperage = info.IOKit.Adapter.InputAmperage
 
@@ -792,39 +757,40 @@ func getPowerTelemetry(c *gin.Context) {
 	snapshot.Calculations.BatteryPower = info.IOKit.Calculations.BatteryPower
 	snapshot.Calculations.SystemPower = info.IOKit.Calculations.SystemPower
 	snapshot.Calculations.HealthByMaxCapacity = info.IOKit.Calculations.HealthByMaxCapacity
+	return snapshot, nil
+}
+
+func (d *Daemon) getPowerTelemetry(c *gin.Context) {
+	c.Header("X-Deprecated", "true")
+	c.Header("X-Deprecation-Info", "Use /telemetry?power=1 instead; /power-telemetry will be removed in a future release")
+	snapshot, err := d.powerTelemetry()
+	if err != nil {
+		logrus.Errorf("getPowerTelemetry failed: %v", err)
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
 
 	c.IndentedJSON(http.StatusOK, snapshot)
 }
 
 // Unified telemetry endpoint: /telemetry?power=1&calibration=1 (flags optional; default all)
-func getUnifiedTelemetry(c *gin.Context) {
+func (d *Daemon) getUnifiedTelemetry(c *gin.Context) {
 	wantPower := c.Query("power") != "0"
 	wantCal := c.Query("calibration") != "0"
 
 	resp := gin.H{}
 
 	if wantPower {
-		info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
-		if err != nil || info == nil || info.IOKit == nil {
-			if err == nil {
-				err = errors.New("failed to fetch IOKit power data")
-			}
+		snapshot, err := d.powerTelemetry()
+		if err != nil {
 			logrus.WithError(err).Warn("power telemetry unavailable for unified telemetry")
 		} else {
-			var snapshot powerinfo.PowerTelemetry
-			snapshot.Adapter.InputVoltage = info.IOKit.Adapter.InputVoltage
-			snapshot.Adapter.InputAmperage = info.IOKit.Adapter.InputAmperage
-			snapshot.Battery.CycleCount = info.IOKit.Battery.CycleCount
-			snapshot.Calculations.ACPower = info.IOKit.Calculations.AdapterPower
-			snapshot.Calculations.BatteryPower = info.IOKit.Calculations.BatteryPower
-			snapshot.Calculations.SystemPower = info.IOKit.Calculations.SystemPower
-			snapshot.Calculations.HealthByMaxCapacity = info.IOKit.Calculations.HealthByMaxCapacity
 			resp["power"] = snapshot
 		}
 	}
 
-	if wantCal && getCapabilities().Calibration {
-		resp["calibration"] = getCalibrationStatus()
+	if wantCal && d.getCapabilities().Calibration {
+		resp["calibration"] = d.getCalibrationStatus()
 	}
 
 	// Add deprecation header if caller still hitting legacy endpoints (not detectable here), but we can add a generic hint.
@@ -833,7 +799,7 @@ func getUnifiedTelemetry(c *gin.Context) {
 }
 
 // SSE endpoint: streams daemon events (first: calibration phase changes)
-func getEventStream(c *gin.Context) {
+func (d *Daemon) getEventStream(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -844,8 +810,8 @@ func getEventStream(c *gin.Context) {
 		return
 	}
 
-	ch := sseHub.Subscribe()
-	defer sseHub.Unsubscribe(ch)
+	ch := d.hub.Subscribe()
+	defer d.hub.Unsubscribe(ch)
 
 	// Notify client that stream is open and suggest retry interval
 	if _, err := c.Writer.WriteString("retry: 10000\n"); err != nil {
@@ -889,21 +855,21 @@ func getEventStream(c *gin.Context) {
 
 // ===== One-Time Charge Handlers =====
 
-func postChargeOnceToLimit(c *gin.Context) { startChargeOnceRequest(c, false) }
+func (d *Daemon) postChargeOnceToLimit(c *gin.Context) { d.startChargeOnceRequest(c, false) }
 
-func postChargeOnceToFull(c *gin.Context) { startChargeOnceRequest(c, true) }
+func (d *Daemon) postChargeOnceToFull(c *gin.Context) { d.startChargeOnceRequest(c, true) }
 
-func startChargeOnceRequest(c *gin.Context, full bool) {
-	if !requireCapability(c, compatibility.FeatureChargingControl) {
+func (d *Daemon) startChargeOnceRequest(c *gin.Context, full bool) {
+	if !d.requireCapability(c, compatibility.FeatureChargingControl) {
 		return
 	}
 
-	chargeControlTransitionMu.Lock()
-	defer chargeControlTransitionMu.Unlock()
+	d.transitionMu.Lock()
+	defer d.transitionMu.Unlock()
 
 	// Conflicts come first: a pending temporary disable also reads as a
 	// disabled charge limit, and naming the conflict tells the user what to do.
-	if err := chargeOnceConflict(conf); err != nil {
+	if err := d.chargeOnceConflict(); err != nil {
 		// A conflict is the caller's to resolve. A failed check is ours.
 		var checkErr *chargeOnceCheckError
 		if errors.As(err, &checkErr) {
@@ -917,20 +883,21 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 		return
 	}
 
+	conf := d.conf
 	target, err := resolveChargeOnceTarget(conf, full)
 	if err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-	mode := getCapabilities().ChargeControlMode
+	mode := d.getCapabilities().ChargeControlMode
 	if !full && mode == compatibility.ChargeControlNative {
 		c.IndentedJSON(http.StatusConflict, ErrNativeChargeNow.Error())
 		_ = c.AbortWithError(http.StatusConflict, ErrNativeChargeNow)
 		return
 	}
 
-	charge, err := smcGetBatteryCharge()
+	charge, err := d.smc.GetBatteryCharge()
 	if err != nil {
 		logrus.Errorf("GetBatteryCharge failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -940,7 +907,7 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 
 	// Admission asks the same question completion does, so a charge the next
 	// maintain loop would end right away is refused instead of started.
-	if chargeOnceReachedTarget(target, charge) {
+	if d.chargeOnceReachedTarget(target, charge) {
 		err := fmt.Errorf("battery is already at %d%%, so a one-time charge to %d%% would end immediately", charge, target)
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
@@ -951,11 +918,11 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 	// or reboot. Remember the previous value in case admission fails.
 	var nativePreviousLimit int
 	var nativePreviouslyEnabled bool
-	if mode == compatibility.ChargeControlAdapter && nativeLimit.Supported() {
+	if mode == compatibility.ChargeControlAdapter && d.native.Supported() {
 		var err error
-		nativePreviousLimit, nativePreviouslyEnabled, err = nativeLimit.Limit()
+		nativePreviousLimit, nativePreviouslyEnabled, err = d.native.Limit()
 		if err == nil {
-			_, err = ensureNativeChargeLimitDisabled()
+			_, err = d.ensureNativeChargeLimitDisabled()
 		}
 		if err != nil {
 			c.IndentedJSON(http.StatusInternalServerError, err.Error())
@@ -965,13 +932,13 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 	}
 	restoreNativeLimit := func() error {
 		if nativePreviouslyEnabled {
-			return nativeLimit.SetLimit(nativePreviousLimit)
+			return d.native.SetLimit(nativePreviousLimit)
 		}
 		return nil
 	}
 
 	message := chargeOnceStartedMessage(target, charge, conf.UpperLimit())
-	if err := startChargeOnce(target, charge); err != nil {
+	if err := d.startChargeOnce(target); err != nil {
 		if restoreErr := restoreNativeLimit(); restoreErr != nil {
 			err = fmt.Errorf("%w; failed to restore native limit: %v", err, restoreErr)
 		}
@@ -981,7 +948,7 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 	}
 
 	// A successful API response requires the first enforcement pass to work.
-	if !maintainLoopForced() {
+	if !d.maintainLoopForced() {
 		conf.ClearChargeOnceTarget()
 		if err := conf.Save(); err != nil {
 			conf.SetChargeOnceTarget(target)
@@ -998,19 +965,19 @@ func startChargeOnceRequest(c *gin.Context, full bool) {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	reportChargeOnceStarted(target, charge)
+	d.reportChargeOnceStarted(target, charge)
 	c.IndentedJSON(http.StatusCreated, message)
 }
 
-func postCancelChargeOnce(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureChargingControl) {
+func (d *Daemon) postCancelChargeOnce(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureChargingControl) {
 		return
 	}
 
-	chargeControlTransitionMu.Lock()
-	defer chargeControlTransitionMu.Unlock()
+	d.transitionMu.Lock()
+	defer d.transitionMu.Unlock()
 
-	target, err := cancelChargeOnce()
+	target, err := d.cancelChargeOnce()
 	if err != nil {
 		// Only the missing one-time charge is the caller's fault; a failed save
 		// is ours.
@@ -1025,21 +992,21 @@ func postCancelChargeOnce(c *gin.Context) {
 		return
 	}
 
-	maintainLoopForced()
+	d.maintainLoopForced()
 
-	c.IndentedJSON(http.StatusOK, fmt.Sprintf("cancelled the one-time charge to %d%%, the %d%% charge limit applies again", target, conf.UpperLimit()))
+	c.IndentedJSON(http.StatusOK, fmt.Sprintf("cancelled the one-time charge to %d%%, the %d%% charge limit applies again", target, d.conf.UpperLimit()))
 }
 
 // ===== Calibration Handlers =====
 
-func postStartCalibration(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureCalibration) {
+func (d *Daemon) postStartCalibration(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureCalibration) {
 		return
 	}
 	// Read threshold & hold from current config getters
-	threshold := conf.CalibrationDischargeThreshold()
-	hold := conf.CalibrationHoldDurationMinutes()
-	if err := startCalibration(threshold, hold); err != nil {
+	threshold := d.conf.CalibrationDischargeThreshold()
+	hold := d.conf.CalibrationHoldDurationMinutes()
+	if err := d.startCalibration(threshold, hold); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -1047,11 +1014,11 @@ func postStartCalibration(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, gin.H{"ok": true})
 }
 
-func postPauseCalibration(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureCalibration) {
+func (d *Daemon) postPauseCalibration(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureCalibration) {
 		return
 	}
-	if err := pauseCalibration(); err != nil {
+	if err := d.pauseCalibration(); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -1059,11 +1026,11 @@ func postPauseCalibration(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func postResumeCalibration(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureCalibration) {
+func (d *Daemon) postResumeCalibration(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureCalibration) {
 		return
 	}
-	if err := resumeCalibration(); err != nil {
+	if err := d.resumeCalibration(); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -1071,11 +1038,11 @@ func postResumeCalibration(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func postCancelCalibration(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureCalibration) {
+func (d *Daemon) postCancelCalibration(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureCalibration) {
 		return
 	}
-	if err := cancelCalibration(); err != nil {
+	if err := d.cancelCalibration(); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -1083,8 +1050,8 @@ func postCancelCalibration(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func setSchedule(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureCalibration) {
+func (d *Daemon) setSchedule(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureCalibration) {
 		return
 	}
 	var cronExpr string
@@ -1094,7 +1061,7 @@ func setSchedule(c *gin.Context) {
 		return
 	}
 
-	nextRuns, err := schedule(cronExpr)
+	nextRuns, err := d.schedule(cronExpr)
 	if err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
@@ -1109,11 +1076,11 @@ func setSchedule(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, resp)
 }
 
-func skipSchedule(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureCalibration) {
+func (d *Daemon) skipSchedule(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureCalibration) {
 		return
 	}
-	if err := skipNextSchedule(); err != nil {
+	if err := d.skipNextSchedule(); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -1122,8 +1089,8 @@ func skipSchedule(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func postponeSchedule(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureCalibration) {
+func (d *Daemon) postponeSchedule(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureCalibration) {
 		return
 	}
 	var raw string
@@ -1138,14 +1105,14 @@ func postponeSchedule(c *gin.Context) {
 		raw = "1h"
 	}
 
-	d, err := time.ParseDuration(raw)
+	dur, err := time.ParseDuration(raw)
 	if err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	if err := postpone(d); err != nil {
+	if err := d.postpone(dur); err != nil {
 		c.IndentedJSON(http.StatusBadRequest, err.Error())
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -1154,8 +1121,8 @@ func postponeSchedule(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func setCalibrationDischargeThreshold(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureCalibration) {
+func (d *Daemon) setCalibrationDischargeThreshold(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureCalibration) {
 		return
 	}
 	var threshold int
@@ -1172,8 +1139,8 @@ func setCalibrationDischargeThreshold(c *gin.Context) {
 		return
 	}
 
-	conf.SetCalibrationDischargeThreshold(threshold)
-	if err := conf.Save(); err != nil {
+	d.conf.SetCalibrationDischargeThreshold(threshold)
+	if err := d.conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -1183,7 +1150,7 @@ func setCalibrationDischargeThreshold(c *gin.Context) {
 	logrus.Infof("set calibration discharge threshold to %d", threshold)
 
 	// Check if calibration is running
-	st := getCalibrationStatus()
+	st := d.getCalibrationStatus()
 	msg := fmt.Sprintf("Calibration discharge threshold set to %d%%", threshold)
 	if st.Phase != calibration.PhaseIdle && st.Phase != calibration.PhaseRestore && st.Phase != calibration.PhaseError {
 		msg += ". Note: A calibration is currently in progress. The new threshold will take effect on the next calibration."
@@ -1192,8 +1159,8 @@ func setCalibrationDischargeThreshold(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, msg)
 }
 
-func setCalibrationHoldDurationMinutes(c *gin.Context) {
-	if !requireCapability(c, compatibility.FeatureCalibration) {
+func (d *Daemon) setCalibrationHoldDurationMinutes(c *gin.Context) {
+	if !d.requireCapability(c, compatibility.FeatureCalibration) {
 		return
 	}
 	var minutes int
@@ -1210,8 +1177,8 @@ func setCalibrationHoldDurationMinutes(c *gin.Context) {
 		return
 	}
 
-	conf.SetCalibrationHoldDurationMinutes(minutes)
-	if err := conf.Save(); err != nil {
+	d.conf.SetCalibrationHoldDurationMinutes(minutes)
+	if err := d.conf.Save(); err != nil {
 		logrus.Errorf("saveConfig failed: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, err.Error())
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -1221,7 +1188,7 @@ func setCalibrationHoldDurationMinutes(c *gin.Context) {
 	logrus.Infof("set calibration hold duration to %d minutes", minutes)
 
 	// Check if calibration is running
-	st := getCalibrationStatus()
+	st := d.getCalibrationStatus()
 	msg := fmt.Sprintf("Calibration hold duration set to %d minutes", minutes)
 	if st.Phase != calibration.PhaseIdle && st.Phase != calibration.PhaseRestore && st.Phase != calibration.PhaseError {
 		msg += ". Note: A calibration is currently in progress. The new hold duration will take effect on the next calibration."

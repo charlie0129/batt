@@ -6,11 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charlie0129/gosmc"
-
 	"github.com/charlie0129/batt/pkg/calibration"
-	"github.com/charlie0129/batt/pkg/compatibility"
-	"github.com/charlie0129/batt/pkg/smc"
 )
 
 func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
@@ -84,10 +80,10 @@ func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		loopInterval = time.Second * 10
 		t.Run(tt.name, func(t *testing.T) {
 			r := &TimeSeriesRecorder{
 				MaxRecordCount:        tt.fields.MaxRecordCount,
+				Interval:              10 * time.Second,
 				LastMaintainLoopTimes: tt.fields.LastMaintainLoopTimes,
 				mu:                    tt.fields.mu,
 			}
@@ -99,52 +95,33 @@ func TestMaintainLoopRecorder_GetRecordsIn(t *testing.T) {
 }
 
 func TestMaintainLoopHonorsDisabledPreSleepChargingProtection(t *testing.T) {
-	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
-		v, err := gosmc.NewValue(key, dataType, data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
-
-	mock := smc.NewMockValues(
-		value(smc.ChargingKey1, gosmc.TypeUInt8, 0),
-		value(smc.ChargingKey2, gosmc.TypeUInt8, 0),
-		value(smc.BatteryChargeKey, gosmc.TypeUInt8, 71),
-		value(smc.ACPowerKey, gosmc.TypeUInt8, 1),
-	)
-	if err := mock.Open(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = mock.Close() })
-
-	previousSMC, previousConf, previousCapabilities := smcConn, conf, capabilities
-	previousRecorder := loopRecorder
-	t.Cleanup(func() {
-		smcConn, conf, capabilities = previousSMC, previousConf, previousCapabilities
-		loopRecorder = previousRecorder
-	})
-	smcConn = mock
-	conf = &mockConf{
-		upper: 80,
-		lower: 75,
-	}
-	capabilities = compatibility.Capabilities{
-		ChargingControl:   true,
-		ChargeControlMode: compatibility.ChargeControlLegacy,
-	}
 	// No records represents the first maintain loop after a sleep interruption.
-	loopRecorder = NewTimeSeriesRecorder(60)
+	f := newFixture(t, firmwareLegacy, withCharge(71), withCharging(true))
+	f.mem.SetUpperLimit(80)
+	f.mem.SetLowerLimit(75)
+	f.mem.SetDisableChargingPreSleep(false)
 
-	if !maintainLoop() {
+	if !f.d.maintainLoop() {
 		t.Fatal("legacy maintain loop failed")
 	}
-	charging, err := mock.IsChargingEnabled()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !charging {
+	if !f.smc.chargingEnabled(t) {
 		t.Fatal("charging was disabled after missed loops despite disable-charging-pre-sleep being disabled")
+	}
+}
+
+func TestMaintainLoopDisablesChargingAfterMissedLoops(t *testing.T) {
+	// With disable-charging-pre-sleep on, missed loops are treated as a sleep
+	// macOS did not announce: charging is cut rather than left on.
+	f := newFixture(t, firmwareLegacy, withCharge(71), withCharging(true))
+	f.mem.SetUpperLimit(80)
+	f.mem.SetLowerLimit(75)
+	f.mem.SetDisableChargingPreSleep(true)
+
+	if !f.d.maintainLoop() {
+		t.Fatal("legacy maintain loop failed")
+	}
+	if f.smc.chargingEnabled(t) {
+		t.Fatal("charging must be disabled while maintain loops are missed")
 	}
 }
 
@@ -227,25 +204,19 @@ func TestRestoreDisabledLimit(t *testing.T) {
 			if phase == "" {
 				phase = calibration.PhaseIdle
 			}
-			calibrationState = &calibration.State{Phase: phase}
-			t.Cleanup(func() {
-				calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-			})
+			c := newMemConfig()
+			c.upper, c.lower = 100, 98
+			c.disableUntil, c.preDisableLimit = tt.disableUntil, tt.preDisableLimit
+			f := newFixture(t, firmwareLegacy, withConfig(c))
+			f.setCalibration(&calibration.State{Phase: phase})
 
-			c := &mockConf{
-				upper:           100,
-				lower:           98,
-				disableUntil:    tt.disableUntil,
-				preDisableLimit: tt.preDisableLimit,
-			}
-
-			if got := restoreDisabledLimit(c, now); got != tt.want {
+			if got := f.d.restoreDisabledLimit(now); got != tt.want {
 				t.Errorf("restoreDisabledLimit() = %v, want %v", got, tt.want)
 			}
-			if c.upper != tt.wantUpper {
-				t.Errorf("upper limit = %d, want %d", c.upper, tt.wantUpper)
+			if c.UpperLimit() != tt.wantUpper {
+				t.Errorf("upper limit = %d, want %d", c.UpperLimit(), tt.wantUpper)
 			}
-			if gotTimer := !c.disableUntil.IsZero(); gotTimer != tt.wantTimer {
+			if gotTimer := !c.DisableUntil().IsZero(); gotTimer != tt.wantTimer {
 				t.Errorf("timer set = %v, want %v", gotTimer, tt.wantTimer)
 			}
 		})
@@ -253,31 +224,26 @@ func TestRestoreDisabledLimit(t *testing.T) {
 }
 
 func TestRestoreDisabledLimitWaitsForPersistedCalibration(t *testing.T) {
-	previousState := calibrationState
-	t.Cleanup(func() { calibrationState = previousState })
-
 	now := time.Now()
-	configured := &mockConf{
-		upper:           100,
-		lower:           78,
-		disableUntil:    now.Add(-time.Hour),
-		preDisableLimit: 80,
-	}
-	calibrationState = &calibration.State{Phase: calibration.PhaseCharge}
+	c := newMemConfig()
+	c.upper, c.lower = 100, 78
+	c.disableUntil, c.preDisableLimit = now.Add(-time.Hour), 80
+	f := newFixture(t, firmwareLegacy, withConfig(c))
+	f.setCalibration(&calibration.State{Phase: calibration.PhaseCharge})
 
-	if restoreDisabledLimit(configured, now) {
+	if f.d.restoreDisabledLimit(now) {
 		t.Fatal("temporary disable restored while calibration owned the charge limit")
 	}
-	if configured.disableUntil.IsZero() {
+	if c.DisableUntil().IsZero() {
 		t.Fatal("temporary disable timer was cleared while calibration was active")
 	}
 
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	if !restoreDisabledLimit(configured, now) {
+	f.setCalibration(&calibration.State{Phase: calibration.PhaseIdle})
+	if !f.d.restoreDisabledLimit(now) {
 		t.Fatal("temporary disable was not restored after calibration finished")
 	}
-	if configured.upper != 80 || !configured.disableUntil.IsZero() {
-		t.Fatalf("restored config = %+v, want upper 80 with no timer", configured)
+	if c.UpperLimit() != 80 || !c.DisableUntil().IsZero() {
+		t.Fatalf("restored config = %+v, want upper 80 with no timer", c.snapshot())
 	}
 }
 
@@ -326,39 +292,23 @@ func TestMaintainAdapterDisable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			previousState := calibrationState
-			previousIsEnabled := smcIsAdapterEnabled
-			previousEnable := smcEnableAdapter
-			previousDisable := smcDisableAdapter
-			t.Cleanup(func() {
-				calibrationState = previousState
-				smcIsAdapterEnabled = previousIsEnabled
-				smcEnableAdapter = previousEnable
-				smcDisableAdapter = previousDisable
-			})
-
 			phase := tt.calibrationPhase
 			if phase == "" {
 				phase = calibration.PhaseIdle
 			}
-			calibrationState = &calibration.State{Phase: phase}
-			enabled := tt.adapterEnabled
-			smcIsAdapterEnabled = func() (bool, error) { return enabled, nil }
-			smcEnableAdapter = func() error { enabled = true; return nil }
-			smcDisableAdapter = func() error { enabled = false; return nil }
-			configured := &mockConf{
-				upper:               80,
-				lower:               78,
-				adapterDisableUntil: tt.until,
-			}
+			c := newMemConfig()
+			c.upper, c.lower = 80, 78
+			c.adapterDisableUntil = tt.until
+			f := newFixture(t, firmwareLegacy, withConfig(c), withAdapter(tt.adapterEnabled))
+			f.setCalibration(&calibration.State{Phase: phase})
 
-			if got := maintainAdapterDisable(configured, now); got != tt.wantRestored {
+			if got := f.d.maintainAdapterDisable(now); got != tt.wantRestored {
 				t.Errorf("maintainAdapterDisable() = %v, want %v", got, tt.wantRestored)
 			}
-			if enabled != tt.wantEnabled {
+			if enabled := f.smc.adapterEnabled(t); enabled != tt.wantEnabled {
 				t.Errorf("adapter enabled = %v, want %v", enabled, tt.wantEnabled)
 			}
-			if gotTimer := !configured.adapterDisableUntil.IsZero(); gotTimer != tt.wantTimer {
+			if gotTimer := !c.AdapterDisableUntil().IsZero(); gotTimer != tt.wantTimer {
 				t.Errorf("timer set = %v, want %v", gotTimer, tt.wantTimer)
 			}
 		})
@@ -366,200 +316,130 @@ func TestMaintainAdapterDisable(t *testing.T) {
 }
 
 func TestTemporaryDisableDoesNotCancelRestartedCalibration(t *testing.T) {
-	previousConf, previousState := conf, calibrationState
-	t.Cleanup(func() { conf, calibrationState = previousConf, previousState })
+	c := newMemConfig()
+	c.upper, c.lower = 100, 78
+	c.disableUntil, c.preDisableLimit = time.Now().Add(time.Hour), 80
+	f := newFixture(t, firmwareLegacy, withConfig(c))
+	f.setCalibration(&calibration.State{Phase: calibration.PhaseCharge, Paused: true})
 
-	conf = &mockConf{
-		upper:           100,
-		lower:           78,
-		disableUntil:    time.Now().Add(time.Hour),
-		preDisableLimit: 80,
-	}
-	calibrationState = &calibration.State{Phase: calibration.PhaseCharge, Paused: true}
-
-	cancelCalibrationForPermanentDisable()
-	if calibrationState.Phase != calibration.PhaseCharge || !calibrationState.Paused {
-		t.Fatalf("persisted calibration was unexpectedly cancelled: %+v", calibrationState)
+	f.d.cancelCalibrationForPermanentDisable()
+	if st := f.calibration(); st.Phase != calibration.PhaseCharge || !st.Paused {
+		t.Fatalf("persisted calibration was unexpectedly cancelled: %+v", st)
 	}
 }
 
 func TestMaintainFirmwareChargeLimitWithoutLegacyPolling(t *testing.T) {
-	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
-		v, err := gosmc.NewValue(key, dataType, data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
+	f := newFixture(t, firmwareManaged)
+	f.mem.SetUpperLimit(80)
+	f.mem.SetLowerLimit(78)
 
-	mock := smc.NewMockValues(
-		value(smc.FirmwareChargeLimitActivationKey, gosmc.TypeUInt8, 0),
-		value(smc.FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
-		value(smc.FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
-	)
-	if err := mock.Open(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = mock.Close() })
-
-	previousSMC, previousConf, previousCapabilities := smcConn, conf, capabilities
-	t.Cleanup(func() {
-		smcConn, conf, capabilities = previousSMC, previousConf, previousCapabilities
-	})
-	smcConn = mock
-	conf = &mockConf{upper: 80, lower: 78}
-	capabilities = compatibility.Capabilities{
-		ChargingControl:   true,
-		ChargeControlMode: compatibility.ChargeControlFirmware,
-	}
-
-	if !maintainLoopForced() {
+	if !f.d.maintainLoopForced() {
 		t.Fatal("firmware maintain loop failed")
 	}
-	state, err := mock.GetFirmwareChargeLimit()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !state.Active || state.Lower != 78 || state.Upper != 80 {
+	if state := f.smc.firmwareLimit(t); !state.Active || state.Lower != 78 || state.Upper != 80 {
 		t.Fatalf("unexpected firmware state: %+v", state)
 	}
 
-	conf.SetUpperLimit(100)
-	if !maintainLoopForced() {
+	f.mem.SetUpperLimit(100)
+	if !f.d.maintainLoopForced() {
 		t.Fatal("firmware disable loop failed")
 	}
-	state, err = mock.GetFirmwareChargeLimit()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.Active {
+	if state := f.smc.firmwareLimit(t); state.Active {
 		t.Fatal("firmware charge limit should be inactive at 100%")
 	}
 }
 
-type loopMockConf struct {
-	mockConf
-	prevent bool
-}
-
-func (c *loopMockConf) PreventSleepOnAdapterDisable() bool { return c.prevent }
-
 func TestMaintainAdapterDisable_RestartIndefiniteReconcilesHold(t *testing.T) {
-	previousConf, previousCap := conf, capabilities
-	previousIsAdapter := smcIsAdapterEnabled
-	t.Cleanup(func() {
-		conf, capabilities = previousConf, previousCap
-		smcIsAdapterEnabled = previousIsAdapter
-		sleepHolds = map[string]bool{}
-	})
+	f := newFixture(t, firmwareLegacy, withAdapter(false))
+	f.mem.SetPreventSleepOnAdapterDisable(true)
 
-	sleep := stubSleepDisabled(t, false)
-	capabilities = compatibility.Capabilities{AdapterControl: true}
-	smcIsAdapterEnabled = func() (bool, error) { return false, nil } // adapter disabled
-	configured := &loopMockConf{
-		prevent: true,
-	}
-	conf = configured
+	f.d.maintainAdapterDisable(time.Now())
 
-	maintainAdapterDisable(configured, time.Now())
-
-	if !sleepHolds[sleepHoldAdapter] {
+	if !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("expected sleep hold to be acquired for indefinite disable on restart")
 	}
-	if !sleep.value {
+	if !f.sleep.disabled() {
 		t.Fatal("expected SleepDisabled to be true")
 	}
 }
 
 func TestMaintainAdapterDisable_EnableFailureKeepsTimer(t *testing.T) {
-	previousEnable := smcEnableAdapter
-	previousIsAdapter := smcIsAdapterEnabled
-	t.Cleanup(func() {
-		smcEnableAdapter = previousEnable
-		smcIsAdapterEnabled = previousIsAdapter
-	})
-
-	smcIsAdapterEnabled = func() (bool, error) { return false, nil }
-	smcEnableAdapter = func() error { return errors.New("SMC enable failed") }
-
 	now := time.Now()
-	configured := &mockConf{
-		adapterDisableUntil: now.Add(-time.Second),
-	}
+	f := newFixture(t, firmwareLegacy, withAdapter(false))
+	f.mem.SetAdapterDisableTimer(now.Add(-time.Second))
+	f.smc.fail("EnableAdapter", errors.New("SMC enable failed"))
 
-	if restored := maintainAdapterDisable(configured, now); restored {
+	if restored := f.d.maintainAdapterDisable(now); restored {
 		t.Fatal("maintainAdapterDisable should report false when enable fails")
 	}
-	if configured.adapterDisableUntil.IsZero() {
+	if f.mem.AdapterDisableUntil().IsZero() {
 		t.Fatal("timer must not be cleared when adapter enable fails")
 	}
 }
 
 func TestMaintainAdapterDisable_ActiveTimerRetriesReleaseAfterOptionDisabled(t *testing.T) {
-	previousIsAdapter, previousDisable := smcIsAdapterEnabled, smcDisableAdapter
-	previousConf, previousCapabilities := conf, capabilities
-	t.Cleanup(func() {
-		smcIsAdapterEnabled, smcDisableAdapter = previousIsAdapter, previousDisable
-		conf, capabilities = previousConf, previousCapabilities
-		sleepHolds = map[string]bool{}
-	})
-
-	sleep := stubSleepDisabled(t, false)
-	capabilities.AdapterControl = true
-	sleepHolds[sleepHoldAdapter] = true
-	smcIsAdapterEnabled = func() (bool, error) { return false, nil }
-	smcDisableAdapter = func() error { return nil }
-	configured := &loopMockConf{
-		mockConf: mockConf{adapterDisableUntil: time.Now().Add(time.Hour)},
-		prevent:  false,
+	f := newFixture(t, firmwareLegacy, withAdapter(false))
+	f.mem.SetAdapterDisableTimer(time.Now().Add(time.Hour))
+	if err := f.d.holds.hold(sleepHoldAdapter); err != nil {
+		t.Fatal(err)
 	}
-	conf = configured
+	f.mem.SetPreventSleepOnAdapterDisable(false)
 
-	maintainAdapterDisable(configured, time.Now())
+	f.d.maintainAdapterDisable(time.Now())
 
-	if sleepHolds[sleepHoldAdapter] || sleep.value {
+	if f.holdsSleep(sleepHoldAdapter) || f.sleep.disabled() {
 		t.Fatal("disabled option must release a stale hold before the timer expires")
 	}
 }
 
 func TestMaintainAdapterDisable_AlreadyEnabledRetriesReleaseHold(t *testing.T) {
-	previousIsAdapter := smcIsAdapterEnabled
-	t.Cleanup(func() {
-		smcIsAdapterEnabled = previousIsAdapter
-		sleepHolds = map[string]bool{}
-	})
-
-	sleep := stubSleepDisabled(t, false)
-	sleepHolds[sleepHoldAdapter] = true
-	smcIsAdapterEnabled = func() (bool, error) { return true, nil } // already enabled
+	now := time.Now()
+	f := newFixture(t, firmwareLegacy, withAdapter(true))
+	f.mem.SetAdapterDisableTimer(now.Add(-time.Second))
+	if err := f.d.holds.hold(sleepHoldAdapter); err != nil {
+		t.Fatal(err)
+	}
 
 	// Simulate release failure
-	sleep.setErr = errors.New("IOPMSetSystemPowerSetting failed")
+	f.sleep.setErr = errors.New("IOPMSetSystemPowerSetting failed")
 
-	now := time.Now()
-	configured := &mockConf{
-		adapterDisableUntil: now.Add(-time.Second),
-	}
-
-	if restored := maintainAdapterDisable(configured, now); restored {
+	if restored := f.d.maintainAdapterDisable(now); restored {
 		t.Fatal("maintainAdapterDisable should report false when release fails")
 	}
-	if configured.adapterDisableUntil.IsZero() {
+	if f.mem.AdapterDisableUntil().IsZero() {
 		t.Fatal("timer must not be cleared when sleep hold release fails")
 	}
-	if !sleepHolds[sleepHoldAdapter] {
+	if !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("hold must be preserved on release failure")
 	}
 
 	// Retry succeeds
-	sleep.setErr = nil
-	if restored := maintainAdapterDisable(configured, now); !restored {
+	f.sleep.setErr = nil
+	if restored := f.d.maintainAdapterDisable(now); !restored {
 		t.Fatal("maintainAdapterDisable should report true when release succeeds")
 	}
-	if !configured.adapterDisableUntil.IsZero() {
+	if !f.mem.AdapterDisableUntil().IsZero() {
 		t.Fatal("timer must be cleared once release succeeds")
 	}
-	if sleepHolds[sleepHoldAdapter] {
+	if f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("hold must be released")
+	}
+}
+
+func TestLoopOnceFinishesTimersAndMaintains(t *testing.T) {
+	// One iteration of the main loop restores an elapsed temporary disable and
+	// then enforces the restored limit.
+	now := time.Now()
+	f := newFixture(t, firmwareLegacy, withCharge(90), withCharging(true))
+	f.mem.SetUpperLimit(100)
+	f.mem.SetDisableTimer(now.Add(-time.Minute), 80)
+
+	f.d.loopOnce(now)
+
+	if f.mem.UpperLimit() != 80 || !f.mem.DisableUntil().IsZero() {
+		t.Fatalf("elapsed temporary disable was not restored: %+v", f.mem.snapshot())
+	}
+	if f.smc.chargingEnabled(t) {
+		t.Fatal("the restored 80% limit must stop charging at 90%")
 	}
 }

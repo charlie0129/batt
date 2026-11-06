@@ -1,8 +1,6 @@
 package daemon
 
 import (
-	"sync"
-
 	"github.com/charlie0129/batt/pkg/compatibility"
 )
 
@@ -19,11 +17,11 @@ type chargeSwitch interface {
 }
 
 // chargeKeySwitch toggles charging directly with the legacy CH0B/CH0C/CHTE keys.
-type chargeKeySwitch struct{}
+type chargeKeySwitch struct{ d *Daemon }
 
-func (chargeKeySwitch) IsEnabled() (bool, error) { return smcConn.IsChargingEnabled() }
-func (chargeKeySwitch) Enable() error            { return smcConn.EnableCharging() }
-func (chargeKeySwitch) Disable() error           { return smcConn.DisableCharging() }
+func (s chargeKeySwitch) IsEnabled() (bool, error) { return s.d.smc.IsChargingEnabled() }
+func (s chargeKeySwitch) Enable() error            { return s.d.smc.EnableCharging() }
+func (s chargeKeySwitch) Disable() error           { return s.d.smc.DisableCharging() }
 
 // adapterSwitch holds the charge limit by cutting and restoring wall power.
 // Disable() runs the Mac from the battery so it discharges toward the lower
@@ -31,71 +29,62 @@ func (chargeKeySwitch) Disable() error           { return smcConn.DisableChargin
 // This is the only charge-control mechanism left on macOS 27 firmware whose
 // SMC charge keys require an Apple-private entitlement, and it accepts any
 // limit, including below 80%.
-type adapterSwitch struct{}
+type adapterSwitch struct{ d *Daemon }
 
-func (adapterSwitch) IsEnabled() (bool, error) { return smcConn.IsAdapterEnabled() }
-func (adapterSwitch) Enable() error            { return smcEnableAdapter() }
-func (adapterSwitch) Disable() error           { return smcDisableAdapter() }
+func (s adapterSwitch) IsEnabled() (bool, error) { return s.d.smc.IsAdapterEnabled() }
+func (s adapterSwitch) Enable() error            { return s.d.enableAdapter() }
+func (s adapterSwitch) Disable() error           { return s.d.disableAdapter() }
 
-// charger is the active-mode on/off primitive, selected at daemon startup from
-// the detected charge-control mode. It defaults to the legacy charge keys so
-// existing behavior and tests are unchanged until adapter mode is selected.
-var charger chargeSwitch = chargeKeySwitch{}
-
-// capabilitiesMu guards capabilities and charger, which are set as a pair at
-// startup and whenever adapter mode is toggled at runtime. It is a leaf lock.
-var capabilitiesMu sync.RWMutex
-
-func getCapabilities() compatibility.Capabilities {
-	capabilitiesMu.RLock()
-	defer capabilitiesMu.RUnlock()
-	return capabilities
+func (d *Daemon) getCapabilities() compatibility.Capabilities {
+	d.chargeControlMu.RLock()
+	defer d.chargeControlMu.RUnlock()
+	return d.capabilities
 }
 
-func getCharger() chargeSwitch {
-	capabilitiesMu.RLock()
-	defer capabilitiesMu.RUnlock()
-	return charger
+func (d *Daemon) getCharger() chargeSwitch {
+	d.chargeControlMu.RLock()
+	defer d.chargeControlMu.RUnlock()
+	return d.charger
 }
 
 // loadChargeControl returns the capabilities and charger as one consistent pair.
-func loadChargeControl() (compatibility.Capabilities, chargeSwitch) {
-	capabilitiesMu.RLock()
-	defer capabilitiesMu.RUnlock()
-	return capabilities, charger
+func (d *Daemon) loadChargeControl() (compatibility.Capabilities, chargeSwitch) {
+	d.chargeControlMu.RLock()
+	defer d.chargeControlMu.RUnlock()
+	return d.capabilities, d.charger
 }
 
 // setChargeControl swaps capabilities and its matching charge switch together.
-// It also holds maintainLoopInnerLock so a running maintain loop never sees a
-// half-updated pair.
-func setChargeControl(caps compatibility.Capabilities) {
-	maintainLoopInnerLock.Lock()
-	defer maintainLoopInnerLock.Unlock()
-	storeChargeControl(caps, selectCharger(caps.ChargeControlMode))
+// It also holds loopMu so a running maintain loop never sees a half-updated
+// pair.
+func (d *Daemon) setChargeControl(caps compatibility.Capabilities) {
+	d.loopMu.Lock()
+	defer d.loopMu.Unlock()
+	d.storeChargeControl(caps, d.selectCharger(caps.ChargeControlMode))
 }
 
 // storeChargeControl swaps capabilities and charger together. The caller must
-// hold maintainLoopInnerLock.
-func storeChargeControl(caps compatibility.Capabilities, ch chargeSwitch) {
-	capabilitiesMu.Lock()
-	defer capabilitiesMu.Unlock()
-	capabilities = caps
-	charger = ch
+// hold loopMu.
+func (d *Daemon) storeChargeControl(caps compatibility.Capabilities, ch chargeSwitch) {
+	d.chargeControlMu.Lock()
+	defer d.chargeControlMu.Unlock()
+	d.capabilities = caps
+	d.charger = ch
 }
 
 // selectCharger picks the charge switch for the detected mode.
-func selectCharger(mode compatibility.ChargeControlMode) chargeSwitch {
+func (d *Daemon) selectCharger(mode compatibility.ChargeControlMode) chargeSwitch {
 	if mode == compatibility.ChargeControlAdapter {
-		return adapterSwitch{}
+		return adapterSwitch{d}
 	}
-	return chargeKeySwitch{}
+	return chargeKeySwitch{d}
 }
 
 // usesActiveChargeControl reports whether batt itself runs the hysteresis loop
 // (reading the charge and toggling the switch), as opposed to delegating the
 // limit to Apple's firmware or the built-in macOS limit.
-func usesActiveChargeControl() bool {
-	return modeUsesActiveChargeControl(getCapabilities().ChargeControlMode)
+func (d *Daemon) usesActiveChargeControl() bool {
+	return modeUsesActiveChargeControl(d.getCapabilities().ChargeControlMode)
 }
 
 func modeUsesActiveChargeControl(mode compatibility.ChargeControlMode) bool {

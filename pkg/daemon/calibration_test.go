@@ -6,566 +6,262 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charlie0129/gosmc"
-	"github.com/sirupsen/logrus"
-
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
-	"github.com/charlie0129/batt/pkg/config"
-	"github.com/charlie0129/batt/pkg/smc"
 )
 
-// NOTE: These tests are simplified and mock minimal parts; smcConn and conf must be
-// initialized externally for full integration. Here we focus on state transitions logic.
-
-// mockConf implements the subset of Config used in calibration for test.
-type mockConf struct {
-	upper                        int
-	lower                        int
-	disableUntil                 time.Time
-	preDisableLimit              int
-	adapterDisableUntil          time.Time
-	preventSleepOnAdapterDisable bool
-	chargeOnceTarget             int
-	// saveErr makes Save fail, so tests can check what a failed persist leaves
-	// behind.
-	saveErr error
-}
-
-func (m *mockConf) UpperLimit() int                    { return m.upper }
-func (m *mockConf) LowerLimit() int                    { return m.lower }
-func (m *mockConf) PreventIdleSleep() bool             { return false }
-func (m *mockConf) DisableChargingPreSleep() bool      { return false }
-func (m *mockConf) PreventSystemSleep() bool           { return false }
-func (m *mockConf) PreventSleepOnAdapterDisable() bool { return m.preventSleepOnAdapterDisable }
-func (m *mockConf) AllowNonRootAccess() bool           { return false }
-func (m *mockConf) AdapterMode() bool                  { return false }
-func (m *mockConf) ControlMagSafeLED() config.ControlMagSafeMode {
-	return config.ControlMagSafeModeDisabled
-}
-func (m *mockConf) CalibrationDischargeThreshold() int             { return 15 }
-func (m *mockConf) CalibrationHoldDurationMinutes() int            { return 1 }
-func (m *mockConf) SetCalibrationDischargeThreshold(int)           {}
-func (m *mockConf) SetCalibrationHoldDurationMinutes(int)          {}
-func (m *mockConf) SetUpperLimit(i int)                            { m.upper = i }
-func (m *mockConf) SetLowerLimit(i int)                            { m.lower = i }
-func (m *mockConf) SetPreventIdleSleep(bool)                       {}
-func (m *mockConf) SetDisableChargingPreSleep(bool)                {}
-func (m *mockConf) SetPreventSleepOnAdapterDisable(b bool)         { m.preventSleepOnAdapterDisable = b }
-func (m *mockConf) SetPreventSystemSleep(bool)                     {}
-func (m *mockConf) SetAllowNonRootAccess(bool)                     {}
-func (m *mockConf) SetAdapterMode(bool)                            {}
-func (m *mockConf) SetControlMagSafeLED(config.ControlMagSafeMode) {}
-func (m *mockConf) LogrusFields() logrus.Fields                    { return logrus.Fields{} }
-func (m *mockConf) Load() error                                    { return nil }
-func (m *mockConf) Save() error                                    { return m.saveErr }
-func (m *mockConf) Cron() string                                   { return "" }
-func (m *mockConf) SetCron(string)                                 {}
-func (m *mockConf) DisableUntil() time.Time                        { return m.disableUntil }
-func (m *mockConf) PreDisableLimit() int                           { return m.preDisableLimit }
-func (m *mockConf) SetDisableTimer(until time.Time, prevLimit int) {
-	m.disableUntil = until
-	m.preDisableLimit = prevLimit
-}
-func (m *mockConf) ClearDisableTimer() {
-	m.disableUntil = time.Time{}
-	m.preDisableLimit = 0
-}
-func (m *mockConf) AdapterDisableUntil() time.Time { return m.adapterDisableUntil }
-func (m *mockConf) SetAdapterDisableTimer(until time.Time) {
-	m.adapterDisableUntil = until
-}
-func (m *mockConf) ClearAdapterDisableTimer() { m.adapterDisableUntil = time.Time{} }
-func (m *mockConf) ChargeOnceTarget() int     { return m.chargeOnceTarget }
-func (m *mockConf) SetChargeOnceTarget(target int) {
-	m.chargeOnceTarget = target
-}
-func (m *mockConf) ClearChargeOnceTarget() { m.chargeOnceTarget = 0 }
-
-// Fake smcConn implementation.
-type fakeSMC struct {
-	charge   int
-	charging bool
-	adapter  bool
-}
-
-func newFakeSMC(c, ch int, adapter bool) *fakeSMC {
-	return &fakeSMC{charge: c, charging: ch != 0, adapter: adapter}
-}
-
-func (f *fakeSMC) inject(t *testing.T) {
-	prevGetCharge := smcGetBatteryCharge
-	prevIsCharging := smcIsChargingEnabled
-	prevEnableCharging := smcEnableCharging
-	prevDisableCharging := smcDisableCharging
-	prevIsAdapter := smcIsAdapterEnabled
-	prevEnableAdapter := smcEnableAdapter
-	prevDisableAdapter := smcDisableAdapter
-	prevIsPlugged := smcIsPluggedIn
-	t.Cleanup(func() {
-		smcGetBatteryCharge = prevGetCharge
-		smcIsChargingEnabled = prevIsCharging
-		smcEnableCharging = prevEnableCharging
-		smcDisableCharging = prevDisableCharging
-		smcIsAdapterEnabled = prevIsAdapter
-		smcEnableAdapter = prevEnableAdapter
-		smcDisableAdapter = prevDisableAdapter
-		smcIsPluggedIn = prevIsPlugged
-	})
-
-	smcGetBatteryCharge = func() (int, error) { return f.charge, nil }
-	smcIsChargingEnabled = func() (bool, error) { return f.charging, nil }
-	smcEnableCharging = func() error { f.charging = true; return nil }
-	smcDisableCharging = func() error { f.charging = false; return nil }
-	smcIsAdapterEnabled = func() (bool, error) { return f.adapter, nil }
-	smcEnableAdapter = func() error { f.adapter = true; return nil }
-	smcDisableAdapter = func() error { f.adapter = false; return nil }
-	smcIsPluggedIn = func() (bool, error) { return f.adapter, nil }
-}
-
-type calibrationSleepCalls struct {
-	prevent int
-	allow   int
-}
-
-func stubCalibrationSleep(t *testing.T) *calibrationSleepCalls {
-	t.Helper()
-	previousPrevent, previousAllow := preventCalibrationSleep, allowCalibrationSleep
-	t.Cleanup(func() {
-		preventCalibrationSleep, allowCalibrationSleep = previousPrevent, previousAllow
-	})
-	calls := &calibrationSleepCalls{}
-	preventCalibrationSleep = func() error {
-		calls.prevent++
-		return nil
-	}
-	allowCalibrationSleep = func() error {
-		calls.allow++
-		return nil
-	}
-	return calls
+// calibrationConf is an in-memory config with the given band.
+func calibrationConf(upper, lower int) *memConfig {
+	c := newMemConfig()
+	c.upper, c.lower = upper, lower
+	return c
 }
 
 func TestStartCalibrationRejectsTemporaryDisable(t *testing.T) {
-	previousConf, previousState, previousStatePath := conf, calibrationState, calibrationStatePath
-	t.Cleanup(func() {
-		conf, calibrationState, calibrationStatePath = previousConf, previousState, previousStatePath
-	})
+	conf := calibrationConf(100, 78)
+	conf.SetDisableTimer(time.Now().Add(time.Hour), 80)
+	f := newFixture(t, firmwareLegacy, withConfig(conf))
 
-	sleepCalls := stubCalibrationSleep(t)
-	conf = &mockConf{
-		upper:           100,
-		lower:           78,
-		disableUntil:    time.Now().Add(time.Hour),
-		preDisableLimit: 80,
-	}
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	calibrationStatePath = ""
-
-	if err := startCalibration(15, 10); err != ErrTemporaryDisableInProgress {
+	if err := f.d.startCalibration(15, 10); err != ErrTemporaryDisableInProgress {
 		t.Fatalf("startCalibration() error = %v, want %v", err, ErrTemporaryDisableInProgress)
 	}
-	if calibrationState.Phase != calibration.PhaseIdle {
-		t.Fatalf("phase = %s, want idle", calibrationState.Phase)
+	if f.phase() != calibration.PhaseIdle {
+		t.Fatalf("phase = %s, want idle", f.phase())
 	}
-	if sleepCalls.prevent != 0 {
+	if f.asserts.preventCalibration != 0 {
 		t.Fatal("rejected calibration acquired a sleep assertion")
 	}
 }
 
 func TestStartCalibrationRejectsTemporaryAdapterDisable(t *testing.T) {
-	previousConf, previousState, previousStatePath := conf, calibrationState, calibrationStatePath
-	t.Cleanup(func() {
-		conf, calibrationState, calibrationStatePath = previousConf, previousState, previousStatePath
-	})
+	conf := calibrationConf(80, 78)
+	conf.SetAdapterDisableTimer(time.Now().Add(time.Hour))
+	f := newFixture(t, firmwareLegacy, withConfig(conf))
 
-	sleepCalls := stubCalibrationSleep(t)
-	conf = &mockConf{
-		upper:               80,
-		lower:               78,
-		adapterDisableUntil: time.Now().Add(time.Hour),
-	}
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	calibrationStatePath = ""
-
-	if err := startCalibration(15, 10); err != ErrTemporaryAdapterDisableInProgress {
+	if err := f.d.startCalibration(15, 10); err != ErrTemporaryAdapterDisableInProgress {
 		t.Fatalf("startCalibration() error = %v, want %v", err, ErrTemporaryAdapterDisableInProgress)
 	}
-	if sleepCalls.prevent != 0 {
+	if f.asserts.preventCalibration != 0 {
 		t.Fatal("rejected calibration acquired a sleep assertion")
 	}
 }
 
-// TestCalibrationFlow simulates the main phase transitions.
+// TestCalibrationFlow simulates the main phase transitions on a legacy Mac.
 func TestCalibrationFlow(t *testing.T) {
-	sleepCalls := stubCalibrationSleep(t)
-	// Inject mocks
-	fake := newFakeSMC(40, 0, true)
-	fake.inject(t)
-	conf = &mockConf{upper: 80, lower: 78}
-	calibrationStatePath = "" // disable persistence
+	f := newFixture(t, firmwareLegacy, withConfig(calibrationConf(80, 78)),
+		withCharge(40), withCharging(false), withAdapter(true))
 
-	if err := startCalibration(15, 1); err != nil {
+	if err := f.d.startCalibration(15, 1); err != nil {
 		t.Fatalf("startCalibration failed: %v", err)
 	}
-	if calibrationState.Phase != calibration.PhaseDischarge {
-		t.Fatalf("expected discharge phase, got %s", calibrationState.Phase)
+	if f.phase() != calibration.PhaseDischarge {
+		t.Fatalf("expected discharge phase, got %s", f.phase())
 	}
-	if err := pauseCalibration(); err != nil {
+	if !f.asserts.holdsCalibrationSleep() {
+		t.Fatal("a running calibration must hold the calibration sleep assertion")
+	}
+	if err := f.d.pauseCalibration(); err != nil {
 		t.Fatal(err)
 	}
-	if sleepCalls.allow != 0 {
+	if f.asserts.allowCalibration != 0 {
 		t.Fatal("pausing calibration released its sleep assertion")
 	}
-	if err := resumeCalibration(); err != nil {
+	if err := f.d.resumeCalibration(); err != nil {
 		t.Fatal(err)
 	}
 
 	// Move charge below threshold to trigger charging phase
-	fake.charge = 14
-	applyCalibrationWithinLoop(fake.charge)
-	if calibrationState.Phase != calibration.PhaseCharge {
-		t.Fatalf("expected charge phase, got %s", calibrationState.Phase)
+	f.d.applyCalibrationWithinLoop(14)
+	if f.phase() != calibration.PhaseCharge {
+		t.Fatalf("expected charge phase, got %s", f.phase())
 	}
-	if !fake.charging {
+	if !f.smc.chargingEnabled(t) {
 		t.Fatalf("expected charging enabled")
 	}
 	// In current implementation, we enable adapter to allow charging to full
-	if !fake.adapter {
+	if !f.smc.adapterEnabled(t) {
 		t.Fatalf("expected adapter enabled")
 	}
 
 	// Simulate reaching full
-	fake.charge = 100
-	applyCalibrationWithinLoop(fake.charge)
-	if calibrationState.Phase != calibration.PhaseHold {
-		t.Fatalf("expected hold phase, got %s", calibrationState.Phase)
+	f.d.applyCalibrationWithinLoop(100)
+	if f.phase() != calibration.PhaseHold {
+		t.Fatalf("expected hold phase, got %s", f.phase())
 	}
-	if calibrationState.HoldEndTime.IsZero() {
+	if f.calibration().HoldEndTime.IsZero() {
 		t.Fatalf("HoldEndTime should be set")
 	}
 
 	// Fast-forward hold period
-	calibrationState.HoldEndTime = time.Now().Add(-time.Second)
-	applyCalibrationWithinLoop(fake.charge)
-	if calibrationState.Phase != calibration.PhasePostHold {
-		t.Fatalf("expected post-hold discharge phase, got %s", calibrationState.Phase)
+	f.calibration().HoldEndTime = time.Now().Add(-time.Second)
+	f.d.applyCalibrationWithinLoop(100)
+	if f.phase() != calibration.PhasePostHold {
+		t.Fatalf("expected post-hold discharge phase, got %s", f.phase())
 	}
 
 	// Simulate discharging back down to snapshot upper limit (original upper 80)
-	fake.charge = 80
-	applyCalibrationWithinLoop(fake.charge)
-	if calibrationState.Phase != calibration.PhaseRestore {
-		t.Fatalf("expected restore phase after post-hold discharge, got %s", calibrationState.Phase)
+	f.d.applyCalibrationWithinLoop(80)
+	if f.phase() != calibration.PhaseRestore {
+		t.Fatalf("expected restore phase after post-hold discharge, got %s", f.phase())
 	}
 
 	// Perform restore
-	applyCalibrationWithinLoop(fake.charge)
-	if calibrationState.Phase != calibration.PhaseIdle {
-		t.Fatalf("expected idle at end, got %s", calibrationState.Phase)
+	f.d.applyCalibrationWithinLoop(80)
+	if f.phase() != calibration.PhaseIdle {
+		t.Fatalf("expected idle at end, got %s", f.phase())
 	}
-	if sleepCalls.prevent != 1 || sleepCalls.allow != 1 {
-		t.Fatalf("sleep assertion calls = prevent:%d allow:%d, want 1/1", sleepCalls.prevent, sleepCalls.allow)
+	if f.asserts.preventCalibration != 1 || f.asserts.allowCalibration != 1 || f.asserts.holdsCalibrationSleep() {
+		t.Fatalf("sleep assertion calls = prevent:%d allow:%d, want 1/1 and released", f.asserts.preventCalibration, f.asserts.allowCalibration)
 	}
 }
 
 func TestCalibrationFlowWithFirmwareChargeControl(t *testing.T) {
-	sleepCalls := stubCalibrationSleep(t)
-	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
-		v, err := gosmc.NewValue(key, dataType, data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
-	mock := smc.NewMockValues(
-		value(smc.FirmwareChargeLimitActivationKey, gosmc.TypeUInt8, 0),
-		value(smc.FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
-		value(smc.FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
-		value(smc.AdapterKey1, gosmc.TypeUInt8, 0),
-	)
-	if err := mock.Open(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = mock.Close() })
-	if _, err := mock.EnsureFirmwareChargeLimit(78, 80); err != nil {
-		t.Fatal(err)
-	}
+	f := newFixture(t, firmwareManaged, withConfig(calibrationConf(80, 78)), withFirmwareLimit(true, 78, 80))
 
-	previousSMC, previousConf, previousCapabilities := smcConn, conf, capabilities
-	previousState, previousStatePath := calibrationState, calibrationStatePath
-	previousIsAdapter := smcIsAdapterEnabled
-	previousEnableAdapter, previousDisableAdapter := smcEnableAdapter, smcDisableAdapter
-	t.Cleanup(func() {
-		smcConn, conf, capabilities = previousSMC, previousConf, previousCapabilities
-		calibrationState, calibrationStatePath = previousState, previousStatePath
-		smcIsAdapterEnabled = previousIsAdapter
-		smcEnableAdapter, smcDisableAdapter = previousEnableAdapter, previousDisableAdapter
-	})
-	smcConn = mock
-	conf = &mockConf{upper: 80, lower: 78}
-	capabilities = compatibility.Capabilities{
-		ChargingControl:   true,
-		ChargeControlMode: compatibility.ChargeControlFirmware,
-		AdapterControl:    true,
-		Calibration:       true,
-	}
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	calibrationStatePath = ""
-	smcIsAdapterEnabled = func() (bool, error) { return mock.IsAdapterEnabled() }
-	smcEnableAdapter = func() error { return mock.EnableAdapter() }
-	smcDisableAdapter = func() error { return mock.DisableAdapter() }
-
-	if err := startCalibration(15, 10); err != nil {
+	if err := f.d.startCalibration(15, 10); err != nil {
 		t.Fatal(err)
 	}
-	applyCalibrationWithinLoop(40)
-	adapterEnabled, err := mock.IsAdapterEnabled()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if adapterEnabled {
+	f.d.applyCalibrationWithinLoop(40)
+	if f.smc.adapterEnabled(t) {
 		t.Fatal("adapter should be disabled during discharge")
 	}
 
-	applyCalibrationWithinLoop(14)
-	if calibrationState.Phase != calibration.PhaseCharge {
-		t.Fatalf("phase = %s, want charge", calibrationState.Phase)
+	f.d.applyCalibrationWithinLoop(14)
+	if f.phase() != calibration.PhaseCharge {
+		t.Fatalf("phase = %s, want charge", f.phase())
 	}
-	firmwareState, err := mock.GetFirmwareChargeLimit()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if firmwareState.Active {
+	if f.smc.firmwareLimit(t).Active {
 		t.Fatal("firmware charge limit should be inactive while charging to full")
 	}
 
-	applyCalibrationWithinLoop(100)
-	calibrationState.HoldEndTime = time.Now().Add(-time.Second)
-	applyCalibrationWithinLoop(100)
-	applyCalibrationWithinLoop(80)
-	applyCalibrationWithinLoop(80)
-	if calibrationState.Phase != calibration.PhaseIdle {
-		t.Fatalf("phase = %s, want idle", calibrationState.Phase)
+	f.d.applyCalibrationWithinLoop(100)
+	f.calibration().HoldEndTime = time.Now().Add(-time.Second)
+	f.d.applyCalibrationWithinLoop(100)
+	f.d.applyCalibrationWithinLoop(80)
+	f.d.applyCalibrationWithinLoop(80)
+	if f.phase() != calibration.PhaseIdle {
+		t.Fatalf("phase = %s, want idle", f.phase())
 	}
-	firmwareState, err = mock.GetFirmwareChargeLimit()
-	if err != nil {
-		t.Fatal(err)
+	if state := f.smc.firmwareLimit(t); !state.Active || state.Lower != 78 || state.Upper != 80 {
+		t.Fatalf("firmware charge limit was not restored: %+v", state)
 	}
-	if !firmwareState.Active || firmwareState.Lower != 78 || firmwareState.Upper != 80 {
-		t.Fatalf("firmware charge limit was not restored: %+v", firmwareState)
-	}
-	if sleepCalls.prevent != 1 || sleepCalls.allow != 1 {
-		t.Fatalf("sleep assertion calls = prevent:%d allow:%d, want 1/1", sleepCalls.prevent, sleepCalls.allow)
+	if f.asserts.preventCalibration != 1 || f.asserts.allowCalibration != 1 {
+		t.Fatalf("sleep assertion calls = prevent:%d allow:%d, want 1/1", f.asserts.preventCalibration, f.asserts.allowCalibration)
 	}
 }
 
 func TestStartCalibration_WithAdapterDisabledAndOptionEnabledAcquiresHold(t *testing.T) {
-	previousConf, previousState, previousStatePath, previousCap := conf, calibrationState, calibrationStatePath, capabilities
-	previousIsAdapter := smcIsAdapterEnabled
-	previousIsCharging := smcIsChargingEnabled
-	t.Cleanup(func() {
-		conf, calibrationState, calibrationStatePath, capabilities = previousConf, previousState, previousStatePath, previousCap
-		smcIsAdapterEnabled = previousIsAdapter
-		smcIsChargingEnabled = previousIsCharging
-		sleepHolds = map[string]bool{}
-	})
+	conf := calibrationConf(80, 78)
+	conf.SetPreventSleepOnAdapterDisable(true)
+	f := newFixture(t, firmwareLegacy, withConfig(conf), withAdapter(false), withCharging(true))
 
-	sleep := stubSleepDisabled(t, false)
-	capabilities = compatibility.Capabilities{
-		Calibration:    true,
-		AdapterControl: true,
-	}
-	smcIsAdapterEnabled = func() (bool, error) { return false, nil } // already disabled
-	smcIsChargingEnabled = func() (bool, error) { return true, nil }
-	configured := &mockConf{
-		upper:                        80,
-		lower:                        78,
-		preventSleepOnAdapterDisable: true,
-	}
-	conf = configured
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	calibrationStatePath = ""
-
-	if err := startCalibration(15, 60); err != nil {
+	if err := f.d.startCalibration(15, 60); err != nil {
 		t.Fatalf("startCalibration failed: %v", err)
 	}
 
-	if !sleepHolds[sleepHoldAdapter] {
+	if !f.holdsSleep(sleepHoldAdapter) {
 		t.Fatal("expected sleep hold to be acquired when calibration starts with disabled adapter")
 	}
-	if !sleep.value {
+	if !f.sleep.disabled() {
 		t.Fatal("expected SleepDisabled to be true")
 	}
 }
 
 func TestStartCalibration_AdapterReadErrorAborts(t *testing.T) {
-	sleepCalls := stubCalibrationSleep(t)
-	previousConf, previousState, previousStatePath, previousCap := conf, calibrationState, calibrationStatePath, capabilities
-	previousIsAdapter := smcIsAdapterEnabled
-	previousIsCharging := smcIsChargingEnabled
-	t.Cleanup(func() {
-		conf, calibrationState, calibrationStatePath, capabilities = previousConf, previousState, previousStatePath, previousCap
-		smcIsAdapterEnabled = previousIsAdapter
-		smcIsChargingEnabled = previousIsCharging
-	})
+	f := newFixture(t, firmwareLegacy, withConfig(calibrationConf(80, 78)))
+	f.smc.fail("IsAdapterEnabled", errors.New("SMC read error"))
 
-	capabilities = compatibility.Capabilities{Calibration: true, AdapterControl: true}
-	smcIsAdapterEnabled = func() (bool, error) { return false, errors.New("SMC read error") }
-	smcIsChargingEnabled = func() (bool, error) { return true, nil }
-	configured := &mockConf{upper: 80, lower: 78}
-	conf = configured
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	calibrationStatePath = ""
-
-	if err := startCalibration(15, 60); err == nil {
+	if err := f.d.startCalibration(15, 60); err == nil {
 		t.Fatal("expected startCalibration to fail on adapter read error")
 	}
-	if calibrationState.Phase != calibration.PhaseIdle {
-		t.Fatalf("phase = %s, want idle", calibrationState.Phase)
+	if f.phase() != calibration.PhaseIdle {
+		t.Fatalf("phase = %s, want idle", f.phase())
 	}
-	if sleepCalls.prevent != 0 {
-		t.Fatalf("calibration sleep assertion acquired before preflight completed: %d", sleepCalls.prevent)
+	if f.asserts.preventCalibration != 0 {
+		t.Fatalf("calibration sleep assertion acquired before preflight completed: %d", f.asserts.preventCalibration)
 	}
 }
 
 func TestCalibrationDischarge_InvokesDisableWrapperUnconditionally(t *testing.T) {
-	previousConf, previousState, previousCap := conf, calibrationState, capabilities
-	previousDisable := smcDisableAdapter
-	previousIsAdapter := smcIsAdapterEnabled
-	t.Cleanup(func() {
-		conf, calibrationState, capabilities = previousConf, previousState, previousCap
-		smcDisableAdapter = previousDisable
-		smcIsAdapterEnabled = previousIsAdapter
-	})
-
-	capabilities = compatibility.Capabilities{Calibration: true, AdapterControl: true}
-	smcIsAdapterEnabled = func() (bool, error) { return false, nil } // already disabled
-	disableCalled := 0
-	smcDisableAdapter = func() error {
-		disableCalled++
-		return nil
-	}
-	configured := &mockConf{upper: 80, lower: 78}
-	conf = configured
-	calibrationState = &calibration.State{
+	f := newFixture(t, firmwareLegacy, withConfig(calibrationConf(80, 78)), withAdapter(false))
+	f.setCalibration(&calibration.State{
 		Phase:              calibration.PhaseDischarge,
 		Threshold:          15,
 		SnapshotAdapterOn:  false,
 		SnapshotChargingOn: false,
-	}
+	})
 
-	applyCalibrationWithinLoop(50) // discharge in progress
-	if disableCalled == 0 {
-		t.Fatal("expected smcDisableAdapter to be called unconditionally in discharge phase")
+	f.d.applyCalibrationWithinLoop(50) // discharge in progress
+	if f.smc.callCount("DisableAdapter") == 0 {
+		t.Fatal("expected the adapter to be disabled unconditionally in discharge phase")
 	}
 }
 
 func TestCalibrationRestore_AdapterEnableFailurePreservesRecoverableState(t *testing.T) {
-	previousConf, previousState, previousCap := conf, calibrationState, capabilities
-	previousStatePath := calibrationStatePath
-	t.Cleanup(func() {
-		conf, calibrationState, capabilities = previousConf, previousState, previousCap
-		calibrationStatePath = previousStatePath
-	})
-	calibrationStatePath = ""
-
-	fake := newFakeSMC(80, 1, true)
-	fake.inject(t)
-
-	capabilities = compatibility.Capabilities{Calibration: true, AdapterControl: true}
-	smcEnableAdapter = func() error { return errors.New("SMC enable failed") }
-	configured := &mockConf{upper: 80, lower: 78}
-	conf = configured
-	calibrationState = &calibration.State{
+	f := newFixture(t, firmwareLegacy, withConfig(calibrationConf(80, 78)), withCharge(80))
+	f.smc.fail("EnableAdapter", errors.New("SMC enable failed"))
+	f.setCalibration(&calibration.State{
 		Phase:              calibration.PhaseRestore,
 		SnapshotUpperLimit: 80,
 		SnapshotLowerLimit: 78,
 		SnapshotAdapterOn:  true,
-	}
+	})
 
-	applyCalibrationWithinLoop(80)
-	if calibrationState.Phase != calibration.PhaseError {
-		t.Fatalf("phase = %s, want error", calibrationState.Phase)
+	f.d.applyCalibrationWithinLoop(80)
+	if f.phase() != calibration.PhaseError {
+		t.Fatalf("phase = %s, want error", f.phase())
 	}
-	if !strings.Contains(calibrationState.LastError, "SMC enable failed") {
-		t.Fatalf("unexpected LastError: %s", calibrationState.LastError)
+	if !strings.Contains(f.calibration().LastError, "SMC enable failed") {
+		t.Fatalf("unexpected LastError: %s", f.calibration().LastError)
 	}
 }
 
 func TestCancelCalibration_RetriesFailedAdapterRestoration(t *testing.T) {
-	previousConf, previousState, previousCap := conf, calibrationState, capabilities
-	previousStatePath := calibrationStatePath
-	t.Cleanup(func() {
-		conf, calibrationState, capabilities = previousConf, previousState, previousCap
-		calibrationStatePath = previousStatePath
-	})
-	calibrationStatePath = ""
-
-	fake := newFakeSMC(80, 1, true)
-	fake.inject(t)
-
-	capabilities = compatibility.Capabilities{Calibration: true, AdapterControl: true}
-	enableErr := errors.New("SMC enable failed")
-	smcEnableAdapter = func() error { return enableErr }
-
-	configured := &mockConf{upper: 80, lower: 78}
-	conf = configured
-	calibrationState = &calibration.State{
+	f := newFixture(t, firmwareLegacy, withConfig(calibrationConf(80, 78)), withCharge(80))
+	f.smc.fail("EnableAdapter", errors.New("SMC enable failed"))
+	f.setCalibration(&calibration.State{
 		Phase:              calibration.PhaseDischarge,
 		SnapshotUpperLimit: 80,
 		SnapshotLowerLimit: 78,
 		SnapshotAdapterOn:  true,
-	}
+	})
 
-	if err := cancelCalibration(); err == nil {
+	if err := f.d.cancelCalibration(); err == nil {
 		t.Fatal("expected cancelCalibration to fail when adapter enable fails")
 	}
-	if calibrationState.Phase != calibration.PhaseError {
-		t.Fatalf("phase = %s, want error", calibrationState.Phase)
+	if f.phase() != calibration.PhaseError {
+		t.Fatalf("phase = %s, want error", f.phase())
 	}
 
 	// Retry succeeds
-	enableErr = nil
-	if err := cancelCalibration(); err != nil {
+	f.smc.fail("EnableAdapter", nil)
+	if err := f.d.cancelCalibration(); err != nil {
 		t.Fatalf("cancelCalibration should succeed on retry: %v", err)
 	}
-	if calibrationState.Phase != calibration.PhaseIdle {
-		t.Fatalf("phase = %s, want idle", calibrationState.Phase)
+	if f.phase() != calibration.PhaseIdle {
+		t.Fatalf("phase = %s, want idle", f.phase())
 	}
 }
 
 func TestCalibrationHoldToPostHold_DisableFailureIsAnError(t *testing.T) {
 	// The post-hold phase never cuts the adapter again. If the cut fails at the
 	// transition, the calibration would wait at full charge without a message.
-	previousConf, previousState, previousCap := conf, calibrationState, capabilities
-	previousStatePath := calibrationStatePath
-	previousDisable := smcDisableAdapter
-	t.Cleanup(func() {
-		conf, calibrationState, capabilities = previousConf, previousState, previousCap
-		calibrationStatePath = previousStatePath
-		smcDisableAdapter = previousDisable
-	})
-	calibrationStatePath = ""
-	newFakeSMC(100, 1, true).inject(t)
-	stubCalibrationSleep(t)
-	capabilities = compatibility.Capabilities{Calibration: true, AdapterControl: true}
-	smcDisableAdapter = func() error { return errors.New("sleep hold could not be taken") }
-	conf = &mockConf{upper: 80, lower: 78}
-	calibrationState = &calibration.State{
+	f := newFixture(t, firmwareLegacy, withConfig(calibrationConf(80, 78)), withCharge(100))
+	f.smc.fail("DisableAdapter", errors.New("sleep hold could not be taken"))
+	f.setCalibration(&calibration.State{
 		Phase:              calibration.PhaseHold,
 		HoldEndTime:        time.Now().Add(-time.Minute),
 		SnapshotUpperLimit: 80,
 		SnapshotLowerLimit: 78,
 		SnapshotAdapterOn:  true,
-	}
+	})
 
-	applyCalibrationWithinLoop(100)
+	f.d.applyCalibrationWithinLoop(100)
 
-	if calibrationState.Phase != calibration.PhaseError {
-		t.Fatalf("phase = %s, want %s", calibrationState.Phase, calibration.PhaseError)
+	if f.phase() != calibration.PhaseError {
+		t.Fatalf("phase = %s, want %s", f.phase(), calibration.PhaseError)
 	}
-	if calibrationState.LastError == "" {
+	if f.calibration().LastError == "" {
 		t.Fatal("the failed adapter cut must be reported in LastError")
 	}
 }
@@ -573,35 +269,21 @@ func TestCalibrationHoldToPostHold_DisableFailureIsAnError(t *testing.T) {
 func TestStartCalibration_RejectsFailedCalibrationUntilCancelled(t *testing.T) {
 	// A failed calibration may leave the charge limit at 100. Its snapshot is the
 	// only record of the original limit, so a new start must not replace it.
-	stubCalibrationSleep(t)
-	previousConf, previousState, previousStatePath, previousCap := conf, calibrationState, calibrationStatePath, capabilities
-	previousIsAdapter := smcIsAdapterEnabled
-	previousIsCharging := smcIsChargingEnabled
-	t.Cleanup(func() {
-		conf, calibrationState, calibrationStatePath, capabilities = previousConf, previousState, previousStatePath, previousCap
-		smcIsAdapterEnabled = previousIsAdapter
-		smcIsChargingEnabled = previousIsCharging
-	})
-
-	capabilities = compatibility.Capabilities{Calibration: true}
-	smcIsAdapterEnabled = func() (bool, error) { return true, nil }
-	smcIsChargingEnabled = func() (bool, error) { return true, nil }
-	conf = &mockConf{upper: 100, lower: 98}
-	calibrationStatePath = ""
-	calibrationState = &calibration.State{
+	f := newFixture(t, firmwareLegacy, withConfig(calibrationConf(100, 98)))
+	f.setCalibration(&calibration.State{
 		Phase:              calibration.PhaseError,
 		SnapshotUpperLimit: 80,
 		SnapshotLowerLimit: 78,
 		SnapshotMaintain:   true,
-	}
+	})
 
-	err := startCalibration(15, 60)
+	err := f.d.startCalibration(15, 60)
 
 	if err != ErrCalibrationControlsChargeLimit {
 		t.Fatalf("startCalibration() = %v, want %v", err, ErrCalibrationControlsChargeLimit)
 	}
-	if calibrationState.Phase != calibration.PhaseError || calibrationState.SnapshotUpperLimit != 80 {
-		t.Fatalf("the snapshot of the failed calibration must stay: phase=%s snapshotUpper=%d", calibrationState.Phase, calibrationState.SnapshotUpperLimit)
+	if st := f.calibration(); st.Phase != calibration.PhaseError || st.SnapshotUpperLimit != 80 {
+		t.Fatalf("the snapshot of the failed calibration must stay: phase=%s snapshotUpper=%d", st.Phase, st.SnapshotUpperLimit)
 	}
 }
 
@@ -610,39 +292,95 @@ func TestCalibrationHoldEnd_DisableFailureRestoresTheChargeLimit(t *testing.T) {
 	// failed calibration waits for Cancel, but the maintain loop must not find
 	// the battery without a limit meanwhile: at limit 100 the legacy loop drops
 	// a calibration in the error phase without restoring anything.
-	previousConf, previousState, previousCap := conf, calibrationState, capabilities
-	previousStatePath := calibrationStatePath
-	previousDisable := smcDisableAdapter
-	t.Cleanup(func() {
-		conf, calibrationState, capabilities = previousConf, previousState, previousCap
-		calibrationStatePath = previousStatePath
-		smcDisableAdapter = previousDisable
-	})
-	calibrationStatePath = ""
-	newFakeSMC(100, 1, true).inject(t)
-	stubCalibrationSleep(t)
-	capabilities = compatibility.Capabilities{Calibration: true, AdapterControl: true}
-	smcDisableAdapter = func() error { return errors.New("sleep hold could not be taken") }
-	configured := &mockConf{upper: 100, lower: 98}
-	conf = configured
-	calibrationState = &calibration.State{
+	conf := calibrationConf(100, 98)
+	f := newFixture(t, firmwareLegacy, withConfig(conf), withCharge(100))
+	f.smc.fail("DisableAdapter", errors.New("sleep hold could not be taken"))
+	f.setCalibration(&calibration.State{
 		Phase:              calibration.PhaseHold,
 		HoldEndTime:        time.Now().Add(-time.Minute),
 		SnapshotUpperLimit: 80,
 		SnapshotLowerLimit: 78,
 		SnapshotMaintain:   true,
 		SnapshotAdapterOn:  true,
+	})
+
+	f.d.applyCalibrationWithinLoop(100)
+
+	if f.phase() != calibration.PhaseError {
+		t.Fatalf("phase = %s, want %s", f.phase(), calibration.PhaseError)
+	}
+	if conf.UpperLimit() != 80 || conf.LowerLimit() != 78 {
+		t.Fatalf("limits = %d/%d, want the snapshot 80/78 back", conf.UpperLimit(), conf.LowerLimit())
+	}
+	if f.calibration().SnapshotUpperLimit != 80 {
+		t.Fatalf("the snapshot must stay until Cancel: snapshotUpper=%d", f.calibration().SnapshotUpperLimit)
+	}
+}
+
+func TestCalibrationStateIsPersistedAndRestoredPaused(t *testing.T) {
+	// A calibration that was mid-flow when the daemon stopped comes back
+	// paused, so it cannot cut power before the user has a look.
+	conf := calibrationConf(80, 78)
+	f := newFixture(t, firmwareLegacy, withConfig(conf), withCharge(40), withCharging(false))
+	if err := f.d.startCalibration(15, 10); err != nil {
+		t.Fatal(err)
 	}
 
-	applyCalibrationWithinLoop(100)
+	restarted := newFixture(t, firmwareLegacy, withConfig(conf), withCharge(40), withCharging(false))
+	restarted.d.loadCalibrationState(f.d.calibrationStatePath)
+	st := restarted.calibration()
+	if st.Phase != calibration.PhaseDischarge || !st.Paused {
+		t.Fatalf("restarted calibration = %+v, want discharge phase, paused", st)
+	}
+	restarted.d.restoreCalibrationSleepAssertion()
+	if !restarted.asserts.holdsCalibrationSleep() {
+		t.Fatal("a restored calibration must take its sleep assertion again")
+	}
+}
 
-	if calibrationState.Phase != calibration.PhaseError {
-		t.Fatalf("phase = %s, want %s", calibrationState.Phase, calibration.PhaseError)
+func TestUnsupportedModeDiscardsPersistedCalibration(t *testing.T) {
+	// After a firmware upgrade that removed adapter control, a persisted
+	// calibration cannot continue. Its saved limits are restored and the
+	// workflow is dropped.
+	conf := calibrationConf(100, 98)
+	f := newFixture(t, firmwareGatedNoAdapter, withConfig(conf), withNative(sliderNative(80, 100)))
+	if f.caps().Calibration {
+		t.Fatalf("precondition: calibration must be unsupported, got %+v", f.caps())
 	}
-	if configured.UpperLimit() != 80 || configured.LowerLimit() != 78 {
-		t.Fatalf("limits = %d/%d, want the snapshot 80/78 back", configured.UpperLimit(), configured.LowerLimit())
+	f.setCalibration(&calibration.State{
+		Phase:              calibration.PhaseCharge,
+		SnapshotUpperLimit: 80,
+		SnapshotLowerLimit: 78,
+	})
+	if err := f.asserts.PreventCalibrationSleep(); err != nil {
+		t.Fatal(err)
 	}
-	if calibrationState.SnapshotUpperLimit != 80 {
-		t.Fatalf("the snapshot must stay until Cancel: snapshotUpper=%d", calibrationState.SnapshotUpperLimit)
+
+	f.d.disableUnsupportedCalibrationState()
+
+	if f.phase() != calibration.PhaseIdle {
+		t.Fatalf("phase = %s, want idle", f.phase())
 	}
+	if conf.UpperLimit() != 80 || conf.LowerLimit() != 78 {
+		t.Fatalf("limits = %d/%d, want the snapshot 80/78", conf.UpperLimit(), conf.LowerLimit())
+	}
+	if f.asserts.holdsCalibrationSleep() {
+		t.Fatal("discarding the calibration must release its sleep assertion")
+	}
+}
+
+func TestScheduledCalibrationPreCheck(t *testing.T) {
+	f := newFixture(t, firmwareLegacy, withConfig(calibrationConf(80, 78)), withPluggedIn(false))
+	if err := f.d.scheduledCalibrationPreCheck(); err == nil {
+		t.Fatal("a scheduled calibration must not start on battery")
+	}
+	f.smc.setPluggedIn(t, true)
+	if err := f.d.scheduledCalibrationPreCheck(); err != nil {
+		t.Fatalf("plugged in: %v", err)
+	}
+	f.setCalibration(&calibration.State{Phase: calibration.PhaseCharge})
+	if err := f.d.scheduledCalibrationPreCheck(); !errors.Is(err, ErrCalibrationInProgress) {
+		t.Fatalf("running calibration: %v, want %v", err, ErrCalibrationInProgress)
+	}
+	_ = compatibility.FeatureCalibration
 }

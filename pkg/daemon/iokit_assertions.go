@@ -15,6 +15,7 @@ import "C"
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 )
 
@@ -62,27 +63,47 @@ func releaseAssertion(assertionID C.IOPMAssertionID) error {
 	return nil
 }
 
-var assertionID C.IOPMAssertionID = C.NullAssertionID
+// iokitAssertions holds the daemon's IOPM power assertions. The zero value
+// holds none: kIOPMNullAssertionID is 0.
+type iokitAssertions struct {
+	mu          sync.Mutex
+	onAC        C.IOPMAssertionID
+	calibration C.IOPMAssertionID
+}
 
-// PreventSleepOnAC Keeps system in Dark Wake, has effect only on AC
-func PreventSleepOnAC() error {
-	if assertionID == C.NullAssertionID {
-		id, err := createSleepAssertion(C.AssertionTypePreventSystemSleep, "batt", "Maintained charging by batt is in progress")
-		if err != nil {
-			return err
-		}
-
-		assertionID = id
+// PreventSleepOnAC keeps the system in dark wake. It has an effect on AC only.
+func (a *iokitAssertions) PreventSleepOnAC() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.onAC != C.NullAssertionID {
+		return nil
 	}
+	id, err := createSleepAssertion(C.AssertionTypePreventSystemSleep, "batt", "Maintained charging by batt is in progress")
+	if err != nil {
+		return err
+	}
+	a.onAC = id
 	return nil
 }
 
-var calibrationSleepAssertionID C.IOPMAssertionID = C.NullAssertionID
+// AllowSleepOnAC releases the dark-wake assertion, allowing sleep on AC.
+func (a *iokitAssertions) AllowSleepOnAC() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.onAC == C.NullAssertionID {
+		return nil
+	}
+	err := releaseAssertion(a.onAC)
+	a.onAC = C.NullAssertionID
+	return err
+}
 
 // PreventCalibrationSleep prevents idle system sleep on both battery and AC
 // power. macOS still permits forced sleep, such as closing the lid.
-func PreventCalibrationSleep() error {
-	if calibrationSleepAssertionID != C.NullAssertionID {
+func (a *iokitAssertions) PreventCalibrationSleep() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.calibration != C.NullAssertionID {
 		return nil
 	}
 	id, err := createSleepAssertion(
@@ -93,26 +114,18 @@ func PreventCalibrationSleep() error {
 	if err != nil {
 		return err
 	}
-	calibrationSleepAssertionID = id
+	a.calibration = id
 	return nil
 }
 
 // AllowCalibrationSleep releases the calibration-specific sleep assertion.
-func AllowCalibrationSleep() error {
-	if calibrationSleepAssertionID == C.NullAssertionID {
+func (a *iokitAssertions) AllowCalibrationSleep() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.calibration == C.NullAssertionID {
 		return nil
 	}
-	err := releaseAssertion(calibrationSleepAssertionID)
-	calibrationSleepAssertionID = C.NullAssertionID
+	err := releaseAssertion(a.calibration)
+	a.calibration = C.NullAssertionID
 	return err
-}
-
-// AllowSleepOnAC Releases sleep assertion, allowing sleep on AC
-func AllowSleepOnAC() error {
-	if assertionID != C.NullAssertionID {
-		err := releaseAssertion(assertionID)
-		assertionID = C.NullAssertionID
-		return err
-	}
-	return nil
 }

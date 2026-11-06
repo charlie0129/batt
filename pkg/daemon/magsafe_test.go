@@ -3,61 +3,28 @@ package daemon
 import (
 	"errors"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/charlie0129/gosmc"
-
-	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
-func managedMagSafeFixture(t *testing.T, controlMode compatibility.ChargeControlMode, initial byte, mode config.ControlMagSafeMode, upper int) (*smc.AppleSMC, *fakeNativeLimit) {
+// newManagedMagSafeFixture is a MagSafe Mac in an Apple-managed charge-control
+// mode with the LED initially in state initial and batt's LED control set to
+// mode.
+func newManagedMagSafeFixture(t *testing.T, controlMode compatibility.ChargeControlMode, initial smc.MagSafeLedState, mode config.ControlMagSafeMode, upper int) *fixture {
 	t.Helper()
-	value := func(key string, dataType gosmc.DataType, data ...byte) gosmc.Value {
-		v, err := gosmc.NewValue(key, dataType, data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
-	mock := smc.NewMockValues(
-		value(smc.FirmwareChargeLimitActivationKey, gosmc.TypeUInt8, 0),
-		value(smc.FirmwareChargeLimitUpperKey, gosmc.TypeUInt32, 0, 0, 0, 0),
-		value(smc.FirmwareChargeLimitLowerKey, gosmc.TypeUInt32, 0, 0, 0, 0),
-		value(smc.MagSafeLedKey, gosmc.TypeUInt8, initial),
-	)
-	if err := mock.Open(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = mock.Close() })
-
-	file, err := config.NewFile(t.TempDir() + "/batt.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	file.SetUpperLimit(upper)
-	file.SetLowerLimit(upper - 2)
-	file.SetControlMagSafeLED(mode)
-
-	previousSMC, previousConf, previousCapabilities := smcConn, conf, capabilities
-	previousCalibration, previousIsCharging := calibrationState, systemIsCharging
-	t.Cleanup(func() {
-		smcConn, conf, capabilities = previousSMC, previousConf, previousCapabilities
-		calibrationState, systemIsCharging = previousCalibration, previousIsCharging
-	})
-	smcConn, conf = mock, file
-	capabilities = compatibility.Capabilities{
-		ChargingControl: true, ChargeControlMode: controlMode, MagSafeLED: true,
-		NativeExactTargets: controlMode == compatibility.ChargeControlNative,
-	}
-	calibrationState = &calibration.State{Phase: calibration.PhaseIdle}
-	native := &fakeNativeLimit{supported: true, exact: true, limit: 100}
-	useFakeNativeLimit(t, native)
-	return mock, native
+	f := newFixture(t, firmwareManaged, withFileConfig(), withLED(initial),
+		withNative(&fakeNativeLimit{supported: true, exact: true, limit: 100}),
+		withCapabilities(compatibility.Capabilities{
+			ChargingControl: true, ChargeControlMode: controlMode, MagSafeLED: true,
+			NativeExactTargets: controlMode == compatibility.ChargeControlNative,
+		}))
+	f.file.SetUpperLimit(upper)
+	f.file.SetLowerLimit(upper - 2)
+	f.file.SetControlMagSafeLED(mode)
+	return f
 }
 
 func TestManagedModesUpdateMagSafeLED(t *testing.T) {
@@ -82,40 +49,29 @@ func TestManagedModesUpdateMagSafeLED(t *testing.T) {
 	for _, controlMode := range []compatibility.ChargeControlMode{compatibility.ChargeControlFirmware, compatibility.ChargeControlNative} {
 		for _, tt := range tests {
 			t.Run(string(controlMode)+"/"+tt.name, func(t *testing.T) {
-				mock, native := managedMagSafeFixture(t, controlMode, byte(tt.initial), tt.mode, tt.upper)
-				polled := false
-				systemIsCharging = func() (bool, error) {
-					polled = true
-					return tt.charging, tt.stateErr
-				}
+				f := newManagedMagSafeFixture(t, controlMode, tt.initial, tt.mode, tt.upper)
+				f.battery.setCharging(tt.charging)
+				f.battery.setErr(tt.stateErr)
 
-				if !maintainLoopForced() {
+				if !f.d.maintainLoopForced() {
 					t.Fatalf("%s charge limit failed", controlMode)
 				}
-				led, err := mock.Read(smc.MagSafeLedKey)
-				if err != nil {
-					t.Fatal(err)
+				if led := f.smc.led(t); led != tt.want {
+					t.Fatalf("LED = %02x, want %02x", byte(led), byte(tt.want))
 				}
-				if len(led.Bytes) != 1 || led.Bytes[0] != byte(tt.want) {
-					t.Fatalf("LED = %x, want %02x", led.Bytes, tt.want)
-				}
-				if polled != tt.wantPoll {
+				if polled := f.battery.pollCount() > 0; polled != tt.wantPoll {
 					t.Fatalf("charging state queried = %t, want %t", polled, tt.wantPoll)
 				}
 				if tt.upper >= 100 {
 					return
 				}
 				if controlMode == compatibility.ChargeControlNative {
-					if !native.enabled || native.limit != tt.upper {
-						t.Fatalf("unexpected native charge limit: %+v", native)
+					if !f.native.enabled || f.native.limit != tt.upper {
+						t.Fatalf("unexpected native charge limit: %+v", f.native)
 					}
 					return
 				}
-				limit, err := mock.GetFirmwareChargeLimit()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !limit.Active || limit.Lower != 68 || limit.Upper != 70 {
+				if limit := f.smc.firmwareLimit(t); !limit.Active || limit.Lower != 68 || limit.Upper != 70 {
 					t.Fatalf("unexpected firmware charge limit: %+v", limit)
 				}
 			})
@@ -126,22 +82,13 @@ func TestManagedModesUpdateMagSafeLED(t *testing.T) {
 func TestManagedDisableMagSafeLEDReturnsControlToSystem(t *testing.T) {
 	for _, controlMode := range []compatibility.ChargeControlMode{compatibility.ChargeControlFirmware, compatibility.ChargeControlNative} {
 		t.Run(string(controlMode), func(t *testing.T) {
-			mock, _ := managedMagSafeFixture(t, controlMode, byte(smc.LEDGreen), config.ControlMagSafeModeEnabled, 70)
-			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodPut, "/magsafe-led", strings.NewReader(`"disabled"`))
-			setupRoutes().ServeHTTP(recorder, request)
-			if recorder.Code != http.StatusCreated {
-				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+			f := newManagedMagSafeFixture(t, controlMode, smc.LEDGreen, config.ControlMagSafeModeEnabled, 70)
+			f.mustServe(http.MethodPut, "/magsafe-led", `"disabled"`, http.StatusCreated)
+			if led := f.smc.led(t); led != smc.LEDSystem {
+				t.Fatalf("LED = %02x, want system control", byte(led))
 			}
-			led, err := mock.Read(smc.MagSafeLedKey)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(led.Bytes) != 1 || led.Bytes[0] != byte(smc.LEDSystem) {
-				t.Fatalf("LED = %x, want system control", led.Bytes)
-			}
-			if conf.ControlMagSafeLED() != config.ControlMagSafeModeDisabled {
-				t.Fatalf("mode = %s, want disabled", conf.ControlMagSafeLED())
+			if f.file.ControlMagSafeLED() != config.ControlMagSafeModeDisabled {
+				t.Fatalf("mode = %s, want disabled", f.file.ControlMagSafeLED())
 			}
 		})
 	}
@@ -160,18 +107,43 @@ func TestReleaseMagSafeLEDOnExit(t *testing.T) {
 	for _, controlMode := range []compatibility.ChargeControlMode{compatibility.ChargeControlFirmware, compatibility.ChargeControlNative} {
 		for _, tt := range tests {
 			t.Run(string(controlMode)+"/"+tt.name, func(t *testing.T) {
-				mock, _ := managedMagSafeFixture(t, controlMode, byte(smc.LEDOrange), tt.mode, 70)
-				if err := releaseMagSafeLEDOnExit(); err != nil {
+				f := newManagedMagSafeFixture(t, controlMode, smc.LEDOrange, tt.mode, 70)
+				if err := f.d.releaseMagSafeLEDOnExit(); err != nil {
 					t.Fatal(err)
 				}
-				led, err := mock.Read(smc.MagSafeLedKey)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if len(led.Bytes) != 1 || led.Bytes[0] != byte(tt.want) {
-					t.Fatalf("LED = %x, want %02x", led.Bytes, tt.want)
+				if led := f.smc.led(t); led != tt.want {
+					t.Fatalf("LED = %02x, want %02x", byte(led), byte(tt.want))
 				}
 			})
 		}
+	}
+}
+
+func TestLegacyLoopDrivesMagSafeLED(t *testing.T) {
+	// In legacy mode the LED follows batt's own charge switch: orange while
+	// batt lets the battery charge, green while it holds it.
+	tests := []struct {
+		name     string
+		charge   int
+		charging bool
+		want     smc.MagSafeLedState
+	}{
+		{name: "below the band charges, orange", charge: 70, charging: false, want: smc.LEDOrange},
+		{name: "above the limit holds, green", charge: 85, charging: true, want: smc.LEDGreen},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t, firmwareLegacy, withCharge(tt.charge), withCharging(tt.charging), withLED(smc.LEDSystem))
+			f.mem.SetUpperLimit(80)
+			f.mem.SetLowerLimit(75)
+			f.mem.SetControlMagSafeLED(config.ControlMagSafeModeEnabled)
+
+			if !f.d.maintainLoopForced() {
+				t.Fatal("legacy maintain loop failed")
+			}
+			if led := f.smc.led(t); led != tt.want {
+				t.Fatalf("LED = %02x, want %02x", byte(led), byte(tt.want))
+			}
+		})
 	}
 }
