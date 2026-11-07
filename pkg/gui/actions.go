@@ -184,7 +184,7 @@ func (c *menuController) setNoDrain(checked bool) {
 	}
 	// A deferred restart or a fallback is useful information, but a normal
 	// enable/disable response does not need to interrupt the menu interaction.
-	if strings.Contains(response, "turned off") {
+	if strings.Contains(response, "turned off") || strings.Contains(response, "could not be applied safely") {
 		// The daemon rejected the policy and restored regular native control.
 		c.menu.setChecked(itemNoDrain, false)
 	}

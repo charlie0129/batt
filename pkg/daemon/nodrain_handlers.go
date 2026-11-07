@@ -32,20 +32,10 @@ func (d *Daemon) setNoDrain(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, http.StatusInternalServerError, err)
 		return
 	}
-	if !d.maintainLoopForced() {
-		// A deferred restart is a successful state transition: the preference is
-		// saved and the loop will finish it when other apps stop preventing sleep.
-		// For a real failure, retain the old setting so the next pass can retry.
-		if d.getNoDrainStatus().Phase != noDrainError {
-			d.conf.SetNoDrain(previous)
-			if saveErr := d.conf.Save(); saveErr != nil {
-				d.fail(w, http.StatusInternalServerError, saveErr)
-				return
-			}
-		}
-		d.fail(w, http.StatusInternalServerError, errors.New("no-drain setting was saved but could not be applied; the daemon will use regular native charging where possible"))
-		return
-	}
+	// Applying the policy and re-registering PowerUIAgent are asynchronous on
+	// macOS. Keep the requested setting even if that registration needs another
+	// pass; rolling it back here could re-enable the very policy being removed.
+	d.maintainLoopForced()
 
 	state := d.getNoDrainStatus()
 	message := "no-drain disabled; regular native charging is restored"

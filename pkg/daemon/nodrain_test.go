@@ -117,6 +117,16 @@ func TestNoDrainPolicyFailureRestoresRegularNativeLimit(t *testing.T) {
 	}
 }
 
+func TestNoDrainDisableKeepsRequestedStateWhenNativeRestoreFails(t *testing.T) {
+	f := newExactNativeFixture(t)
+	f.put("/no-drain", "true")
+	f.native.err = errors.New("PowerUIAgent is reloading")
+	r := f.put("/no-drain", "false")
+	if r.Code != http.StatusCreated || f.file.NoDrain() || f.native.noDrainEnabled {
+		t.Fatalf("disable rolled back or left policy active: %d %s config=%t native=%+v", r.Code, r.Body.String(), f.file.NoDrain(), f.native)
+	}
+}
+
 func TestNoDrainChargeFullReleasesCeiling(t *testing.T) {
 	f := newExactNativeFixture(t, withCharge(50))
 	f.put("/no-drain", "true")
