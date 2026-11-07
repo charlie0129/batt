@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/peterneutron/powerkit-go/pkg/powerkit"
-
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
@@ -122,11 +120,10 @@ func TestMagSafeEndpointNeedsTheLED(t *testing.T) {
 
 func TestReadEndpoints(t *testing.T) {
 	f := newFixture(t, firmwareLegacy, withCharge(63), withCharging(false))
-	f.battery.info = &powerkit.SystemInfo{IOKit: &powerkit.IOKitData{
-		State:   powerkit.IOKitState{IsCharging: true},
-		Battery: powerkit.IOKitBattery{Voltage: 12.0, Amperage: 2.0, DesignCapacity: 6000, MaxCapacity: 5500, CycleCount: 42},
-		Adapter: powerkit.IOKitAdapter{InputVoltage: 20, InputAmperage: 3},
-	}}
+	f.battery.snapshot = BatterySnapshot{
+		Charging: true, Voltage: 12.0, Amperage: 2.0, DesignCapacity: 6000, MaxCapacity: 5500, CycleCount: 42,
+		InputVoltage: 20, InputAmperage: 3,
+	}
 
 	if response := f.mustServe(http.MethodGet, "/limit", "", http.StatusOK); strings.TrimSpace(response.Body.String()) != "80" {
 		t.Fatalf("/limit = %s", response.Body.String())
@@ -184,6 +181,10 @@ func TestReadEndpoints(t *testing.T) {
 	if telemetry.Power == nil || telemetry.Power.Battery.CycleCount != 42 || telemetry.Power.Adapter.InputVoltage != 20 {
 		t.Fatalf("/telemetry power = %+v", telemetry.Power)
 	}
+	// 60 W from the adapter, 24 W into the battery, and 5500 of 6000 mAh left.
+	if calc := telemetry.Power.Calculations; calc.ACPower != 60 || calc.BatteryPower != 24 || calc.SystemPower != 36 || calc.HealthByMaxCapacity != 92 {
+		t.Fatalf("/telemetry power calculations = %+v", calc)
+	}
 	if telemetry.Calibration == nil || telemetry.Calibration.Phase != calibration.PhaseIdle || telemetry.Calibration.ChargePercent != 63 {
 		t.Fatalf("/telemetry calibration = %+v", telemetry.Calibration)
 	}
@@ -226,7 +227,7 @@ func TestReadEndpointsFollowTheChargeControlMode(t *testing.T) {
 	// Direct charging state only exists with the legacy keys, and the native
 	// mode adds macOS's full-charge override to the battery info.
 	f := newFixture(t, firmwareGated, withNative(sliderNative(80, 100)))
-	f.battery.info = batteryCharging(true)
+	f.battery.snapshot = batteryCharging(true)
 	f.battery.override = true
 
 	if response := f.serve(http.MethodGet, "/charging", ""); response.Code != http.StatusConflict {

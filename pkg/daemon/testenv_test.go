@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/charlie0129/gosmc"
-	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
@@ -557,18 +556,18 @@ func (f *fakeNotifier) Stop() {
 // fakeBatteryInfo stands in for IOKit battery telemetry.
 type fakeBatteryInfo struct {
 	mu          sync.Mutex
-	info        *powerkit.SystemInfo
+	snapshot    BatterySnapshot
 	err         error
 	override    bool
 	overrideErr error
 	polls       int
 }
 
-func (f *fakeBatteryInfo) SystemInfo() (*powerkit.SystemInfo, error) {
+func (f *fakeBatteryInfo) Snapshot() (BatterySnapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.polls++
-	return f.info, f.err
+	return f.snapshot, f.err
 }
 
 func (f *fakeBatteryInfo) FullChargeOverride() (bool, error) {
@@ -580,7 +579,7 @@ func (f *fakeBatteryInfo) FullChargeOverride() (bool, error) {
 func (f *fakeBatteryInfo) setCharging(charging bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.info = batteryCharging(charging)
+	f.snapshot = batteryCharging(charging)
 }
 
 func (f *fakeBatteryInfo) setErr(err error) {
@@ -595,10 +594,10 @@ func (f *fakeBatteryInfo) pollCount() int {
 	return f.polls
 }
 
-// batteryCharging is an IOKit snapshot whose only interesting field is
+// batteryCharging is a battery snapshot whose only interesting field is
 // whether the battery is charging.
-func batteryCharging(charging bool) *powerkit.SystemInfo {
-	return &powerkit.SystemInfo{IOKit: &powerkit.IOKitData{State: powerkit.IOKitState{IsCharging: charging, IsConnected: true}}}
+func batteryCharging(charging bool) BatterySnapshot {
+	return BatterySnapshot{Charging: charging}
 }
 
 // fakeNativeLimit stands in for PowerUIAgent.
@@ -1025,7 +1024,7 @@ func newFixture(t *testing.T, fw firmware, opts ...fixtureOption) *fixture {
 	f.sleep = &fakeSleepSetting{value: o.sleepDisabled}
 	f.asserts = &fakeAssertions{}
 	f.notifier = newFakeNotifier()
-	f.battery = &fakeBatteryInfo{info: batteryCharging(o.machine.charging && o.machine.pluggedIn)}
+	f.battery = &fakeBatteryInfo{snapshot: batteryCharging(o.machine.charging && o.machine.pluggedIn)}
 
 	switch {
 	case o.conf != nil:

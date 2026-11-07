@@ -2,9 +2,6 @@ package daemon
 
 import (
 	"log/slog"
-	"math"
-
-	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 
 	"github.com/charlie0129/batt/pkg/powerui"
 	"github.com/charlie0129/batt/pkg/smc"
@@ -23,41 +20,35 @@ func darwinSystem(conn *smc.AppleSMC) System {
 	}
 }
 
-// darwinBatteryInfo reads battery telemetry through IOKit (powerkit-go) and
-// the native charge-limit override through PowerUI.
+// darwinBatteryInfo reads battery telemetry from the AppleSmartBattery
+// IORegistry entry and the native charge-limit override through PowerUI.
 type darwinBatteryInfo struct{}
 
-func (darwinBatteryInfo) SystemInfo() (*powerkit.SystemInfo, error) {
-	info, err := powerkit.GetSystemInfo(powerkit.FetchOptions{QueryIOKit: true, QuerySMC: false})
-	if err == nil && info != nil && info.IOKit != nil {
-		fillMissingCapacities(info.IOKit, readBatteryDataCapacities)
+func (darwinBatteryInfo) Snapshot() (BatterySnapshot, error) {
+	b, err := readSmartBattery()
+	if err != nil {
+		return BatterySnapshot{}, err
 	}
-	return info, err
+	fillMissingCapacities(&b, readBatteryDataCapacities)
+	return b.snapshot(), nil
 }
 
-// batteryCapacities are battery capacities in mAh. 0 means unknown.
-type batteryCapacities struct {
-	Design int // DesignCapacity
-	Max    int // AppleRawMaxCapacity, what the battery holds when full today
+func (darwinBatteryInfo) FullChargeOverride() (bool, error) {
+	return powerui.FullChargeOverride()
 }
 
-// fillMissingCapacities fills in the capacities powerkit-go could not read.
-// powerkit-go reads DesignCapacity and AppleRawMaxCapacity from the top level
-// of the AppleSmartBattery IORegistry entry. macOS 27 keeps only percentages
-// there and moved the mAh values into the entry's BatteryData dictionary,
-// which read returns. Without the fallback powerkit-go reports both as 0, and
-// health as 0%.
-//
-// Only the fields batt reads are filled in. Earlier macOS versions report both
-// capacities at the top level, so read is not called there.
-func fillMissingCapacities(d *powerkit.IOKitData, read func() (batteryCapacities, error)) {
-	b := &d.Battery
+// fillMissingCapacities fills in the capacities missing from the top level of
+// the AppleSmartBattery entry. macOS 27 keeps only percentages there and moved
+// DesignCapacity and AppleRawMaxCapacity into the entry's BatteryData
+// dictionary, which read returns. Earlier macOS versions report both at the
+// top level, so read is not called there.
+func fillMissingCapacities(b *smartBattery, read func() (batteryCapacities, error)) {
 	if b.DesignCapacity > 0 && b.MaxCapacity > 0 {
 		return
 	}
 	c, err := read()
 	if err != nil {
-		slog.Debug("battery capacities are missing from IOKit", "error", err)
+		slog.Debug("battery capacities unavailable", "error", err)
 		return
 	}
 	if b.DesignCapacity <= 0 {
@@ -66,13 +57,22 @@ func fillMissingCapacities(d *powerkit.IOKitData, read func() (batteryCapacities
 	if b.MaxCapacity <= 0 {
 		b.MaxCapacity = c.Max
 	}
-	// powerkit-go computed health from the missing values. Redo it the way
-	// powerkit-go does.
-	if b.DesignCapacity > 0 {
-		d.Calculations.HealthByMaxCapacity = int(math.Round(float64(b.MaxCapacity) / float64(b.DesignCapacity) * 100))
-	}
 }
 
-func (darwinBatteryInfo) FullChargeOverride() (bool, error) {
-	return powerui.FullChargeOverride()
+// snapshot converts what the AppleSmartBattery entry reports to volts and
+// amperes.
+func (b smartBattery) snapshot() BatterySnapshot {
+	return BatterySnapshot{
+		Charging:       b.IsCharging,
+		FullyCharged:   b.FullyCharged,
+		Voltage:        float64(b.Voltage) / 1000,
+		Amperage:       float64(b.Amperage) / 1000,
+		CycleCount:     b.CycleCount,
+		DesignCapacity: b.DesignCapacity,
+		MaxCapacity:    b.MaxCapacity,
+		// Power only flows from the adapter into the Mac. Ignore negative
+		// readings rather than report the adapter taking power.
+		InputVoltage:  float64(max(0, b.SystemVoltageIn)) / 1000,
+		InputAmperage: float64(max(0, b.SystemCurrentIn)) / 1000,
+	}
 }

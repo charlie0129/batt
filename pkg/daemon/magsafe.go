@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"errors"
 	"log/slog"
 
 	"github.com/charlie0129/batt/pkg/config"
@@ -11,14 +10,11 @@ import (
 // systemIsCharging reports whether macOS says the battery is charging right
 // now. Firmware and native modes cannot tell from batt's own switch state.
 func (d *Daemon) systemIsCharging() (bool, error) {
-	info, err := d.battery.SystemInfo()
+	b, err := d.battery.Snapshot()
 	if err != nil {
 		return false, err
 	}
-	if info == nil || info.IOKit == nil {
-		return false, errors.New("no IOKit battery data available")
-	}
-	return info.IOKit.State.IsCharging, nil
+	return b.Charging, nil
 }
 
 // maintainManagedMagSafeLED reflects actual charging in firmware and native

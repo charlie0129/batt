@@ -490,38 +490,29 @@ func (d *Daemon) getCharging(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) getBatteryInfo(w http.ResponseWriter, r *http.Request) {
-	// IOKit alone is sufficient here.
-	info, err := d.battery.SystemInfo()
-	if err != nil || info == nil || info.IOKit == nil {
-		if err == nil {
-			err = errors.New("no IOKit data available")
-		}
+	b, err := d.battery.Snapshot()
+	if err != nil {
 		slog.Error("getBatteryInfo failed", "error", err)
 		d.fail(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// Map powerkit-go data to our backwards-compatible Battery structure
 	var state powerinfo.BatteryState
 	switch {
-	case info.IOKit.State.FullyCharged:
+	case b.FullyCharged:
 		state = powerinfo.Full
-	case info.IOKit.State.IsCharging:
+	case b.Charging:
 		state = powerinfo.Charging
 	default:
 		state = powerinfo.Discharging
 	}
 
-	// Compute charge rate (mW) using native amperage sign from IOKit
-	powerW := info.IOKit.Battery.Voltage * info.IOKit.Battery.Amperage
-	chargeRateMilliW := int(math.Round(powerW * 1000.0))
-
 	resp := powerinfo.Battery{
 		State:          state,
-		DesignCapacity: info.IOKit.Battery.DesignCapacity,
-		MaxCapacity:    info.IOKit.Battery.MaxCapacity,
-		ChargeRate:     chargeRateMilliW,
-		DesignVoltage:  info.IOKit.Battery.Voltage,
+		DesignCapacity: b.DesignCapacity,
+		MaxCapacity:    b.MaxCapacity,
+		ChargeRate:     int(math.Round(b.BatteryPower() * 1000)),
+		DesignVoltage:  b.Voltage,
 	}
 	if d.getCapabilities().ChargeControlMode == compatibility.ChargeControlNative {
 		if active, err := d.battery.FullChargeOverride(); err == nil {
@@ -696,27 +687,24 @@ func (d *Daemon) getVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, version.Version)
 }
 
-// powerTelemetry builds the GUI's simplified telemetry from an IOKit snapshot.
+// powerTelemetry builds the GUI's simplified telemetry from a battery snapshot.
 func (d *Daemon) powerTelemetry() (powerinfo.PowerTelemetry, error) {
-	var snapshot powerinfo.PowerTelemetry
-	info, err := d.battery.SystemInfo()
-	if err != nil || info == nil || info.IOKit == nil {
-		if err == nil {
-			err = errors.New("failed to fetch IOKit power data")
-		}
-		return snapshot, err
+	var telemetry powerinfo.PowerTelemetry
+	b, err := d.battery.Snapshot()
+	if err != nil {
+		return telemetry, err
 	}
 
-	snapshot.Adapter.InputVoltage = info.IOKit.Adapter.InputVoltage
-	snapshot.Adapter.InputAmperage = info.IOKit.Adapter.InputAmperage
+	telemetry.Adapter.InputVoltage = b.InputVoltage
+	telemetry.Adapter.InputAmperage = b.InputAmperage
 
-	snapshot.Battery.CycleCount = info.IOKit.Battery.CycleCount
+	telemetry.Battery.CycleCount = b.CycleCount
 
-	snapshot.Calculations.ACPower = info.IOKit.Calculations.AdapterPower
-	snapshot.Calculations.BatteryPower = info.IOKit.Calculations.BatteryPower
-	snapshot.Calculations.SystemPower = info.IOKit.Calculations.SystemPower
-	snapshot.Calculations.HealthByMaxCapacity = info.IOKit.Calculations.HealthByMaxCapacity
-	return snapshot, nil
+	telemetry.Calculations.ACPower = b.AdapterPower()
+	telemetry.Calculations.BatteryPower = b.BatteryPower()
+	telemetry.Calculations.SystemPower = b.SystemPower()
+	telemetry.Calculations.HealthByMaxCapacity = b.Health()
+	return telemetry, nil
 }
 
 func (d *Daemon) getPowerTelemetry(w http.ResponseWriter, r *http.Request) {

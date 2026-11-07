@@ -1,8 +1,9 @@
 package daemon
 
 import (
+	"math"
+
 	"github.com/charlie0129/gosmc"
-	"github.com/peterneutron/powerkit-go/pkg/powerkit"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/powerui"
@@ -83,11 +84,55 @@ type SleepNotifier interface {
 
 // BatteryInfo reads battery telemetry the SMC does not expose.
 type BatteryInfo interface {
-	// SystemInfo returns an IOKit snapshot of the battery and the adapter.
-	SystemInfo() (*powerkit.SystemInfo, error)
+	// Snapshot reads the battery and adapter state macOS reports.
+	Snapshot() (BatterySnapshot, error)
 	// FullChargeOverride reports whether macOS is charging to full once,
 	// pausing its own charge limit.
 	FullChargeOverride() (bool, error)
+}
+
+// BatterySnapshot is the battery and adapter state macOS reports through the
+// AppleSmartBattery IORegistry entry. A number macOS does not report is 0.
+type BatterySnapshot struct {
+	Charging     bool
+	FullyCharged bool
+	Voltage      float64 // battery voltage in volts
+	Amperage     float64 // battery current in amperes, negative while discharging
+	CycleCount   int
+	// DesignCapacity is what the battery held when new, in mAh.
+	DesignCapacity int
+	// MaxCapacity is what the battery holds when full today, in mAh.
+	MaxCapacity int
+	// InputVoltage and InputAmperage are what the Mac draws from the power
+	// adapter, in volts and amperes.
+	InputVoltage  float64
+	InputAmperage float64
+}
+
+// BatteryPower is the power flowing into the battery in watts, negative while
+// it discharges.
+func (s BatterySnapshot) BatteryPower() float64 {
+	return s.Voltage * s.Amperage
+}
+
+// AdapterPower is the power the Mac draws from the adapter in watts.
+func (s BatterySnapshot) AdapterPower() float64 {
+	return s.InputVoltage * s.InputAmperage
+}
+
+// SystemPower is the power the Mac itself uses in watts: what the adapter
+// supplies, minus what goes into the battery or plus what comes out of it.
+func (s BatterySnapshot) SystemPower() float64 {
+	return max(0, s.AdapterPower()-s.BatteryPower())
+}
+
+// Health is the full-charge capacity as a rounded percentage of the design
+// capacity, or 0 when the design capacity is unknown.
+func (s BatterySnapshot) Health() int {
+	if s.DesignCapacity <= 0 {
+		return 0
+	}
+	return int(math.Round(float64(s.MaxCapacity) / float64(s.DesignCapacity) * 100))
 }
 
 // System is everything the daemon needs from the machine. Every field must be

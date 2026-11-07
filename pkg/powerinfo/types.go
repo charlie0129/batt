@@ -50,7 +50,7 @@ func (b *Battery) ChargeLimitPendingActive() bool {
 }
 
 // PowerTelemetry holds a simplified snapshot used by the GUI.
-// Values are derived from IOKit data via powerkit-go.
+// Values come from the AppleSmartBattery IORegistry entry.
 type PowerTelemetry struct {
 	Adapter struct {
 		InputVoltage  float64 `json:"InputVoltage"`
