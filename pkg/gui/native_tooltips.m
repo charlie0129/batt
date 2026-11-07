@@ -49,6 +49,9 @@ void BattApplyTooltips(BattMenuController *controller) {
         @"Set whether to keep Clamshell mode alive while adapter input is disabled by temporarily disabling system sleep.\n\n"
          "This prevents all sleep—not just idle sleep—while adapter input is disabled, allowing Force Discharge and Auto Calibration to continue with the lid closed. When adapter input returns, batt automatically restores the prior sleep setting.\n\n"
          "WARNING: Your Mac may remain awake with the lid closed, overheat in a bag, or drain its battery to 0% if unplugged and left unattended.");
+    SetTooltip(controller, BattItemNoDrain,
+        @"Experimental macOS 27 native-mode option. Hold wall power above the limit instead of draining the battery.\n\n"
+         "Changing this policy restarts powerd. batt waits for other applications' sleep assertions to end first and uses the regular native limit meanwhile.");
     SetTooltip(controller, BattItemForceDischarge,
         @"Cut power from the wall and run from the battery, either indefinitely or for a selected duration. After a temporary force discharge, batt automatically restores the power adapter.\n\n"
          "NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep* unless \"Prevent Sleep when Adapter is Disabled\" is enabled. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.");

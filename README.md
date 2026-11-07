@@ -61,6 +61,7 @@ However, if you are nerdy and want to dive into the details, it does have some a
 - Cut power from the wall (even if the adapter is physically plugged in) to use battery power. [Docs](docs/usage.md#enabledisable-power-adapter)
 - On firmware < `20xxx`, it solves common sleep-related issues when controlling charging. [Docs1](docs/usage.md#preventing-idle-sleep) [Docs2](docs/usage.md#disabling-charging-before-sleep)
 - Calibrate battery automatically. [Docs](docs/usage.md#auto-calibration-experimental)
+- On macOS 27 native mode, optionally keep wall power above the limit instead of draining (experimental; requires a deferred `powerd` restart). [Docs](docs/usage.md#no-drain-above-the-native-limit-experimental)
 
 ## Installation
 

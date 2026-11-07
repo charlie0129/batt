@@ -54,6 +54,7 @@ func (c *menuController) refreshCompatibility() {
 	conf := config.NewFileFromConfig(rawConfig, "")
 	slog.Info("Got config", "config", conf)
 	c.menu.setChecked(itemPreventSleepOnAdapterDisable, conf.PreventSleepOnAdapterDisable())
+	c.menu.setChecked(itemNoDrain, conf.NoDrain())
 
 	slog.Info("Getting hardware compatibility")
 	capabilities, err := c.api.GetCompatibility()
@@ -162,6 +163,7 @@ func (c *menuController) refreshOnOpen() {
 	c.menu.setChecked(itemDisableChargingPreSleep, conf.DisableChargingPreSleep())
 	c.menu.setChecked(itemPreventSystemSleep, conf.PreventSystemSleep())
 	c.menu.setChecked(itemPreventSleepOnAdapterDisable, conf.PreventSleepOnAdapterDisable())
+	c.menu.setChecked(itemNoDrain, conf.NoDrain())
 	if capabilities.AdapterControl {
 		if adapter, err := c.api.GetAdapter(); err == nil {
 			c.updateAdapterState(adapter)
@@ -185,6 +187,7 @@ func (c *menuController) refreshDisableSchedules() {
 	conf := config.NewFileFromConfig(rawConfig, "")
 	c.updateDisableSchedules(conf)
 	c.menu.setChecked(itemPreventSleepOnAdapterDisable, conf.PreventSleepOnAdapterDisable())
+	c.menu.setChecked(itemNoDrain, conf.NoDrain())
 
 	currentCharge, err := c.api.GetCurrentCharge()
 	if err != nil {
@@ -380,6 +383,7 @@ func (c *menuController) setCompatibility(installed bool, capabilities compatibi
 	c.menu.setHidden(itemDisableChargingPreSleep, !usable || !capabilities.SleepHooks)
 	c.menu.setHidden(itemPreventSystemSleep, !usable || !capabilities.SleepHooks)
 	c.menu.setHidden(itemPreventSleepOnAdapterDisable, !canShowPreventSleepOnAdapterDisable(installed, capabilities, needsUpgrade))
+	c.menu.setHidden(itemNoDrain, !usable || capabilities.ChargeControlMode != compatibility.ChargeControlNative || !capabilities.NativeExactTargets)
 	c.menu.setHidden(itemForceDischarge, !usable || !capabilities.AdapterControl)
 	c.menu.setHidden(itemAutoCalibration, !usable || !capabilities.Calibration)
 	c.menu.setHidden(itemUninstall, !installed)

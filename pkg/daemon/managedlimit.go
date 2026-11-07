@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"log/slog"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
@@ -59,8 +60,29 @@ func (d *Daemon) ensureNativeChargeLimit(upper int) (bool, error) {
 		slog.Debug("charge limit is not offered by macOS, using the next supported limit", "configured", upper, "limit", snapped)
 		upper = snapped
 	}
+	if caps.NativeExactTargets && d.conf.NoDrain() {
+		return d.ensureNoDrainLimit(upper)
+	}
+	var policyErr error
+	if caps.NativeExactTargets {
+		if err := d.releaseNoDrainLimit(); err != nil {
+			if errors.Is(err, errNoDrainDeferred) {
+				// Keep the old ceiling until powerd can be restarted safely.
+				return false, err
+			}
+			// An unreadable policy store must not leave charging unmanaged.
+			// Log the problem and use PowerUIAgent rather than guessing at the
+			// contents of powerd's private preferences.
+			policyErr = err
+			slog.Error("could not remove the no-drain policy; using regular native control", "error", err)
+		}
+	}
 	if upper >= 100 {
-		return d.ensureNativeChargeLimitDisabled()
+		changed, err := d.ensureNativeChargeLimitDisabled()
+		if err != nil {
+			return changed, err
+		}
+		return changed, noDrainFallbackError(policyErr)
 	}
 
 	current, enabled, err := d.native.Limit()
@@ -68,12 +90,12 @@ func (d *Daemon) ensureNativeChargeLimit(upper int) (bool, error) {
 		return false, err
 	}
 	if enabled && current == upper {
-		return false, nil
+		return false, noDrainFallbackError(policyErr)
 	}
 	if err := d.native.SetLimit(upper); err != nil {
 		return false, err
 	}
-	return true, nil
+	return true, noDrainFallbackError(policyErr)
 }
 
 // nativeLimitOnBatteryNotice explains a native limit that macOS has accepted
@@ -102,16 +124,28 @@ func (d *Daemon) pendingNativeLimitNotice(limit int) string {
 }
 
 func (d *Daemon) ensureNativeChargeLimitDisabled() (bool, error) {
+	var policyErr error
+	if d.native.SupportsExactTargets() {
+		if err := d.releaseNoDrainLimit(); err != nil {
+			if errors.Is(err, errNoDrainDeferred) {
+				return false, err
+			}
+			policyErr = err
+		}
+	}
 	_, enabled, err := d.native.Limit()
 	if err != nil {
 		return false, err
 	}
 	if !enabled && !d.native.SupportsExactTargets() {
-		return false, nil
+		return false, noDrainFallbackError(policyErr)
 	}
 	// The agent can say disabled while powerd still has its registration.
 	// The client checks that independently and makes clean releases no-ops.
-	return enabled, d.native.Disable()
+	if err := d.native.Disable(); err != nil {
+		return enabled, err
+	}
+	return enabled, noDrainFallbackError(policyErr)
 }
 
 // resetChargeControl restores the platform's default charging behavior. It is

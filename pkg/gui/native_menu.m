@@ -101,6 +101,7 @@ static NSMenu *AddSubmenu(BattMenuController *controller,
         case BattItemDisableChargingPreSleep:
         case BattItemPreventSystemSleep:
         case BattItemPreventSleepOnAdapterDisable:
+        case BattItemNoDrain:
             sender.state = sender.state == NSControlStateValueOff
                 ? NSControlStateValueOn : NSControlStateValueOff;
             break;
@@ -249,6 +250,9 @@ void BattBuildMenu(BattMenuController *controller, NSString *version) {
     [advanced addItem:ActionItem(controller,
                                   @"Prevent Sleep when Adapter is Disabled", @"",
                                   BattItemPreventSleepOnAdapterDisable)];
+    [advanced addItem:ActionItem(controller,
+                                  @"No-drain Above Native Limit (Experimental)", @"",
+                                  BattItemNoDrain)];
     NSMenu *forceDischarge = AddSubmenu(controller, advanced, @"Force Discharge...",
                                         BattItemForceDischarge);
     NSMenuItem *forceDischargeCountdown = DisplayItem(controller, @"",

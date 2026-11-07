@@ -148,6 +148,8 @@ func TestStatusNativeLimitNotices(t *testing.T) {
 			response, _ = config.NewRawFileConfigFromConfig(cfg)
 		case "/telemetry":
 			response = struct{}{}
+		case "/no-drain":
+			response = client.NoDrainStatus{}
 		default:
 			t.Errorf("unexpected status request: %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)

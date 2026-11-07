@@ -24,3 +24,11 @@ int batt_powerui_write_preferences(int limit, char **err);
 
 // Read powerd's full-charge override without changing charging policy.
 int batt_powerui_full_charge_override(int *active, char **err);
+
+// The no-drain ceiling is powerd's persistent charge policy, rather than
+// PowerUIAgent's manual limit. It is available only to the root daemon on
+// macOS 27. Setting it may restart powerd; callers must check for foreign
+// sleep assertions first. A limit of 100 removes batt's policy. Reading and
+// writing preserve every other policy and reject unknown archive fields.
+int batt_powerui_get_policy(int *limit, int *enabled, char **err);
+int batt_powerui_set_policy(int limit, char **err);

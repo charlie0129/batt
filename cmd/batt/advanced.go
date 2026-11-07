@@ -37,6 +37,20 @@ When the SMC charge-control keys are gated (macOS 27 firmware), batt can hold th
 	)
 }
 
+func NewNoDrainCommand() *cobra.Command {
+	return newEnableDisableCommand(
+		"no-drain",
+		"Keep wall power above the native charge limit (macOS 27, experimental)",
+		`Keep the battery from draining while it is above the native charge limit on macOS 27.
+
+This is opt-in and experimental. batt writes powerd's no-drain charge policy and must restart powerd when the policy changes. A powerd restart drops sleep assertions owned by other applications, including caffeinate. batt defers each restart until those assertions are gone and uses the regular native limit meanwhile. The setting is not available in adapter or firmware-managed modes.
+
+macOS may still charge to 100% for battery maintenance. While no-drain is enabled, batt does not provide a lower-limit hysteresis band.`,
+		func() (string, error) { return apiClient.SetNoDrain(true) },
+		func() (string, error) { return apiClient.SetNoDrain(false) },
+	)
+}
+
 func NewSetDisableChargingPreSleepCommand() *cobra.Command {
 	return annotateCapability(newEnableDisableCommand(
 		"disable-charging-pre-sleep",
