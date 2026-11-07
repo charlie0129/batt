@@ -27,6 +27,7 @@ type statusChargingJSON struct {
 	UseAdapter             *bool `json:"useAdapter,omitempty"`
 	PluggedIn              bool  `json:"pluggedIn"`
 	ChargingToFullOverride *bool `json:"chargingToFullOverride,omitempty"`
+	ChargeLimitPending     *bool `json:"chargeLimitPending,omitempty"`
 }
 
 type statusBatteryJSON struct {
@@ -128,6 +129,7 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 			UseAdapter:             useAdapter,
 			PluggedIn:              data.pluggedIn,
 			ChargingToFullOverride: data.batteryInfo.ChargingToFullOverride,
+			ChargeLimitPending:     data.batteryInfo.ChargeLimitPending,
 		},
 		Battery: statusBatteryJSON{
 			CurrentChargePercent: data.currentCharge,

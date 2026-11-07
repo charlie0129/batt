@@ -209,6 +209,8 @@ func NewStatusCommand() *cobra.Command {
 						notice = powerinfo.FullChargeOverrideAtFullNotice
 					}
 					cmd.Println("  Notice: " + notice)
+				} else if cfg.UpperLimit() < 100 && data.batteryInfo.ChargeLimitPendingActive() {
+					cmd.Println("  Notice: " + powerinfo.ChargeLimitPendingNotice)
 				}
 			case compatibility.ChargeControlAdapter:
 				cmd.Println("  Control mode: " + bold("adapter (wall power)"))

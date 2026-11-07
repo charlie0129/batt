@@ -61,7 +61,7 @@ Your charge limit is restored automatically as soon as the battery reaches 100%.
 			Short: "Cancel the one-time charge",
 			Long: `Cancel a running one-time charge.
 
-The configured charge limit applies again immediately. In native mode, the battery can take a minute or more to respond.`,
+batt restores the configured charge limit immediately. In native mode, macOS can take a few minutes to apply it while the battery is charging, and the battery can take a minute or more to respond.`,
 			Args: cobra.NoArgs,
 			RunE: func(_ *cobra.Command, _ []string) error {
 				return runChargeOnce(

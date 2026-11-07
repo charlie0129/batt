@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -61,6 +62,10 @@ type Daemon struct {
 	// chargeControlStopped is set once shutdown has released charging. A
 	// queued maintenance pass must not put the limit back before exit.
 	chargeControlStopped bool
+	// pendingNativeLimit is the native target macOS had accepted but not yet
+	// applied at the last maintenance pass, or zero. Handlers read it without
+	// waiting for a pass.
+	pendingNativeLimit atomic.Int32
 
 	// loopDelay holds the maintain loop back around sleep and wake. See
 	// holdMaintainLoop.

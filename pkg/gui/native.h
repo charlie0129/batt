@@ -64,7 +64,7 @@ typedef enum {
     BattItemDisableLimit3Days,
     BattItemDisableLimit7Days,
     BattItemQuit,
-    BattItemFullChargeOverride,
+    BattItemNativeLimitNotice,
 } BattMenuItem;
 
 typedef enum {

@@ -168,7 +168,8 @@ func TestReadEndpoints(t *testing.T) {
 	if err := json.Unmarshal(f.mustServe(http.MethodGet, "/battery-info", "", http.StatusOK).Body.Bytes(), &battery); err != nil {
 		t.Fatal(err)
 	}
-	if battery.State != powerinfo.Charging || battery.ChargeRate != 24000 || battery.MaxCapacity != 5500 || battery.ChargingToFullOverride != nil {
+	if battery.State != powerinfo.Charging || battery.ChargeRate != 24000 || battery.MaxCapacity != 5500 ||
+		battery.ChargingToFullOverride != nil || battery.ChargeLimitPending != nil {
 		t.Fatalf("/battery-info = %+v", battery)
 	}
 
@@ -237,6 +238,9 @@ func TestReadEndpointsFollowTheChargeControlMode(t *testing.T) {
 	}
 	if battery.ChargingToFullOverride == nil || !*battery.ChargingToFullOverride {
 		t.Fatalf("/battery-info in native mode = %+v, want the full-charge override", battery)
+	}
+	if battery.ChargeLimitPending != nil {
+		t.Fatalf("/battery-info with slider-only native limits = %+v, want no pending state", battery)
 	}
 
 	f.setCaps(compatibility.Capabilities{ChargingControl: false})

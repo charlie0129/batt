@@ -135,7 +135,7 @@ func (c *menuController) refreshOnOpen() {
 
 	c.calibrationThreshold = conf.CalibrationDischargeThreshold()
 	c.updateChargeOnce(conf, currentCharge)
-	c.updateFullChargeOverride(batteryInfo)
+	c.updateNativeLimitNotice(batteryInfo)
 	c.menu.setTitle(itemCurrentLimit, fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
 	for _, item := range quickLimitItems {
 		c.menu.setChecked(item, quickLimitForItem(item) == conf.UpperLimit())
@@ -194,13 +194,13 @@ func (c *menuController) refreshDisableSchedules() {
 	c.updateChargeOnce(conf, currentCharge)
 	if c.capabilities.ChargeControlMode == compatibility.ChargeControlNative {
 		if batteryInfo, err := c.api.GetBatteryInfo(); err == nil {
-			c.updateFullChargeOverride(batteryInfo)
+			c.updateNativeLimitNotice(batteryInfo)
 		} else {
-			c.menu.setHidden(itemFullChargeOverride, true)
-			slog.Debug("Failed to refresh full-charge override state", "error", err)
+			c.menu.setHidden(itemNativeLimitNotice, true)
+			slog.Debug("Failed to refresh native limit state", "error", err)
 		}
 	} else {
-		c.menu.setHidden(itemFullChargeOverride, true)
+		c.menu.setHidden(itemNativeLimitNotice, true)
 	}
 
 	if c.capabilities.AdapterControl {
@@ -312,19 +312,33 @@ func (c *menuController) updateForceDischargeControls() {
 func (c *menuController) setStateError(message string, err error) {
 	slog.Error(message, "error", err)
 	c.menu.setTitle(itemState, "State: Error")
-	c.menu.setHidden(itemFullChargeOverride, true)
+	c.menu.setHidden(itemNativeLimitNotice, true)
 }
 
-func (c *menuController) updateFullChargeOverride(batteryInfo *powerinfo.Battery) {
-	visible := c.capabilities.ChargeControlMode == compatibility.ChargeControlNative &&
-		c.upperLimit < 100 && batteryInfo.FullChargeOverrideActive()
-	c.menu.setHidden(itemFullChargeOverride, !visible)
-	if batteryInfo.FullChargeOverrideAtFull(c.currentCharge) {
-		c.menu.setTitle(itemFullChargeOverride, "Battery full; waiting for macOS")
-		c.menu.setTooltip(itemFullChargeOverride, powerinfo.FullChargeOverrideAtFullNotice)
-	} else {
-		c.menu.setTitle(itemFullChargeOverride, "Limit paused by macOS")
-		c.menu.setTooltip(itemFullChargeOverride, fullChargeOverrideTooltip)
+func (c *menuController) updateNativeLimitNotice(batteryInfo *powerinfo.Battery) {
+	title, tooltip, visible := nativeLimitNotice(c.capabilities.ChargeControlMode, c.upperLimit, c.currentCharge, batteryInfo)
+	c.menu.setHidden(itemNativeLimitNotice, !visible)
+	if visible {
+		c.menu.setTitle(itemNativeLimitNotice, title)
+		c.menu.setTooltip(itemNativeLimitNotice, tooltip)
+	}
+}
+
+// nativeLimitNotice explains why macOS is not enforcing the configured native
+// limit right now, if it is not.
+func nativeLimitNotice(mode compatibility.ChargeControlMode, upperLimit, currentCharge int, batteryInfo *powerinfo.Battery) (title, tooltip string, visible bool) {
+	if mode != compatibility.ChargeControlNative || upperLimit >= 100 {
+		return "", "", false
+	}
+	switch {
+	case batteryInfo.FullChargeOverrideAtFull(currentCharge):
+		return "Battery full; waiting for macOS", powerinfo.FullChargeOverrideAtFullNotice, true
+	case batteryInfo.FullChargeOverrideActive():
+		return "Limit paused by macOS", fullChargeOverrideTooltip, true
+	case batteryInfo.ChargeLimitPendingActive():
+		return "Waiting for macOS to apply limit", powerinfo.ChargeLimitPendingNotice, true
+	default:
+		return "", "", false
 	}
 }
 
@@ -337,7 +351,7 @@ func (c *menuController) setCompatibility(installed bool, capabilities compatibi
 		return
 	}
 	c.capabilities = capabilities
-	c.menu.setHidden(itemFullChargeOverride, true)
+	c.menu.setHidden(itemNativeLimitNotice, true)
 	c.menu.setStatusIcon(installed, capabilities.ChargingControl, needsUpgrade)
 
 	usable := installed && capabilities.ChargingControl && !needsUpgrade

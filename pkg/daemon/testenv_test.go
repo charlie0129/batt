@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
+	"github.com/charlie0129/batt/pkg/powerui"
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
@@ -610,6 +612,10 @@ type fakeNativeLimit struct {
 	err        error
 	setCalls   []int
 	disables   int
+	// deferRegistration leaves new targets pending, as macOS does while the
+	// battery charges. pending is the target it has yet to apply.
+	deferRegistration bool
+	pending           int
 }
 
 func (f *fakeNativeLimit) Supported() bool            { return f.supported }
@@ -626,6 +632,9 @@ func (f *fakeNativeLimit) Limit() (int, bool, error) {
 	if f.err != nil {
 		return 0, false, f.err
 	}
+	if f.pending != 0 {
+		return 0, true, nil
+	}
 	return f.limit, f.enabled, nil
 }
 
@@ -634,22 +643,34 @@ func (f *fakeNativeLimit) SetLimit(limit int) error {
 		return f.err
 	}
 	f.setCalls = append(f.setCalls, limit)
+	if f.deferRegistration && limit < 100 {
+		f.pending = limit
+		return fmt.Errorf("native charge target %d%%: %w", limit, powerui.ErrRegistrationPending)
+	}
+	f.pending = 0
 	f.limit = limit
 	f.enabled = limit < 100
 	return nil
+}
+
+// register applies the pending target, as macOS does once the battery level
+// changes.
+func (f *fakeNativeLimit) register() {
+	f.limit, f.enabled, f.pending, f.deferRegistration = f.pending, true, 0, false
 }
 
 func (f *fakeNativeLimit) Disable() error {
 	if f.err != nil {
 		return f.err
 	}
-	if !f.enabled && !f.registered {
+	if !f.enabled && !f.registered && f.pending == 0 {
 		return nil
 	}
 	f.disables++
 	f.limit = 100
 	f.enabled = false
 	f.registered = false
+	f.pending = 0
 	return nil
 }
 

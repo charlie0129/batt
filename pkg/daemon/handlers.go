@@ -13,6 +13,7 @@ import (
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
+	"github.com/charlie0129/batt/pkg/powerui"
 	"github.com/charlie0129/batt/pkg/smc"
 	"github.com/charlie0129/batt/pkg/version"
 )
@@ -137,6 +138,9 @@ func (d *Daemon) setLimit(w http.ResponseWriter, r *http.Request) {
 		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
 		d.fail(w, http.StatusInternalServerError, err)
 		return
+	}
+	if notice := d.pendingNativeLimitNotice(l); notice != "" {
+		msg += " " + notice
 	}
 
 	writeJSON(w, http.StatusCreated, msg)
@@ -526,6 +530,11 @@ func (d *Daemon) getBatteryInfo(w http.ResponseWriter, r *http.Request) {
 			slog.Debug("Full-charge override state unavailable", "error", err)
 		}
 	}
+	if d.getCapabilities().NativeExactTargets {
+		// macOS applies no charge limit on battery power, so nothing waits there.
+		pending := d.pendingNativeLimit.Load() != 0 && !d.onBattery()
+		resp.ChargeLimitPending = &pending
+	}
 
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -878,8 +887,12 @@ func (d *Daemon) startChargeOnceRequest(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 	restoreNativeLimit := func() error {
-		if nativePreviouslyEnabled {
-			return d.native.SetLimit(nativePreviousLimit)
+		if !nativePreviouslyEnabled {
+			return nil
+		}
+		// A restored target that macOS applies later is still restored.
+		if err := d.native.SetLimit(nativePreviousLimit); !errors.Is(err, powerui.ErrRegistrationPending) {
+			return err
 		}
 		return nil
 	}
@@ -936,7 +949,11 @@ func (d *Daemon) postCancelChargeOnce(w http.ResponseWriter, r *http.Request) {
 
 	d.maintainLoopForced()
 
-	writeJSON(w, http.StatusOK, fmt.Sprintf("cancelled the one-time charge to %d%%, the %d%% charge limit applies again", target, d.conf.UpperLimit()))
+	msg := fmt.Sprintf("cancelled the one-time charge to %d%%, the %d%% charge limit applies again", target, d.conf.UpperLimit())
+	if notice := d.pendingNativeLimitNotice(d.conf.UpperLimit()); notice != "" {
+		msg += ". " + notice
+	}
+	writeJSON(w, http.StatusOK, msg)
 }
 
 // ===== Calibration Handlers =====
