@@ -46,6 +46,7 @@ const (
 	itemDisableChargingPreSleep      menuItem = C.BattItemDisableChargingPreSleep
 	itemPreventSystemSleep           menuItem = C.BattItemPreventSystemSleep
 	itemPreventSleepOnAdapterDisable menuItem = C.BattItemPreventSleepOnAdapterDisable
+	itemNoDrain                      menuItem = C.BattItemNoDrain
 	itemForceDischarge               menuItem = C.BattItemForceDischarge
 	itemAutoCalibration              menuItem = C.BattItemAutoCalibration
 	itemCalibrationStatus            menuItem = C.BattItemCalibrationStatus
@@ -127,6 +128,7 @@ const (
 	confirmForceDischargeIndefinitely   confirmation = C.BattConfirmationForceDischargeIndefinitely
 	confirmStartCalibration             confirmation = C.BattConfirmationStartCalibration
 	confirmPreventSleepOnAdapterDisable confirmation = C.BattConfirmationPreventSleepOnAdapterDisable
+	confirmNoDrain                      confirmation = C.BattConfirmationNoDrain
 )
 
 type nativeMenu struct {

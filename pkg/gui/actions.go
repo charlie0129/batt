@@ -39,6 +39,8 @@ func (c *menuController) handleAction(item menuItem, checked bool) {
 		c.setPreventSystemSleep(checked)
 	case itemPreventSleepOnAdapterDisable:
 		c.setPreventSleepOnAdapterDisable(checked)
+	case itemNoDrain:
+		c.setNoDrain(checked)
 	case itemForceDischargeStop:
 		c.stopForceDischarge()
 	case itemForceDischargeIndefinitely:
@@ -166,6 +168,28 @@ func (c *menuController) setPreventSleepOnAdapterDisable(checked bool) {
 	if _, err := c.api.SetPreventSleepOnAdapterDisable(checked); err != nil {
 		c.menu.setChecked(itemPreventSleepOnAdapterDisable, !checked)
 		showAlert("Failed to set prevent sleep on adapter disable", err.Error())
+	}
+}
+
+func (c *menuController) setNoDrain(checked bool) {
+	if checked && !showConfirmation(confirmNoDrain) {
+		c.menu.setChecked(itemNoDrain, false)
+		return
+	}
+	response, err := c.api.SetNoDrain(checked)
+	if err != nil {
+		c.menu.setChecked(itemNoDrain, !checked)
+		showAlert("Failed to set no-drain", err.Error())
+		return
+	}
+	// A deferred restart or a fallback is useful information, but a normal
+	// enable/disable response does not need to interrupt the menu interaction.
+	if strings.Contains(response, "turned off") || strings.Contains(response, "could not be applied safely") {
+		// The daemon rejected the policy and restored regular native control.
+		c.menu.setChecked(itemNoDrain, false)
+	}
+	if checked && (strings.Contains(response, "deferred") || strings.Contains(response, "could not")) {
+		showAlert("No-drain", response)
 	}
 }
 

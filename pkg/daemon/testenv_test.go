@@ -460,6 +460,8 @@ func (f *fakeSleepSetting) writeCount() int {
 // fakeAssertions records the IOPM power assertions the daemon holds.
 type fakeAssertions struct {
 	mu                 sync.Mutex
+	foreign            []SleepAssertion
+	foreignErr         error
 	onAC               bool
 	calibration        bool
 	preventOnAC        int
@@ -511,6 +513,12 @@ func (f *fakeAssertions) AllowCalibrationSleep() error {
 	f.allowCalibration++
 	f.calibration = false
 	return nil
+}
+
+func (f *fakeAssertions) ForeignSleepAssertions() ([]SleepAssertion, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]SleepAssertion(nil), f.foreign...), f.foreignErr
 }
 
 func (f *fakeAssertions) holdsSleepOnAC() bool {
@@ -615,6 +623,14 @@ type fakeNativeLimit struct {
 	// battery charges. pending is the target it has yet to apply.
 	deferRegistration bool
 	pending           int
+	noDrainLimit      int
+	noDrainEnabled    bool
+	noDrainSets       []int
+	noDrainDisables   int
+	noDrainErr        error
+	noDrainSetErr     error
+	noDrainReloads    int
+	noDrainReloadErr  error
 }
 
 func (f *fakeNativeLimit) Supported() bool            { return f.supported }
@@ -673,6 +689,47 @@ func (f *fakeNativeLimit) Disable() error {
 	return nil
 }
 
+func (f *fakeNativeLimit) NoDrainLimit() (int, bool, error) {
+	if f.noDrainErr != nil {
+		return 100, false, f.noDrainErr
+	}
+	if !f.exact {
+		return 100, false, powerui.ErrNoDrainUnsupported
+	}
+	if !f.noDrainEnabled {
+		return 100, false, nil
+	}
+	return f.noDrainLimit, true, nil
+}
+
+func (f *fakeNativeLimit) SetNoDrainLimit(limit int) error {
+	if f.noDrainErr != nil {
+		return f.noDrainErr
+	}
+	if f.noDrainSetErr != nil {
+		return f.noDrainSetErr
+	}
+	f.noDrainSets = append(f.noDrainSets, limit)
+	// The real controller disables PowerUIAgent before saving powerd's policy.
+	_ = f.Disable()
+	f.noDrainLimit, f.noDrainEnabled = limit, true
+	return f.noDrainReloadErr
+}
+
+func (f *fakeNativeLimit) DisableNoDrain() error {
+	if f.noDrainErr != nil {
+		return f.noDrainErr
+	}
+	f.noDrainDisables++
+	f.noDrainLimit, f.noDrainEnabled = 100, false
+	return f.noDrainReloadErr
+}
+
+func (f *fakeNativeLimit) ReloadNoDrain() error {
+	f.noDrainReloads++
+	return f.noDrainReloadErr
+}
+
 // sliderNative is a macOS 26-style native backend offering slider values only.
 func sliderNative(limits ...int) *fakeNativeLimit {
 	return &fakeNativeLimit{supported: true, limits: limits, limit: 100}
@@ -701,6 +758,7 @@ type memConfigState struct {
 	preventSleepOnAdapterDisable bool
 	allowNonRootAccess           bool
 	adapterMode                  bool
+	noDrain                      bool
 	magSafe                      config.ControlMagSafeMode
 	calibrationThreshold         int
 	calibrationHoldMinutes       int
@@ -794,6 +852,12 @@ func (m *memConfig) AdapterMode() bool {
 	return m.adapterMode
 }
 
+func (m *memConfig) NoDrain() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.noDrain
+}
+
 func (m *memConfig) ControlMagSafeLED() config.ControlMagSafeMode {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -860,6 +924,7 @@ func (m *memConfig) SetAllowNonRootAccess(b bool) {
 	m.set(func(s *memConfigState) { s.allowNonRootAccess = b })
 }
 func (m *memConfig) SetAdapterMode(b bool) { m.set(func(s *memConfigState) { s.adapterMode = b }) }
+func (m *memConfig) SetNoDrain(b bool)     { m.set(func(s *memConfigState) { s.noDrain = b }) }
 func (m *memConfig) SetControlMagSafeLED(mode config.ControlMagSafeMode) {
 	m.set(func(s *memConfigState) { s.magSafe = mode })
 }

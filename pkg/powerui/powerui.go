@@ -30,7 +30,32 @@ type Controller interface {
 	// call. Slider-only backends verify through their setter.
 	SetLimit(limit int) error
 	Disable() error
+	// NoDrainLimit reads batt's saved no-drain ceiling. enabled describes
+	// the saved policy, not physical charging current.
+	NoDrainLimit() (limit int, enabled bool, err error)
+	// SetNoDrainLimit disables PowerUIAgent's competing limit and saves a
+	// no-drain ceiling. It may restart powerd. The daemon checks for other
+	// applications' sleep assertions immediately before calling it.
+	SetNoDrainLimit(limit int) error
+	// DisableNoDrain removes batt's ceiling and may restart powerd.
+	DisableNoDrain() error
+	// ReloadNoDrain retries a saved policy reload after a deferred or
+	// unconfirmed powerd restart. It repeats the assertion check.
+	ReloadNoDrain() error
 }
+
+// ErrNoDrainUnsupported reports that this PowerUI backend does not expose
+// powerd's exact no-drain policy (before macOS 27, or without root).
+var ErrNoDrainUnsupported = errors.New("native no-drain charging requires the root batt daemon on macOS 27")
+
+// ErrRestartDeferred means a policy was saved but powerd was not signalled
+// because an application holds a sleep assertion (or assertions cannot be read).
+var ErrRestartDeferred = errors.New("powerd restart deferred to preserve sleep assertions")
+
+// ErrReloadPending means a policy was saved but powerd has not confirmed its
+// reload. The caller must retry the reload before treating the transition as
+// complete; it must not silently restore a competing charging policy.
+var ErrReloadPending = errors.New("powerd policy reload is not confirmed")
 
 // ErrRegistrationPending reports a target that PowerUIAgent has loaded but
 // powerd does not enforce yet. While the battery charges, the agent registers
@@ -41,6 +66,12 @@ var ErrRegistrationPending = errors.New("macOS has accepted the target but not a
 
 // The client chooses the preference path or the slider API. Tests replace
 // these operations without calling Apple services or changing preferences.
+type policyOperations interface {
+	Policy() (int, bool, error)
+	SetPolicy(int) error
+	ReloadPolicy() error
+}
+
 type operations interface {
 	Supported() bool
 	AvailableLimits() ([]int, error)
@@ -288,4 +319,83 @@ func (c *Client) Disable() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.disable()
+}
+
+// noDrainAPI returns the optional powerd policy operations. Tests can use a
+// PowerUI fake without also simulating the macOS 27 policy store.
+func (c *Client) noDrainAPI() (policyOperations, error) {
+	api, ok := c.api.(policyOperations)
+	if !ok || !c.api.CustomLimits() {
+		return nil, ErrNoDrainUnsupported
+	}
+	return api, nil
+}
+
+func (c *Client) NoDrainLimit() (int, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	api, err := c.noDrainAPI()
+	if err != nil {
+		return 100, false, err
+	}
+	return api.Policy()
+}
+
+func (c *Client) SetNoDrainLimit(limit int) error {
+	if limit < 10 || limit >= 100 {
+		return fmt.Errorf("invalid no-drain charge limit %d: expected 10 through 99", limit)
+	}
+	c.mu.Lock()
+	api, err := c.noDrainAPI()
+	if err == nil {
+		// The agent re-registers its draining limit on power-source changes.
+		// Release it before installing powerd's independent ceiling.
+		err = c.disable()
+	}
+	if err == nil {
+		err = api.SetPolicy(limit)
+	}
+	c.mu.Unlock()
+	if err == nil {
+		return nil
+	}
+	// A deferred or unconfirmed reload means the policy may already be saved.
+	// Do not remove it or re-enable PowerUIAgent before that reload completes.
+	if errors.Is(err, ErrRestartDeferred) || errors.Is(err, ErrReloadPending) {
+		return err
+	}
+	// For a failure before the write, remove any old batt policy before
+	// restoring the ordinary target. Cleanup itself can be deferred; in that
+	// case leave both policies alone until the guarded reload succeeds.
+	var cleanupErr error
+	if api != nil {
+		c.mu.Lock()
+		cleanupErr = api.SetPolicy(100)
+		c.mu.Unlock()
+	}
+	if cleanupErr != nil {
+		return errors.Join(fmt.Errorf("apply no-drain charge limit: %w", err), cleanupErr)
+	}
+	restoreErr := c.SetLimit(limit)
+	return errors.Join(fmt.Errorf("apply no-drain charge limit: %w", err), restoreErr)
+}
+
+func (c *Client) DisableNoDrain() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	api, err := c.noDrainAPI()
+	if err != nil {
+		return err
+	}
+	return api.SetPolicy(100)
+}
+
+func (c *Client) ReloadNoDrain() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	api, err := c.noDrainAPI()
+	if err != nil {
+		return err
+	}
+	return api.ReloadPolicy()
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/charlie0129/batt/pkg/calibration"
+	"github.com/charlie0129/batt/pkg/client"
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/powerinfo"
@@ -21,6 +22,7 @@ type statusData struct {
 	batteryInfo   *powerinfo.Battery
 	config        *config.RawFileConfig
 	capabilities  compatibility.Capabilities
+	noDrain       *client.NoDrainStatus
 }
 
 // chargeTarget returns the percentage batt is charging the battery towards. A
@@ -135,6 +137,8 @@ func fetchStatusData() (*statusData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config: %w", err)
 	}
+	// Older daemons do not have this endpoint. Their status remains usable.
+	noDrain, _ := apiClient.GetNoDrain()
 
 	charging := false
 	if capabilities.ChargeControlMode == compatibility.ChargeControlLegacy {
@@ -160,6 +164,7 @@ func fetchStatusData() (*statusData, error) {
 		batteryInfo:   bat,
 		config:        conf,
 		capabilities:  capabilities,
+		noDrain:       noDrain,
 	}, nil
 }
 
@@ -317,6 +322,25 @@ func NewStatusCommand() *cobra.Command {
 				cmd.Printf("  Prevent sleep while adapter is disabled: %s\n", bool2Text(cfg.PreventSleepOnAdapterDisable()))
 			}
 			cmd.Printf("  Allow non-root users to access the daemon: %s\n", bool2Text(cfg.AllowNonRootAccess()))
+			if data.noDrain != nil && data.capabilities.NativeExactTargets {
+				label := "disabled"
+				switch data.noDrain.Phase {
+				case "active":
+					label = "active (wall power above the limit)"
+				case "waiting":
+					label = "waiting for other apps' sleep prevention"
+				case "error":
+					label = "unavailable; regular native limit restored"
+				case "off":
+					if data.noDrain.Enabled {
+						label = "enabled"
+					}
+				}
+				cmd.Printf("  No-drain (powerd): %s\n", bold("%s", label))
+				if data.noDrain.Message != "" && data.noDrain.Phase != "active" {
+					cmd.Printf("    %s\n", data.noDrain.Message)
+				}
+			}
 
 			if data.capabilities.MagSafeLED {
 				mode := cfg.ControlMagSafeLED()

@@ -28,6 +28,13 @@ type fakeOperations struct {
 	ignoreRegistration            bool
 	registrationReads             int
 	registrationDelay             int
+	policyLimit                   int
+	policyEnabled                 bool
+	policyCalls                   []int
+	policyErr                     error
+	policySetErr                  error
+	reloadCalls                   int
+	reloadErr                     error
 }
 
 func (f *fakeOperations) Supported() bool                 { return true }
@@ -88,6 +95,28 @@ func (f *fakeOperations) Disable() error {
 		f.enabled, f.agentEnabled, f.registered = false, false, false
 	}
 	return nil
+}
+
+func (f *fakeOperations) Policy() (int, bool, error) {
+	if f.policyErr != nil {
+		return 100, false, f.policyErr
+	}
+	return f.policyLimit, f.policyEnabled, nil
+}
+
+func (f *fakeOperations) SetPolicy(limit int) error {
+	f.policyCalls = append(f.policyCalls, limit)
+	if f.policySetErr != nil && len(f.policyCalls) == 1 {
+		return f.policySetErr
+	}
+	f.policyLimit = limit
+	f.policyEnabled = limit < 100
+	return nil
+}
+
+func (f *fakeOperations) ReloadPolicy() error {
+	f.reloadCalls++
+	return f.reloadErr
 }
 
 func (f *fakeOperations) ManualLimitRegistered() (bool, error) {
@@ -499,5 +528,70 @@ func TestSliderNativeDoesNotUseRegistration(t *testing.T) {
 	}
 	if f.registrationReads != 0 || !reflect.DeepEqual(f.sliderTargets, []int{90, 90}) {
 		t.Fatal("slider backend entered exact-native reconciliation", f)
+	}
+}
+
+func TestNoDrainLimitDisablesAgentBeforeWritingPolicy(t *testing.T) {
+	f := &fakeOperations{custom: true, enabled: true, agentEnabled: true, target: 80, agentTarget: 80, registered: true}
+	c := &Client{api: f, sleep: noSleep}
+	if err := c.SetNoDrainLimit(65); err != nil {
+		t.Fatal(err)
+	}
+	if !f.policyEnabled || f.policyLimit != 65 || f.agentEnabled || f.enabled {
+		t.Fatalf("competing agent policy was not released: %+v", f)
+	}
+	if len(f.policyCalls) != 1 || f.policyCalls[0] != 65 {
+		t.Fatalf("policy calls = %v", f.policyCalls)
+	}
+	if err := c.DisableNoDrain(); err != nil || f.policyEnabled {
+		t.Fatalf("policy release failed: %v %+v", err, f)
+	}
+}
+
+func TestNoDrainFailureCleansPolicyAndRestoresNativeTarget(t *testing.T) {
+	f := &fakeOperations{custom: true, policySetErr: errors.New("unknown archive")}
+	c := &Client{api: f, sleep: noSleep}
+	err := c.SetNoDrainLimit(65)
+	if err == nil || len(f.policyCalls) != 2 || f.policyCalls[1] != 100 {
+		t.Fatalf("failed policy was not cleaned up: err=%v calls=%v", err, f.policyCalls)
+	}
+	if !f.enabled || f.target != 65 {
+		t.Fatalf("ordinary target was not restored: %+v", f)
+	}
+}
+
+func TestNoDrainUnsupportedReturnsErrorWithoutPanic(t *testing.T) {
+	f := &fakeOperations{custom: false}
+	c := &Client{api: f, sleep: noSleep}
+	if _, _, err := c.NoDrainLimit(); !errors.Is(err, ErrNoDrainUnsupported) {
+		t.Fatalf("NoDrainLimit error = %v", err)
+	}
+	if err := c.SetNoDrainLimit(65); !errors.Is(err, ErrNoDrainUnsupported) {
+		t.Fatalf("SetNoDrainLimit error = %v", err)
+	}
+	if err := c.DisableNoDrain(); !errors.Is(err, ErrNoDrainUnsupported) {
+		t.Fatalf("DisableNoDrain error = %v", err)
+	}
+}
+
+func TestNoDrainReloadPendingSkipsCleanupAndNativeRestore(t *testing.T) {
+	for _, cause := range []error{ErrRestartDeferred, ErrReloadPending} {
+		f := &fakeOperations{custom: true, policySetErr: cause}
+		c := &Client{api: f, sleep: noSleep}
+		err := c.SetNoDrainLimit(65)
+		if !errors.Is(err, cause) {
+			t.Fatalf("error = %v, want %v", err, cause)
+		}
+		if len(f.policyCalls) != 1 || len(f.writeTargets) != 0 {
+			t.Fatalf("pending policy was cleaned up or native target restored: calls=%v writes=%v", f.policyCalls, f.writeTargets)
+		}
+	}
+}
+
+func TestReloadNoDrainUsesPolicyReloadOperation(t *testing.T) {
+	f := &fakeOperations{custom: true, reloadErr: ErrReloadPending}
+	c := &Client{api: f, sleep: noSleep}
+	if err := c.ReloadNoDrain(); !errors.Is(err, ErrReloadPending) || f.reloadCalls != 1 {
+		t.Fatalf("reload = %v, calls = %d", err, f.reloadCalls)
 	}
 }

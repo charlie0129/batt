@@ -20,3 +20,16 @@ func TestObjectiveCBridgeWithIsolatedPreferences(t *testing.T) {
 		t.Fatalf("native bridge test: %v\n%s", err, output)
 	}
 }
+
+func TestObjectiveCPolicyBridgeWithIsolatedPreferences(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "policy-test")
+	cmd := exec.Command("/usr/bin/xcrun", "clang", "-Wall", "-Wextra", "-Werror",
+		"-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-framework", "Foundation",
+		"testdata/policy_test.m", "-o", binary)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("compile native policy test: %v\n%s", err, output)
+	}
+	if output, err := exec.Command(binary).CombinedOutput(); err != nil {
+		t.Fatalf("native policy test: %v\n%s", err, output)
+	}
+}

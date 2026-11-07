@@ -66,6 +66,12 @@ type Daemon struct {
 	// applied at the last maintenance pass, or zero. Handlers read it without
 	// waiting for a pass.
 	pendingNativeLimit atomic.Int32
+	// noDrainState describes whether the opt-in powerd policy is active,
+	// waiting for foreign sleep assertions, or fell back to native control.
+	noDrainState atomic.Pointer[noDrainStatus]
+	// noDrainReloadPending records a saved policy whose powerd reload has not
+	// completed. Saved policy absence alone must not mark a release complete.
+	noDrainReloadPending atomic.Bool
 
 	// loopDelay holds the maintain loop back around sleep and wake. See
 	// holdMaintainLoop.
@@ -144,6 +150,8 @@ func (d *Daemon) routes() http.Handler {
 	mux.HandleFunc("GET /battery-info", d.getBatteryInfo)
 	mux.HandleFunc("PUT /magsafe-led", d.setControlMagSafeLED)
 	mux.HandleFunc("PUT /adapter-mode", d.setAdapterMode)
+	mux.HandleFunc("PUT /no-drain", d.setNoDrain)
+	mux.HandleFunc("GET /no-drain", d.getNoDrain)
 	mux.HandleFunc("GET /current-charge", d.getCurrentCharge)
 	mux.HandleFunc("GET /plugged-in", d.getPluggedIn)
 	mux.HandleFunc("GET /charging-control-capable", d.getChargingControlCapable)

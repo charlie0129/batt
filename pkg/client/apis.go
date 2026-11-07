@@ -83,6 +83,30 @@ func (c *Client) SetAdapterMode(enabled bool) (string, error) {
 	return c.Put("/adapter-mode", strconv.FormatBool(enabled))
 }
 
+// NoDrainStatus describes the saved opt-in and whether its powerd policy is
+// active or waiting for other applications' sleep assertions to end.
+type NoDrainStatus struct {
+	Enabled bool   `json:"enabled"`
+	Phase   string `json:"phase"`
+	Message string `json:"message,omitempty"`
+}
+
+func (c *Client) SetNoDrain(enabled bool) (string, error) {
+	return c.Put("/no-drain", strconv.FormatBool(enabled))
+}
+
+func (c *Client) GetNoDrain() (*NoDrainStatus, error) {
+	ret, err := c.Get("/no-drain")
+	if err != nil {
+		return nil, err
+	}
+	var status NoDrainStatus
+	if err := json.Unmarshal([]byte(ret), &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
 func (c *Client) SetControlMagSafeLED(mode config.ControlMagSafeMode) (string, error) {
 	payload, err := json.Marshal(mode)
 	if err != nil {
