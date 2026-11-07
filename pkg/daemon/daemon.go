@@ -69,6 +69,9 @@ type Daemon struct {
 	// noDrainState describes whether the opt-in powerd policy is active,
 	// waiting for foreign sleep assertions, or fell back to native control.
 	noDrainState atomic.Pointer[noDrainStatus]
+	// noDrainReloadPending records a saved policy whose powerd reload has not
+	// completed. Saved policy absence alone must not mark a release complete.
+	noDrainReloadPending atomic.Bool
 
 	// loopDelay holds the maintain loop back around sleep and wake. See
 	// holdMaintainLoop.

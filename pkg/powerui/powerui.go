@@ -39,11 +39,23 @@ type Controller interface {
 	SetNoDrainLimit(limit int) error
 	// DisableNoDrain removes batt's ceiling and may restart powerd.
 	DisableNoDrain() error
+	// ReloadNoDrain retries a saved policy reload after a deferred or
+	// unconfirmed powerd restart. It repeats the assertion check.
+	ReloadNoDrain() error
 }
 
 // ErrNoDrainUnsupported reports that this PowerUI backend does not expose
 // powerd's exact no-drain policy (before macOS 27, or without root).
 var ErrNoDrainUnsupported = errors.New("native no-drain charging requires the root batt daemon on macOS 27")
+
+// ErrRestartDeferred means a policy was saved but powerd was not signalled
+// because an application holds a sleep assertion (or assertions cannot be read).
+var ErrRestartDeferred = errors.New("powerd restart deferred to preserve sleep assertions")
+
+// ErrReloadPending means a policy was saved but powerd has not confirmed its
+// reload. The caller must retry the reload before treating the transition as
+// complete; it must not silently restore a competing charging policy.
+var ErrReloadPending = errors.New("powerd policy reload is not confirmed")
 
 // ErrRegistrationPending reports a target that PowerUIAgent has loaded but
 // powerd does not enforce yet. While the battery charges, the agent registers
@@ -57,6 +69,7 @@ var ErrRegistrationPending = errors.New("macOS has accepted the target but not a
 type policyOperations interface {
 	Policy() (int, bool, error)
 	SetPolicy(int) error
+	ReloadPolicy() error
 }
 
 type operations interface {
@@ -346,18 +359,25 @@ func (c *Client) SetNoDrainLimit(limit int) error {
 	if err == nil {
 		return nil
 	}
-	// Do not leave the ordinary limit disabled after a failed policy write.
-	// SetPolicy is idempotent, so cleanup does not restart powerd when no
-	// batt policy was saved. If the write did land, remove it before restoring
-	// the draining target.
+	// A deferred or unconfirmed reload means the policy may already be saved.
+	// Do not remove it or re-enable PowerUIAgent before that reload completes.
+	if errors.Is(err, ErrRestartDeferred) || errors.Is(err, ErrReloadPending) {
+		return err
+	}
+	// For a failure before the write, remove any old batt policy before
+	// restoring the ordinary target. Cleanup itself can be deferred; in that
+	// case leave both policies alone until the guarded reload succeeds.
 	var cleanupErr error
 	if api != nil {
 		c.mu.Lock()
 		cleanupErr = api.SetPolicy(100)
 		c.mu.Unlock()
 	}
+	if cleanupErr != nil {
+		return errors.Join(fmt.Errorf("apply no-drain charge limit: %w", err), cleanupErr)
+	}
 	restoreErr := c.SetLimit(limit)
-	return errors.Join(fmt.Errorf("apply no-drain charge limit: %w", err), cleanupErr, restoreErr)
+	return errors.Join(fmt.Errorf("apply no-drain charge limit: %w", err), restoreErr)
 }
 
 func (c *Client) DisableNoDrain() error {
@@ -368,4 +388,14 @@ func (c *Client) DisableNoDrain() error {
 		return err
 	}
 	return api.SetPolicy(100)
+}
+
+func (c *Client) ReloadNoDrain() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	api, err := c.noDrainAPI()
+	if err != nil {
+		return err
+	}
+	return api.ReloadPolicy()
 }

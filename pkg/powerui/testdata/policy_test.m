@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include "../powerui.h"
+#include "../assertions.h"
 
 static NSMutableDictionary *store;
 static NSDictionary *concurrentPreferences;
@@ -65,6 +66,20 @@ static int fakeSleep(useconds_t delay) {
 #define proc_pidpath fakePath
 #define kill fakeKill
 #define usleep fakeSleep
+static int fakeAssertionCount;
+static int fakeSleepAssertions(battSleepAssertion **out, int *count, char **error) {
+    (void)error; *out = NULL; *count = 0;
+    if (fakeAssertionCount) {
+        *out = calloc(1, sizeof(**out));
+        (*out)[0].pid = getpid();
+        strcpy((*out)[0].assertion_type, "PreventUserIdleSystemSleep");
+        strcpy((*out)[0].name, "batt auto calibration");
+        *count = 1;
+    }
+    return 0;
+}
+#define battCopySleepAssertions fakeSleepAssertions
+#define battFreeSleepAssertions free
 #include "../policy.m"
 
 int batt_powerui_custom_limits(void) { return custom; }
@@ -81,7 +96,7 @@ static void reset(NSArray *policies) {
     store=[NSMutableDictionary dictionaryWithDictionary:@{@"bootSessionUUID":@"boot1",@"policies":encodePolicies([NSMutableArray arrayWithArray:policies])}];
     uid=0; custom=syncOK=disableOK=signalOK=restartOK=listingOK=YES; manualEnabled=NO;
     writes=reloads=disables=sleeps=restartDelay=0; currentPID=41;
-    copies=changeAtCopy=0; concurrentPreferences=nil;
+    copies=changeAtCopy=0; concurrentPreferences=nil; fakeAssertionCount=0;
 }
 static NSMutableArray *readPolicies(void) {
     char *error=NULL; NSMutableArray *result=decodePolicies(store,@"boot1",&error);
@@ -139,7 +154,7 @@ int main(void) { @autoreleasepool {
         p.terminated=mode == 2;
         reset(mode == 3 ? @[p,p] : @[p]);
         assert(batt_powerui_get_policy(&limit,&enabled,&error) == 0 && enabled && limit == 0);
-        assert(batt_powerui_set_policy(55,&error) == 0 && readPolicies().count == 1);
+        assert(batt_powerui_set_policy(55,&error) == 0 && readPolicies().count == 1 && !((BattChargePolicy *)readPolicies()[0]).terminated);
     }
     // Never replay an earlier boot's low hold or foreign policies.
     reset(@[makePolicy(@"battChargeLimit",8,NO,NO)]);store[@"bootSessionUUID"]=@"old-boot";
@@ -171,7 +186,7 @@ int main(void) { @autoreleasepool {
         if(failure == 4) signalOK=NO;
         if(failure == 5) restartOK=NO;
         if(failure == 6) listingOK=NO;
-        assert(batt_powerui_set_policy(55,&error) == -1 && error != NULL);free(error);error=NULL;
+        assert(batt_powerui_set_policy(55,&error) == (failure >= 4 ? BATT_POWERUI_RELOAD_PENDING : -1) && error != NULL);free(error);error=NULL;
         if(failure < 4) assert(writes == 0 && reloads == 0);
     }
     // No-op writes and releases must not restart powerd.
@@ -181,5 +196,12 @@ int main(void) { @autoreleasepool {
     assert(batt_powerui_set_policy(55,&error) == 0 && writes == 1 && reloads == 1);
     assert(batt_powerui_set_policy(100,&error) == 0 && writes == 2 && reloads == 2);
     assert(batt_powerui_set_policy(100,&error) == 0 && writes == 2 && reloads == 2);
+    // The final guard runs immediately before every SIGHUP, including a
+    // direct retry, and includes batt's own calibration assertion.
+    reset(@[]); fakeAssertionCount=1;
+    assert(batt_powerui_set_policy(55,&error) == BATT_POWERUI_RESTART_DEFERRED && reloads == 0);
+    free(error); error=NULL;
+    assert(batt_powerui_reload_policies(&error) == BATT_POWERUI_RESTART_DEFERRED && reloads == 0);
+    free(error); error=NULL;
     puts("PASS: ceiling boundaries, no drain, no calibration suppression, mutable archives, foreign policies, reboot, release, schema and write errors");
 } return 0; }

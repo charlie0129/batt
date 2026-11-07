@@ -33,6 +33,8 @@ type fakeOperations struct {
 	policyCalls                   []int
 	policyErr                     error
 	policySetErr                  error
+	reloadCalls                   int
+	reloadErr                     error
 }
 
 func (f *fakeOperations) Supported() bool                 { return true }
@@ -104,12 +106,17 @@ func (f *fakeOperations) Policy() (int, bool, error) {
 
 func (f *fakeOperations) SetPolicy(limit int) error {
 	f.policyCalls = append(f.policyCalls, limit)
-	if f.policySetErr != nil {
+	if f.policySetErr != nil && len(f.policyCalls) == 1 {
 		return f.policySetErr
 	}
 	f.policyLimit = limit
 	f.policyEnabled = limit < 100
 	return nil
+}
+
+func (f *fakeOperations) ReloadPolicy() error {
+	f.reloadCalls++
+	return f.reloadErr
 }
 
 func (f *fakeOperations) ManualLimitRegistered() (bool, error) {
@@ -564,5 +571,27 @@ func TestNoDrainUnsupportedReturnsErrorWithoutPanic(t *testing.T) {
 	}
 	if err := c.DisableNoDrain(); !errors.Is(err, ErrNoDrainUnsupported) {
 		t.Fatalf("DisableNoDrain error = %v", err)
+	}
+}
+
+func TestNoDrainReloadPendingSkipsCleanupAndNativeRestore(t *testing.T) {
+	for _, cause := range []error{ErrRestartDeferred, ErrReloadPending} {
+		f := &fakeOperations{custom: true, policySetErr: cause}
+		c := &Client{api: f, sleep: noSleep}
+		err := c.SetNoDrainLimit(65)
+		if !errors.Is(err, cause) {
+			t.Fatalf("error = %v, want %v", err, cause)
+		}
+		if len(f.policyCalls) != 1 || len(f.writeTargets) != 0 {
+			t.Fatalf("pending policy was cleaned up or native target restored: calls=%v writes=%v", f.policyCalls, f.writeTargets)
+		}
+	}
+}
+
+func TestReloadNoDrainUsesPolicyReloadOperation(t *testing.T) {
+	f := &fakeOperations{custom: true, reloadErr: ErrReloadPending}
+	c := &Client{api: f, sleep: noSleep}
+	if err := c.ReloadNoDrain(); !errors.Is(err, ErrReloadPending) || f.reloadCalls != 1 {
+		t.Fatalf("reload = %v, calls = %d", err, f.reloadCalls)
 	}
 }

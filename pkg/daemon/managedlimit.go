@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"errors"
 	"log/slog"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
@@ -66,7 +65,7 @@ func (d *Daemon) ensureNativeChargeLimit(upper int) (bool, error) {
 	var policyErr error
 	if caps.NativeExactTargets {
 		if err := d.releaseNoDrainLimit(); err != nil {
-			if errors.Is(err, errNoDrainDeferred) {
+			if isNoDrainDeferred(err) {
 				// Keep the old ceiling until powerd can be restarted safely.
 				return false, err
 			}
@@ -127,7 +126,7 @@ func (d *Daemon) ensureNativeChargeLimitDisabled() (bool, error) {
 	var policyErr error
 	if d.native.SupportsExactTargets() {
 		if err := d.releaseNoDrainLimit(); err != nil {
-			if errors.Is(err, errNoDrainDeferred) {
+			if isNoDrainDeferred(err) {
 				return false, err
 			}
 			policyErr = err

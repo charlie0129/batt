@@ -14,6 +14,14 @@ var (
 	errNoDrainFallback = errors.New("no-drain is unavailable; using the regular native charge limit")
 )
 
+func isNoDrainRestartPending(err error) bool {
+	return errors.Is(err, powerui.ErrRestartDeferred) || errors.Is(err, powerui.ErrReloadPending)
+}
+
+func isNoDrainDeferred(err error) bool {
+	return errors.Is(err, errNoDrainDeferred) || isNoDrainRestartPending(err)
+}
+
 func noDrainFallbackError(cause error) error {
 	if cause == nil {
 		return nil
@@ -86,12 +94,37 @@ func (d *Daemon) noDrainDeferred(upper int, policyActive bool, err error) (bool,
 	if nativeErr != nil && !errors.Is(nativeErr, powerui.ErrRegistrationPending) {
 		return false, nativeErr
 	}
-	return true, err
+	// Preserve both reasons: the restart is deferred, and the ordinary native
+	// target may itself still be waiting for powerd registration.
+	return true, errors.Join(err, nativeErr)
+}
+
+func (d *Daemon) markNoDrainReloadPending(err error) error {
+	d.noDrainReloadPending.Store(true)
+	d.setNoDrainStatus(noDrainWaiting, err.Error())
+	return err
+}
+
+func (d *Daemon) retryNoDrainReload() error {
+	if err := d.native.ReloadNoDrain(); err != nil {
+		if isNoDrainRestartPending(err) {
+			return d.markNoDrainReloadPending(err)
+		}
+		d.setNoDrainStatus(noDrainError, err.Error())
+		return err
+	}
+	d.noDrainReloadPending.Store(false)
+	return nil
 }
 
 // releaseNoDrainLimit removes only batt's own powerd policy. It is also used
 // on ordinary native passes so a previous opt-in cannot fight PowerUIAgent.
 func (d *Daemon) releaseNoDrainLimit() error {
+	if d.noDrainReloadPending.Load() {
+		if err := d.retryNoDrainReload(); err != nil {
+			return err
+		}
+	}
 	_, enabled, err := d.native.NoDrainLimit()
 	if err != nil {
 		d.setNoDrainStatus(noDrainError, err.Error())
@@ -108,6 +141,9 @@ func (d *Daemon) releaseNoDrainLimit() error {
 		return err
 	}
 	if err := d.native.DisableNoDrain(); err != nil {
+		if isNoDrainRestartPending(err) {
+			return d.markNoDrainReloadPending(err)
+		}
 		d.setNoDrainStatus(noDrainError, err.Error())
 		return err
 	}
@@ -150,6 +186,11 @@ func (d *Daemon) noDrainFailure(cause error, upper int) (bool, error) {
 }
 
 func (d *Daemon) ensureNoDrainLimit(upper int) (bool, error) {
+	if d.noDrainReloadPending.Load() {
+		if err := d.retryNoDrainReload(); err != nil {
+			return false, err
+		}
+	}
 	policyLimit, policyActive, err := d.native.NoDrainLimit()
 	if err != nil {
 		return d.noDrainFailure(err, upper)
@@ -183,6 +224,9 @@ func (d *Daemon) ensureNoDrainLimit(upper int) (bool, error) {
 		return d.noDrainDeferred(upper, policyActive, err)
 	}
 	if err := d.native.SetNoDrainLimit(upper); err != nil {
+		if isNoDrainRestartPending(err) {
+			return false, d.markNoDrainReloadPending(err)
+		}
 		return d.noDrainFailure(err, upper)
 	}
 	d.setNoDrainStatus(noDrainActive, "powerd holds the ceiling without draining above the limit")
@@ -193,7 +237,7 @@ func (d *Daemon) ensureNoDrainLimit(upper int) (bool, error) {
 // powerd restart or a successful fallback still leaves a valid charge policy;
 // callers should keep maintenance alive and let the next pass finish the work.
 func (d *Daemon) noDrainMaintenanceResult(err error, upper int, previous noDrainStatus) (bool, bool) {
-	if err == nil || (!errors.Is(err, errNoDrainDeferred) && !errors.Is(err, errNoDrainFallback)) {
+	if err == nil || (!isNoDrainDeferred(err) && !errors.Is(err, errNoDrainFallback)) {
 		return false, false
 	}
 	if errors.Is(err, powerui.ErrRegistrationPending) {
@@ -201,8 +245,8 @@ func (d *Daemon) noDrainMaintenanceResult(err error, upper int, previous noDrain
 	}
 	current := d.getNoDrainStatus()
 	if current.Phase != previous.Phase || current.Message != previous.Message {
-		if errors.Is(err, errNoDrainDeferred) {
-			slog.Info("no-drain update is deferred", "limit", upper, "reason", current.Message)
+		if isNoDrainDeferred(err) {
+			slog.Info("no-drain update is waiting for powerd", "limit", upper, "reason", current.Message)
 		} else {
 			slog.Warn("using regular native charging because no-drain is unavailable", "reason", current.Message)
 		}

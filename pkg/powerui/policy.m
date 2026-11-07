@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <string.h>
 #include "powerui.h"
+#include "assertions.h"
 
 static CFStringRef const policyDomain = CFSTR("com.apple.powerd.charging");
 static NSString *const policyReason = @"battChargeLimit";
@@ -153,7 +154,25 @@ static pid_t powerdPID(void) {
     return found;
 }
 
+static int policyRestartDeferred(char **err, NSString *message) {
+    if (err) *err = strdup((message ?: @"powerd restart deferred to preserve sleep assertions").UTF8String);
+    return BATT_POWERUI_RESTART_DEFERRED;
+}
+
 static int reloadPolicies(char **err) {
+    // This check belongs at the restart, not just at the daemon's entry point:
+    // preference synchronization, PowerUIAgent calls, and cleanup can all take
+    // time during which another application may acquire an assertion.
+    battSleepAssertion *assertions = NULL;
+    int assertionCount = 0;
+    if (battCopySleepAssertions(&assertions, &assertionCount, err) != 0) {
+        return BATT_POWERUI_RESTART_DEFERRED;
+    }
+    if (assertionCount != 0) {
+        battFreeSleepAssertions(assertions);
+        return policyRestartDeferred(err, [NSString stringWithFormat:@"powerd restart deferred while %d sleep assertion(s) are held", assertionCount]);
+    }
+    battFreeSleepAssertions(assertions);
     pid_t previous = powerdPID();
     if (previous < 0) return policyError(err, @"cannot identify powerd to reload the native charge policy");
     if (previous > 0 && kill(previous, SIGHUP) != 0 && errno != ESRCH) {
@@ -214,7 +233,7 @@ int batt_powerui_set_policy(int limit, char **err) {
         // idempotent for cleanup paths and other callers as well.
         if (limit < 100 && ours.count == 1) {
             BattChargePolicy *existing = [policies objectAtIndex:[ours firstIndex]];
-            if (existing.limit == limit && !existing.drain && !existing.noChargeToFull && existing.endOfCharge) return 0;
+            if (existing.limit == limit && !existing.terminated && !existing.drain && !existing.noChargeToFull && existing.endOfCharge) return 0;
         }
         [policies removeObjectsAtIndexes:ours];
         if (limit < 100) {
@@ -242,6 +261,14 @@ int batt_powerui_set_policy(int limit, char **err) {
         if (![current[@"bootSessionUUID"] isEqual:boot] || ![current[@"policies"] isEqual:data]) {
             return policyError(err, @"native charge policies changed while saving; batt will retry without reloading the stale policy");
         }
-        return reloadPolicies(err);
+        int reloadResult = reloadPolicies(err);
+        if (reloadResult != 0 && reloadResult != BATT_POWERUI_RESTART_DEFERRED) {
+            return BATT_POWERUI_RELOAD_PENDING;
+        }
+        return reloadResult;
     } @catch (NSException *exception) { return policyError(err, exception.reason); } }
+}
+
+int batt_powerui_reload_policies(char **err) {
+    return reloadPolicies(err);
 }

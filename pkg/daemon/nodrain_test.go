@@ -3,10 +3,12 @@ package daemon
 import (
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
+	"github.com/charlie0129/batt/pkg/powerui"
 )
 
 func noDrainCaffeinate() []SleepAssertion {
@@ -31,6 +33,15 @@ func TestNoDrainIsOptInAndIdempotent(t *testing.T) {
 	calls := len(f.native.noDrainSets)
 	if !f.d.maintainLoopForced() || len(f.native.noDrainSets) != calls {
 		t.Fatal("steady-state maintenance rewrote the no-drain policy")
+	}
+}
+
+func TestNoDrainDefersForBattCalibrationAssertion(t *testing.T) {
+	f := newExactNativeFixture(t)
+	f.asserts.foreign = []SleepAssertion{{PID: os.Getpid(), Type: "PreventUserIdleSystemSleep", Name: "batt auto calibration"}}
+	r := f.put("/no-drain", "true")
+	if r.Code != http.StatusCreated || len(f.native.noDrainSets) != 0 || !f.native.enabled {
+		t.Fatalf("calibration assertion was not protected: %d %s native=%+v", r.Code, r.Body.String(), f.native)
 	}
 }
 
@@ -99,6 +110,49 @@ func TestNoDrainDisableWithoutPolicyClearsDeferredStatus(t *testing.T) {
 	}
 	if got := f.d.getNoDrainStatus(); got.Phase != noDrainOff {
 		t.Fatalf("status = %+v, want off", got)
+	}
+}
+
+func TestNoDrainReloadPendingRetriesBeforeNativeRestore(t *testing.T) {
+	f := newExactNativeFixture(t)
+	f.put("/no-drain", "true")
+	f.native.noDrainReloadErr = powerui.ErrReloadPending
+	r := f.put("/no-drain", "false")
+	if r.Code != http.StatusCreated || f.file.NoDrain() || !f.d.noDrainReloadPending.Load() {
+		t.Fatalf("release was not left pending: %d %s", r.Code, r.Body.String())
+	}
+	if f.native.enabled || f.native.noDrainReloads != 0 {
+		t.Fatalf("competing native policy restored before reload: %+v", f.native)
+	}
+	if !f.d.maintainLoopForced() || f.native.noDrainReloads != 1 || !f.d.noDrainReloadPending.Load() {
+		t.Fatalf("pending release was not retried safely: %+v", f.native)
+	}
+	f.native.noDrainReloadErr = nil
+	if !f.d.maintainLoopForced() || f.d.noDrainReloadPending.Load() || !f.native.enabled || f.native.limit != 80 {
+		t.Fatalf("release did not complete after reload: %+v", f.native)
+	}
+}
+
+func TestNoDrainApplyReloadPendingDoesNotRestoreCompetingLimit(t *testing.T) {
+	f := newExactNativeFixture(t)
+	f.native.noDrainReloadErr = powerui.ErrRestartDeferred
+	r := f.put("/no-drain", "true")
+	if r.Code != http.StatusCreated || !f.file.NoDrain() || !f.d.noDrainReloadPending.Load() || f.native.enabled {
+		t.Fatalf("deferred apply restored competing native limit: %d %s native=%+v", r.Code, r.Body.String(), f.native)
+	}
+	f.native.noDrainReloadErr = nil
+	if !f.d.maintainLoopForced() || f.d.noDrainReloadPending.Load() || !f.native.noDrainEnabled {
+		t.Fatalf("saved policy was not reloaded: %+v", f.native)
+	}
+}
+
+func TestNoDrainDeferredFallbackRetainsRegistrationPending(t *testing.T) {
+	f := newExactNativeFixture(t)
+	f.asserts.foreign = noDrainCaffeinate()
+	f.native.deferRegistration = true
+	r := f.put("/no-drain", "true")
+	if r.Code != http.StatusCreated || f.d.pendingNativeLimit.Load() != 80 || !f.chargeLimitPending(t) {
+		t.Fatalf("pending native registration was lost: %d %s pending=%d", r.Code, r.Body.String(), f.d.pendingNativeLimit.Load())
 	}
 }
 

@@ -629,6 +629,8 @@ type fakeNativeLimit struct {
 	noDrainDisables   int
 	noDrainErr        error
 	noDrainSetErr     error
+	noDrainReloads    int
+	noDrainReloadErr  error
 }
 
 func (f *fakeNativeLimit) Supported() bool            { return f.supported }
@@ -711,7 +713,7 @@ func (f *fakeNativeLimit) SetNoDrainLimit(limit int) error {
 	// The real controller disables PowerUIAgent before saving powerd's policy.
 	_ = f.Disable()
 	f.noDrainLimit, f.noDrainEnabled = limit, true
-	return nil
+	return f.noDrainReloadErr
 }
 
 func (f *fakeNativeLimit) DisableNoDrain() error {
@@ -720,7 +722,12 @@ func (f *fakeNativeLimit) DisableNoDrain() error {
 	}
 	f.noDrainDisables++
 	f.noDrainLimit, f.noDrainEnabled = 100, false
-	return nil
+	return f.noDrainReloadErr
+}
+
+func (f *fakeNativeLimit) ReloadNoDrain() error {
+	f.noDrainReloads++
+	return f.noDrainReloadErr
 }
 
 // sliderNative is a macOS 26-style native backend offering slider values only.
