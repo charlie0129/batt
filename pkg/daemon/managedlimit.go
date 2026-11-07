@@ -89,9 +89,10 @@ func (d *Daemon) onBattery() bool {
 }
 
 // pendingNativeLimitNotice explains limit if macOS has accepted it but not
-// applied it yet, and returns "" otherwise.
+// applied it yet, and returns "" otherwise. Only exact native mode keeps the
+// pending target current; leaving it can leave a stale one behind.
 func (d *Daemon) pendingNativeLimitNotice(limit int) string {
-	if int(d.pendingNativeLimit.Load()) != limit {
+	if !d.getCapabilities().NativeExactTargets || int(d.pendingNativeLimit.Load()) != limit {
 		return ""
 	}
 	if d.onBattery() {

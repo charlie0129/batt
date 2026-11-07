@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/powerinfo"
 )
 
@@ -99,6 +100,24 @@ func TestNativeCancelledFullChargeReportsPendingLimit(t *testing.T) {
 	r := f.post(chargeOnceCancelPath)
 	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "applies again. "+powerinfo.ChargeLimitPendingNotice) || f.native.pending != 70 {
 		t.Fatalf("cancel hid the pending limit: %d %s native=%+v", r.Code, r.Body.String(), f.native)
+	}
+}
+
+func TestStalePendingNativeLimitAfterAdapterMode(t *testing.T) {
+	// Adapter mode never refreshes the pending native target, so one left
+	// over from native mode must not explain an adapter-mode limit.
+	f := newExactNativeFixture(t, withCharge(75))
+	f.native.limit, f.native.enabled = 80, true
+	f.native.deferRegistration = true
+	if r := f.put("/limit", "70"); r.Code != http.StatusCreated || !strings.Contains(r.Body.String(), powerinfo.ChargeLimitPendingNotice) {
+		t.Fatalf("native limit not pending: %d %s", r.Code, r.Body.String())
+	}
+	if r := f.put("/adapter-mode", "true"); r.Code != http.StatusCreated || f.caps().ChargeControlMode != compatibility.ChargeControlAdapter {
+		t.Fatalf("adapter mode not entered: %d %s", r.Code, r.Body.String())
+	}
+	r := f.put("/limit", "70")
+	if r.Code != http.StatusCreated || strings.Contains(r.Body.String(), powerinfo.ChargeLimitPendingNotice) {
+		t.Fatalf("adapter-mode limit explained as a pending native limit: %d %s", r.Code, r.Body.String())
 	}
 }
 
