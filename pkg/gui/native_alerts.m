@@ -57,10 +57,18 @@ bool batt_show_confirmation(int confirmation) {
             alert.messageText = @"Prevent Sleep when Adapter is Disabled?";
             alert.informativeText =
                 @"This enables macOS’s global no-sleep setting while adapter input is disabled. Your Mac may remain awake with the lid closed, overheat in a bag, or drain its battery. Use this only when the Mac is monitored. Continue?";
+        } else if (confirmation == BattConfirmationNoDrain) {
+            alert.alertStyle = NSAlertStyleWarning;
+            alert.icon = [NSImage imageWithSystemSymbolName:@"exclamationmark.triangle"
+                                  accessibilityDescription:@"Warning"];
+            alert.messageText = @"Enable No-drain?";
+            alert.informativeText =
+                @"batt must restart powerd when this policy changes. batt waits until other applications stop preventing sleep before restarting, but a restart can still interrupt power-related activity. The regular native limit is used until the policy can be applied. Continue?";
         } else {
             return false;
         }
-        if (confirmation == BattConfirmationPreventSleepOnAdapterDisable) {
+        if (confirmation == BattConfirmationPreventSleepOnAdapterDisable ||
+            confirmation == BattConfirmationNoDrain) {
             [alert addButtonWithTitle:@"Continue"];
             [alert addButtonWithTitle:@"Cancel"];
         } else {

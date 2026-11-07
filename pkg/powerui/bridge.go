@@ -121,3 +121,20 @@ func (b nativeBridge) WritePreferences(limit int) error {
 	}
 	return nil
 }
+
+func (b nativeBridge) Policy() (int, bool, error) {
+	var limit, enabled C.int
+	var cerr *C.char
+	if C.batt_powerui_get_policy(&limit, &enabled, &cerr) != 0 { //nolint:gocritic
+		return 100, false, takeError(cerr)
+	}
+	return int(limit), enabled == 1, nil
+}
+
+func (b nativeBridge) SetPolicy(limit int) error {
+	var cerr *C.char
+	if C.batt_powerui_set_policy(C.int(limit), &cerr) != 0 { //nolint:gocritic
+		return takeError(cerr)
+	}
+	return nil
+}

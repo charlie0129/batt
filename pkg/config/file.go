@@ -38,6 +38,7 @@ var (
 		PreventSystemSleep:           ptr.To(false),
 		AllowNonRootAccess:           ptr.To(false),
 		AdapterMode:                  ptr.To(false),
+		NoDrain:                      ptr.To(false),
 		LowerLimitDelta:              ptr.To(2),
 
 		CalibrationDischargeThreshold:  ptr.To(15),
@@ -120,6 +121,7 @@ type RawFileConfig struct {
 	PreventSystemSleep      *bool               `json:"preventSystemSleep,omitempty"`
 	AllowNonRootAccess      *bool               `json:"allowNonRootAccess,omitempty"`
 	AdapterMode             *bool               `json:"adapterMode,omitempty"`
+	NoDrain                 *bool               `json:"noDrain,omitempty"`
 	LowerLimitDelta         *int                `json:"lowerLimitDelta,omitempty"`
 	ControlMagSafeLED       *ControlMagSafeMode `json:"controlMagSafeLED,omitempty"`
 
@@ -149,6 +151,7 @@ func NewRawFileConfigFromConfig(c Config) (*RawFileConfig, error) {
 		PreventSleepOnAdapterDisable: ptr.To(c.PreventSleepOnAdapterDisable()),
 		AllowNonRootAccess:           ptr.To(c.AllowNonRootAccess()),
 		AdapterMode:                  ptr.To(c.AdapterMode()),
+		NoDrain:                      ptr.To(c.NoDrain()),
 		LowerLimitDelta:              ptr.To(c.UpperLimit() - c.LowerLimit()),
 		ControlMagSafeLED:            ptr.To(c.ControlMagSafeLED()),
 		Cron:                         ptr.To(c.Cron()),
@@ -292,6 +295,18 @@ func (f *File) AdapterMode() bool {
 		return *f.c.AdapterMode
 	}
 	return *defaultFileConfig.AdapterMode
+}
+
+func (f *File) NoDrain() bool {
+	if f.c == nil {
+		panic("config is nil")
+	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if f.c.NoDrain != nil {
+		return *f.c.NoDrain
+	}
+	return *defaultFileConfig.NoDrain
 }
 
 func (f *File) ControlMagSafeLED() ControlMagSafeMode {
@@ -460,6 +475,15 @@ func (f *File) SetAdapterMode(b bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.c.AdapterMode = &b
+}
+
+func (f *File) SetNoDrain(b bool) {
+	if f.c == nil {
+		panic("config is nil")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.c.NoDrain = &b
 }
 
 func (f *File) SetControlMagSafeLED(mode ControlMagSafeMode) {
@@ -769,5 +793,6 @@ func (f *File) LogValue() slog.Value {
 		slog.Bool("preventSleepOnAdapterDisable", f.PreventSleepOnAdapterDisable()),
 		slog.Bool("allowNonRootAccess", f.AllowNonRootAccess()),
 		slog.String("controlMagsafeLed", string(f.ControlMagSafeLED())),
+		slog.Bool("noDrain", f.NoDrain()),
 	)
 }

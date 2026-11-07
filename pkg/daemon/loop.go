@@ -454,6 +454,7 @@ func (d *Daemon) maintainLoopInner(ignoreMissedLoops bool) bool {
 func (d *Daemon) maintainManagedChargeLimit() bool {
 	// Only the configured-limit path at the end can leave a target pending.
 	wasPending := int(d.pendingNativeLimit.Swap(0))
+	previousNoDrain := d.getNoDrainStatus()
 	if d.calibrationNeedsMaintainLoop() {
 		batteryCharge, err := d.smc.GetBatteryCharge()
 		if err != nil {
@@ -473,6 +474,10 @@ func (d *Daemon) maintainManagedChargeLimit() bool {
 	upper := d.conf.UpperLimit()
 	if upper >= 100 {
 		changed, err := d.ensureManagedChargeLimitDisabled()
+		if handled, ok := d.noDrainMaintenanceResult(err, upper, previousNoDrain); handled {
+			d.maintainedChargingInProgress = false
+			return ok
+		}
 		if err != nil {
 			slog.Error(fmt.Sprintf("failed to deactivate %s charge limit: %v", mode, err))
 			return false
@@ -486,6 +491,10 @@ func (d *Daemon) maintainManagedChargeLimit() bool {
 
 	lower := d.conf.LowerLimit()
 	changed, err := d.ensureManagedChargeLimit(lower, upper)
+	if handled, ok := d.noDrainMaintenanceResult(err, upper, previousNoDrain); handled {
+		d.maintainedChargingInProgress = false
+		return ok
+	}
 	switch {
 	case errors.Is(err, powerui.ErrRegistrationPending):
 		d.pendingNativeLimit.Store(int32(upper))
@@ -523,12 +532,16 @@ func (d *Daemon) maintainManagedChargeOnce(target int) bool {
 		return false
 	}
 
+	previousNoDrain := d.getNoDrainStatus()
 	var changed bool
 	var err error
 	if target >= 100 {
 		changed, err = d.ensureManagedChargeLimitDisabled()
 	} else {
 		changed, err = d.ensureManagedChargeLimit(target-1, target)
+	}
+	if handled, ok := d.noDrainMaintenanceResult(err, target, previousNoDrain); handled {
+		return ok
 	}
 	if err != nil {
 		slog.Error(fmt.Sprintf("failed to reconcile %s charge limit for a one-time charge: %v", mode, err))

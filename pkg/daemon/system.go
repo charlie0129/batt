@@ -62,6 +62,9 @@ type SleepAssertions interface {
 	PreventCalibrationSleep() error
 	// AllowCalibrationSleep releases PreventCalibrationSleep.
 	AllowCalibrationSleep() error
+	// ForeignSleepAssertions lists sleep assertions owned by other apps.
+	// No-drain uses it to avoid dropping them with a powerd restart.
+	ForeignSleepAssertions() ([]SleepAssertion, error)
 }
 
 // SleepHandler receives the system power transitions the daemon reacts to.
