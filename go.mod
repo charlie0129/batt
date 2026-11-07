@@ -5,7 +5,6 @@ go 1.24.5
 require (
 	github.com/charlie0129/gosmc v0.0.0-20260712130932-24306d80e612
 	github.com/fatih/color v1.15.0
-	github.com/peterneutron/powerkit-go v0.9.4
 	github.com/pkg/errors v0.9.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2

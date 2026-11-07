@@ -353,78 +353,110 @@ func TestNativeDisableDoesNotClaimUnconfirmedRelease(t *testing.T) {
 	}
 }
 
-func TestNativeRegistrationRetriesUntilConfirmed(t *testing.T) {
+func TestNativeRegistrationWithdrawnOnBattery(t *testing.T) {
+	// After 5 minutes on battery power the agent withdraws a confirmed
+	// registration, and it registers the target again once the Mac is
+	// connected to power. Rewriting the target does not change either.
+	f := &fakeOperations{custom: true, target: 55, enabled: true,
+		agentTarget: 55, agentEnabled: true, registeredTargets: []int{55, 55},
+		ignoreRegistration: true}
+	c := &Client{api: f, sleep: noSleep}
+	if target, on, err := c.Limit(); err != nil || !on || target != 55 {
+		t.Fatalf("matching agent and mirror not confirmed: %d %t %v", target, on, err)
+	}
+	f.registeredTargets = []int{}
+	if target, on, err := c.Limit(); err != nil || !on || target != 0 {
+		t.Fatalf("withdrawn registration reported confirmed: %d %t %v", target, on, err)
+	}
+	for range 2 {
+		if err := c.SetLimit(55); !errors.Is(err, ErrRegistrationPending) {
+			t.Fatalf("withdrawn registration not reported pending: %v", err)
+		}
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("rewrote a target the agent had already loaded: %v", f.calls)
+	}
+	f.registeredTargets = []int{55, 55} // connected to power again
+	if err := c.SetLimit(55); err != nil || len(f.calls) != 0 {
+		t.Fatal(f.calls, err)
+	}
+}
+
+func TestNativeTargetPendingUntilPowerdRegistersIt(t *testing.T) {
+	// The agent loads a reloaded target at once, but powerd keeps an earlier
+	// one while the battery charges, and none on battery power.
 	for _, tc := range []struct {
 		name       string
 		registered []int
 	}{
-		{"missing", []int{}},
-		{"stale", []int{70}},
-		{"stale mirror", []int{55, 70}},
+		{"earlier target", []int{80}},
+		{"earlier target and mirror", []int{80, 80}},
+		{"nothing on battery power", []int{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := &fakeOperations{custom: true, target: 55, enabled: true,
-				agentTarget: 55, agentEnabled: true, registeredTargets: tc.registered,
+			f := &fakeOperations{custom: true, target: 80, enabled: true,
+				agentTarget: 80, agentEnabled: true, registeredTargets: tc.registered,
 				ignoreRegistration: true}
 			var slept time.Duration
 			c := &Client{api: f, sleep: func(d time.Duration) { slept += d }}
-			if target, on, err := c.Limit(); err != nil || !on || target != 0 {
-				t.Fatalf("agent agreement concealed missing/stale powerd limit: %d %t %v", target, on, err)
-			}
-			if err := c.SetLimit(55); err == nil || !strings.Contains(err.Error(), "not confirmed") {
-				t.Fatalf("unconfirmed registration reported success: %v", err)
+			if err := c.SetLimit(55); !errors.Is(err, ErrRegistrationPending) {
+				t.Fatalf("loaded target not reported pending: %v", err)
 			}
 			if want := (registrationChecks - 1) * registrationCheckInterval; slept != want {
 				t.Fatalf("waited %v for registration, want %v", slept, want)
 			}
+			if target, on, err := c.Limit(); err != nil || !on || target != 0 {
+				t.Fatalf("pending target reported confirmed: %d %t %v", target, on, err)
+			}
+			slept = 0
 			for range 2 {
-				if target, on, err := c.Limit(); err != nil || !on || target != 0 {
-					t.Fatalf("pending registration reported confirmed: %d %t %v", target, on, err)
-				}
-				if err := c.SetLimit(55); err == nil || !strings.Contains(err.Error(), "not confirmed") {
-					t.Fatalf("unconfirmed registration reported success: %v", err)
+				if err := c.SetLimit(55); !errors.Is(err, ErrRegistrationPending) {
+					t.Fatalf("repeated request for a pending target: %v", err)
 				}
 			}
-			if !reflect.DeepEqual(f.calls, []string{"write", "write", "write"}) {
-				t.Fatalf("unconfirmed target was not retried on every call: %v", f.calls)
+			if slept != 0 || !reflect.DeepEqual(f.writeTargets, []int{55}) {
+				t.Fatalf("pending target rewritten (%v) or waited for again (%v)", f.writeTargets, slept)
 			}
-			f.registeredTargets = []int{55, 55}
-			if target, on, err := c.Limit(); err != nil || !on || target != 55 {
-				t.Fatalf("matching agent and mirror not confirmed: %d %t %v", target, on, err)
+			// A different target replaces the pending one right away.
+			if err := c.SetLimit(60); !errors.Is(err, ErrRegistrationPending) || !reflect.DeepEqual(f.writeTargets, []int{55, 60}) {
+				t.Fatalf("changed pending target: writes=%v err=%v", f.writeTargets, err)
 			}
-			if err := c.SetLimit(55); err != nil || len(f.calls) != 3 {
-				t.Fatal(f.calls, err)
+			f.registeredTargets = []int{60, 60} // the battery level changed or the Mac was connected
+			if target, on, err := c.Limit(); err != nil || !on || target != 60 {
+				t.Fatalf("registered target not confirmed: %d %t %v", target, on, err)
 			}
-			// Drift after confirmation also repairs immediately.
-			f.registeredTargets = []int{}
-			if err := c.SetLimit(55); err == nil || len(f.calls) != 4 {
-				t.Fatal(f.calls, err)
+			if err := c.SetLimit(60); err != nil || !reflect.DeepEqual(f.calls, []string{"write", "write"}) {
+				t.Fatalf("registered target rewritten or agent re-enabled: %v %v", f.calls, err)
 			}
 		})
 	}
 }
 
-func TestNativePendingTargetCanChangeOrReleaseImmediately(t *testing.T) {
-	f := &fakeOperations{custom: true, target: 55, enabled: true,
-		agentTarget: 55, agentEnabled: true, registeredTargets: []int{}, ignoreRegistration: true}
-	c := &Client{api: f, sleep: noSleep}
-	if err := c.SetLimit(55); err == nil {
-		t.Fatal("unconfirmed registration reported success")
+func TestNativePendingTargetReleasesImmediately(t *testing.T) {
+	for _, registered := range [][]int{{80, 80}, {}} {
+		f := &fakeOperations{custom: true, target: 55, enabled: true,
+			agentTarget: 55, agentEnabled: true, registered: len(registered) > 0,
+			registeredTargets: registered, ignoreRegistration: true}
+		if err := (&Client{api: f, sleep: noSleep}).SetLimit(100); err != nil || !reflect.DeepEqual(f.calls, []string{"disable"}) {
+			t.Fatalf("pending target not released through the agent (registered %v): %v %v", registered, f.calls, err)
+		}
 	}
-	if err := c.SetLimit(52); err == nil {
-		t.Fatal("unconfirmed registration reported success")
-	}
-	if !reflect.DeepEqual(f.writeTargets, []int{55, 52}) {
-		t.Fatal(f.writeTargets)
-	}
-	if err := c.Disable(); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.SetLimit(52); err == nil {
-		t.Fatal("unconfirmed registration reported success")
-	}
-	if !reflect.DeepEqual(f.calls, []string{"write", "write", "disable", "enable", "write"}) {
-		t.Fatal(f.calls)
+}
+
+func TestNativeTargetRegisteredWhilePolling(t *testing.T) {
+	// Unless the battery charges, powerd follows the agent within milliseconds.
+	f := &fakeOperations{custom: true, target: 80, enabled: true,
+		agentTarget: 80, agentEnabled: true, registeredTargets: []int{80, 80},
+		ignoreRegistration: true}
+	waits := 0
+	c := &Client{api: f, sleep: func(time.Duration) {
+		waits++
+		if waits == 2 {
+			f.registeredTargets = []int{55, 55}
+		}
+	}}
+	if err := c.SetLimit(55); err != nil || waits != 2 {
+		t.Fatalf("registration during polling: waits=%d err=%v", waits, err)
 	}
 }
 

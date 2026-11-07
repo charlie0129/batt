@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/charlie0129/batt/pkg/compatibility"
+	"github.com/charlie0129/batt/pkg/powerinfo"
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
@@ -48,7 +49,9 @@ func (d *Daemon) ensureManagedChargeLimitDisabled() (bool, error) {
 // ensureNativeChargeLimit keeps the macOS charge limit at the configured
 // upper limit. Older native backends only offer a fixed set of slider values;
 // macOS 27's preference path accepts exact percentages. The supported-value
-// check is a safety net that never lowers the user's requested target.
+// check is a safety net that never lowers the user's requested target. It
+// returns powerui.ErrRegistrationPending while macOS has accepted the target
+// but not applied it yet.
 func (d *Daemon) ensureNativeChargeLimit(upper int) (bool, error) {
 	caps := d.getCapabilities()
 	if !caps.SupportsLimit(upper) {
@@ -71,6 +74,31 @@ func (d *Daemon) ensureNativeChargeLimit(upper int) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// nativeLimitOnBatteryNotice explains a native limit that macOS has accepted
+// while the Mac runs on battery power, where macOS registers no charge limit.
+const nativeLimitOnBatteryNotice = "macOS applies the limit once the Mac is connected to power."
+
+// onBattery reports whether the Mac runs on battery power. After 5 minutes
+// there, macOS withdraws a native charge limit until the Mac is connected to
+// power again. An unreadable power source counts as wall power.
+func (d *Daemon) onBattery() bool {
+	pluggedIn, err := d.smc.IsPluggedIn()
+	return err == nil && !pluggedIn
+}
+
+// pendingNativeLimitNotice explains limit if macOS has accepted it but not
+// applied it yet, and returns "" otherwise. Only exact native mode keeps the
+// pending target current; leaving it can leave a stale one behind.
+func (d *Daemon) pendingNativeLimitNotice(limit int) string {
+	if !d.getCapabilities().NativeExactTargets || int(d.pendingNativeLimit.Load()) != limit {
+		return ""
+	}
+	if d.onBattery() {
+		return nativeLimitOnBatteryNotice
+	}
+	return powerinfo.ChargeLimitPendingNotice
 }
 
 func (d *Daemon) ensureNativeChargeLimitDisabled() (bool, error) {

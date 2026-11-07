@@ -24,7 +24,7 @@ const (
 	itemUpgrade                      menuItem = C.BattItemUpgrade
 	itemInstall                      menuItem = C.BattItemInstall
 	itemState                        menuItem = C.BattItemState
-	itemFullChargeOverride           menuItem = C.BattItemFullChargeOverride
+	itemNativeLimitNotice            menuItem = C.BattItemNativeLimitNotice
 	itemCurrentLimit                 menuItem = C.BattItemCurrentLimit
 	itemQuickLimits                  menuItem = C.BattItemQuickLimits
 	itemLimit50                      menuItem = C.BattItemLimit50

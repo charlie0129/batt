@@ -112,7 +112,7 @@ func TestChargeTarget(t *testing.T) {
 	}
 }
 
-func TestStatusFullChargeOverride(t *testing.T) {
+func TestStatusNativeLimitNotices(t *testing.T) {
 	dir, err := os.MkdirTemp("/tmp", "batt-status-")
 	if err != nil {
 		t.Fatal(err)
@@ -169,14 +169,16 @@ func TestStatusFullChargeOverride(t *testing.T) {
 	t.Cleanup(func() { apiClient = previousClient })
 
 	for _, tt := range []struct {
-		name    string
-		flag    *bool
-		full    bool
-		charge  int
-		exact   bool
-		limit   int
-		notice  bool
-		waiting bool
+		name          string
+		flag          *bool
+		pending       *bool
+		full          bool
+		charge        int
+		exact         bool
+		limit         int
+		notice        bool
+		waiting       bool
+		pendingNotice bool
 	}{
 		{name: "native slider override", flag: ptr.To(true), limit: 80, notice: true},
 		{name: "native exact override", flag: ptr.To(true), exact: true, limit: 80, notice: true},
@@ -187,6 +189,9 @@ func TestStatusFullChargeOverride(t *testing.T) {
 		{name: "cleared override while full", flag: ptr.To(false), full: true, charge: 100, limit: 80},
 		{name: "older daemon or unavailable flag", limit: 80},
 		{name: "no limit to suspend", flag: ptr.To(true), limit: 100},
+		{name: "pending exact limit", flag: ptr.To(false), pending: ptr.To(true), exact: true, limit: 80, pendingNotice: true},
+		{name: "applied exact limit", flag: ptr.To(false), pending: ptr.To(false), exact: true, limit: 80},
+		{name: "override outranks a pending limit", flag: ptr.To(true), pending: ptr.To(true), exact: true, limit: 80, notice: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			battery = chargingBattery()
@@ -195,6 +200,7 @@ func TestStatusFullChargeOverride(t *testing.T) {
 				currentCharge = tt.charge
 			}
 			battery.ChargingToFullOverride = tt.flag
+			battery.ChargeLimitPending = tt.pending
 			if tt.full {
 				battery.State = powerinfo.Full
 			}
@@ -212,6 +218,7 @@ func TestStatusFullChargeOverride(t *testing.T) {
 			}{
 				{powerinfo.FullChargeOverrideNotice, tt.notice && !tt.waiting},
 				{powerinfo.FullChargeOverrideAtFullNotice, tt.notice && tt.waiting},
+				{powerinfo.ChargeLimitPendingNotice, tt.pendingNotice},
 			} {
 				if got := strings.Contains(output.String(), notice.text); got != notice.want {
 					t.Fatalf("notice %q = %t, want %t:\n%s", notice.text, got, notice.want, &output)
@@ -240,6 +247,10 @@ func TestStatusFullChargeOverride(t *testing.T) {
 			flag, exists := parsed.Charging["chargingToFullOverride"]
 			if exists != (tt.flag != nil) || (exists && string(flag) != strconv.FormatBool(*tt.flag)) {
 				t.Fatalf("JSON override = %s, present = %t; want %v", flag, exists, tt.flag)
+			}
+			pending, exists := parsed.Charging["chargeLimitPending"]
+			if exists != (tt.pending != nil) || (exists && string(pending) != strconv.FormatBool(*tt.pending)) {
+				t.Fatalf("JSON pending limit = %s, present = %t; want %v", pending, exists, tt.pending)
 			}
 		})
 	}

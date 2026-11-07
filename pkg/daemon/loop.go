@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"github.com/charlie0129/batt/pkg/compatibility"
 	"github.com/charlie0129/batt/pkg/config"
 	"github.com/charlie0129/batt/pkg/logging"
+	"github.com/charlie0129/batt/pkg/powerui"
 	"github.com/charlie0129/batt/pkg/smc"
 )
 
@@ -450,6 +452,8 @@ func (d *Daemon) maintainLoopInner(ignoreMissedLoops bool) bool {
 // both thresholds directly; native mode keeps the configured upper limit
 // as the single target accepted by PowerUI.
 func (d *Daemon) maintainManagedChargeLimit() bool {
+	// Only the configured-limit path at the end can leave a target pending.
+	wasPending := int(d.pendingNativeLimit.Swap(0))
 	if d.calibrationNeedsMaintainLoop() {
 		batteryCharge, err := d.smc.GetBatteryCharge()
 		if err != nil {
@@ -482,13 +486,25 @@ func (d *Daemon) maintainManagedChargeLimit() bool {
 
 	lower := d.conf.LowerLimit()
 	changed, err := d.ensureManagedChargeLimit(lower, upper)
-	if err != nil {
+	switch {
+	case errors.Is(err, powerui.ErrRegistrationPending):
+		d.pendingNativeLimit.Store(int32(upper))
+		switch {
+		case wasPending == upper:
+			logging.Trace("native charge limit is waiting for macOS to apply it", "limit", upper)
+		case d.onBattery():
+			slog.Info("macOS applies the native charge limit once the Mac is connected to power", "limit", upper)
+		default:
+			slog.Info("macOS has not applied the native charge limit yet; it does so once the battery level changes or charging stops", "limit", upper)
+		}
+	case err != nil:
 		slog.Error(fmt.Sprintf("failed to reconcile %s charge limit: %v", mode, err))
 		return false
-	}
-	if changed {
+	case changed:
 		slog.Info(fmt.Sprintf("reconciled %s charge limit", mode), "lower", lower, "upper", upper)
-	} else {
+	case wasPending == upper:
+		slog.Info("macOS applied the native charge limit", "limit", upper)
+	default:
 		logging.Trace(fmt.Sprintf("%s charge limit is correct", mode), "lower", lower, "upper", upper)
 	}
 	d.maintainedChargingInProgress = false

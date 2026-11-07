@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -429,16 +430,27 @@ func TestAdapterModeOneTimeChargeRestoresWallPower(t *testing.T) {
 
 func TestAdapterChargeOnceAdmissionFailureRestoresNativeLimit(t *testing.T) {
 	// Admission can read the battery charge, but the adapter loop's first
-	// enforcement pass fails, so the request must undo everything it did.
-	conf := chargeOnceConf(80, 78)
-	fake := &fakeNativeLimit{supported: true, limit: 80, enabled: true}
-	f := newFixture(t, firmwareGated, withConfig(conf), withCharge(60), withNative(fake),
-		withCapabilities(compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter}))
-	f.smc.fail("IsPluggedIn", errors.New("AC key gated"))
+	// enforcement pass fails, so the request must undo everything it did. A
+	// restored target that macOS applies later still counts as restored.
+	for _, deferred := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deferred=%t", deferred), func(t *testing.T) {
+			conf := chargeOnceConf(80, 78)
+			fake := &fakeNativeLimit{supported: true, limit: 80, enabled: true, deferRegistration: deferred}
+			f := newFixture(t, firmwareGated, withConfig(conf), withCharge(60), withNative(fake),
+				withCapabilities(compatibility.Capabilities{ChargingControl: true, ChargeControlMode: compatibility.ChargeControlAdapter}))
+			f.smc.fail("IsPluggedIn", errors.New("AC key gated"))
 
-	response := f.post(chargeOnceFullPath)
-	if response.Code != http.StatusInternalServerError || conf.ChargeOnceTarget() != 0 || !fake.enabled || fake.limit != 80 {
-		t.Fatalf("failed adapter enforcement must restore native limit and target: status=%d, target=%d, native=%+v", response.Code, conf.ChargeOnceTarget(), fake)
+			response := f.post(chargeOnceFullPath)
+			restored := fake.enabled && fake.limit == 80
+			if deferred {
+				restored = fake.pending == 80
+			}
+			if response.Code != http.StatusInternalServerError || conf.ChargeOnceTarget() != 0 || !restored ||
+				strings.Contains(response.Body.String(), "failed to restore") {
+				t.Fatalf("failed adapter enforcement must restore native limit and target: status=%d, body=%s, target=%d, native=%+v",
+					response.Code, response.Body.String(), conf.ChargeOnceTarget(), fake)
+			}
+		})
 	}
 }
 

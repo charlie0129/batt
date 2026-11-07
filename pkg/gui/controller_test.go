@@ -5,6 +5,8 @@ import (
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/compatibility"
+	"github.com/charlie0129/batt/pkg/powerinfo"
+	"github.com/charlie0129/batt/pkg/utils/ptr"
 )
 
 func TestCalibrationAndTemporaryDisableMenuExclusion(t *testing.T) {
@@ -239,6 +241,45 @@ func TestForceDischargeMenuAvailability(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := canStartForceDischarge(tt.phase, tt.adapterDisableScheduled, tt.chargeOnceTarget); got != tt.want {
 				t.Errorf("canStartForceDischarge() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNativeLimitNotice(t *testing.T) {
+	native := compatibility.ChargeControlNative
+	for _, tt := range []struct {
+		name        string
+		mode        compatibility.ChargeControlMode
+		limit       int
+		battery     powerinfo.Battery
+		wantTitle   string
+		wantTooltip string
+	}{
+		{name: "full-charge override", mode: native, limit: 80,
+			battery:   powerinfo.Battery{ChargingToFullOverride: ptr.To(true)},
+			wantTitle: "Limit paused by macOS", wantTooltip: fullChargeOverrideTooltip},
+		{name: "override after a full charge", mode: native, limit: 80,
+			battery:   powerinfo.Battery{State: powerinfo.Full, ChargingToFullOverride: ptr.To(true)},
+			wantTitle: "Battery full; waiting for macOS", wantTooltip: powerinfo.FullChargeOverrideAtFullNotice},
+		{name: "pending limit", mode: native, limit: 80,
+			battery:   powerinfo.Battery{ChargingToFullOverride: ptr.To(false), ChargeLimitPending: ptr.To(true)},
+			wantTitle: "Waiting for macOS to apply limit", wantTooltip: powerinfo.ChargeLimitPendingNotice},
+		{name: "override outranks a pending limit", mode: native, limit: 80,
+			battery:   powerinfo.Battery{ChargingToFullOverride: ptr.To(true), ChargeLimitPending: ptr.To(true)},
+			wantTitle: "Limit paused by macOS", wantTooltip: fullChargeOverrideTooltip},
+		{name: "applied limit", mode: native, limit: 80,
+			battery: powerinfo.Battery{ChargingToFullOverride: ptr.To(false), ChargeLimitPending: ptr.To(false)}},
+		{name: "older daemon", mode: native, limit: 80},
+		{name: "no limit", mode: native, limit: 100,
+			battery: powerinfo.Battery{ChargingToFullOverride: ptr.To(true), ChargeLimitPending: ptr.To(true)}},
+		{name: "firmware mode", mode: compatibility.ChargeControlFirmware, limit: 80,
+			battery: powerinfo.Battery{ChargingToFullOverride: ptr.To(true), ChargeLimitPending: ptr.To(true)}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			title, tooltip, visible := nativeLimitNotice(tt.mode, tt.limit, 70, &tt.battery)
+			if title != tt.wantTitle || tooltip != tt.wantTooltip || visible != (tt.wantTitle != "") {
+				t.Fatalf("nativeLimitNotice() = %q, %q, %t; want %q, %q", title, tooltip, visible, tt.wantTitle, tt.wantTooltip)
 			}
 		})
 	}

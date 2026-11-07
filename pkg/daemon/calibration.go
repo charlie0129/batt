@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/charlie0129/batt/pkg/calibration"
 	"github.com/charlie0129/batt/pkg/events"
+	"github.com/charlie0129/batt/pkg/powerui"
 )
 
 func (d *Daemon) calibrationSessionActive() bool {
@@ -67,7 +69,9 @@ func (d *Daemon) restoreChargeControlAfterCalibration(st *calibration.State) {
 		} else {
 			_, err = d.ensureManagedChargeLimitDisabled()
 		}
-		if err != nil {
+		// A restored native target that macOS applies later is not a failure;
+		// the next maintenance pass reports it.
+		if err != nil && !errors.Is(err, powerui.ErrRegistrationPending) {
 			slog.Error(fmt.Sprintf("failed to restore %s charge limit after calibration", d.getCapabilities().ChargeControlMode), "error", err)
 		}
 		return

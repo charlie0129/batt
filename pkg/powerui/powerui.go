@@ -24,11 +24,20 @@ type Controller interface {
 	// registration disagree; callers must reconcile rather than assume a disabled limiter.
 	Limit() (limit int, enabled bool, err error)
 	// SetLimit requests a target and confirms its registration; 100 releases
-	// the native limit. An unconfirmed target returns an error and is retried
-	// on the next call. Slider-only backends verify through their setter.
+	// the native limit. A target the agent has loaded but powerd has not
+	// registered yet returns ErrRegistrationPending and needs no retry. Any
+	// other unconfirmed target returns an error and is retried on the next
+	// call. Slider-only backends verify through their setter.
 	SetLimit(limit int) error
 	Disable() error
 }
+
+// ErrRegistrationPending reports a target that PowerUIAgent has loaded but
+// powerd does not enforce yet. While the battery charges, the agent registers
+// a reloaded target only once the battery level changes or charging stops.
+// After 5 minutes on battery power it withdraws its registration until the
+// Mac is connected to power again. Another reload changes neither.
+var ErrRegistrationPending = errors.New("macOS has accepted the target but not applied it yet")
 
 // The client chooses the preference path or the slider API. Tests replace
 // these operations without calling Apple services or changing preferences.
@@ -46,8 +55,9 @@ type operations interface {
 	RegisteredManualLimits() ([]int, error)
 }
 
-// The agent registers a reloaded target within milliseconds. SetLimit polls
-// for it this many times, this far apart, before reporting a failure.
+// On wall power, unless the battery is charging, the agent registers a
+// reloaded target within milliseconds. SetLimit polls for it this many times,
+// this far apart.
 const (
 	registrationChecks        = 10
 	registrationCheckInterval = 100 * time.Millisecond
@@ -103,43 +113,54 @@ func (c *Client) Limit() (int, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.api.CustomLimits() {
-		return c.customLimit()
+		state, err := c.customState()
+		return state.limit, state.enabled, err
 	}
 	return c.api.Limit()
 }
 
-func (c *Client) customLimit() (int, bool, error) {
+// customState combines the saved preferences, the agent and powerd's
+// registrations.
+type customState struct {
+	// limit is the confirmed target, zero while the three disagree.
+	limit   int
+	enabled bool
+	// pending is a target the agent has loaded while powerd enforces an
+	// earlier one or none.
+	pending int
+}
+
+func (c *Client) customState() (customState, error) {
 	limit, enabled, err := c.api.Preferences()
 	if err != nil {
-		return 0, false, err
+		return customState{}, err
 	}
 	// A saved preference does not prove the agent has loaded it. Its getter
 	// reports exact sub-80 targets on macOS 27 (unlike its clamping setter).
 	// Keep retrying if the agent still has a previous target in memory.
 	agentLimit, agentEnabled, err := c.api.Limit()
 	if err != nil {
-		return 0, false, err
+		return customState{}, err
 	}
 	if agentEnabled && (!enabled || agentLimit != limit) {
 		// Preserve enabled=true so a request to disable still releases the
-		// existing registration while a new target is pending.
-		return 0, true, nil
+		// existing registration while the agent has yet to load a new target.
+		return customState{enabled: true}, nil
 	}
 	if enabled && agentEnabled {
 		registered, err := c.api.RegisteredManualLimits()
 		if err != nil {
-			return 0, true, err
+			return customState{enabled: true}, err
 		}
-		if len(registered) == 0 {
-			return 0, true, nil
-		}
+		confirmed := len(registered) > 0
 		for _, target := range registered {
-			if target != limit {
-				return 0, true, nil
-			}
+			confirmed = confirmed && target == limit
+		}
+		if !confirmed {
+			return customState{enabled: true, pending: limit}, nil
 		}
 	}
-	return limit, enabled && agentEnabled, nil
+	return customState{limit: limit, enabled: enabled && agentEnabled}, nil
 }
 
 func (c *Client) SetLimit(limit int) error {
@@ -154,14 +175,19 @@ func (c *Client) SetLimit(limit int) error {
 	if !c.api.CustomLimits() {
 		return c.api.SetSliderLimit(limit)
 	}
-	current, enabled, err := c.customLimit()
+	state, err := c.customState()
 	if err != nil {
 		return fmt.Errorf("read native target before changing it: %w", err)
 	}
-	if enabled && current == limit {
+	if state.enabled && state.limit == limit {
 		return nil
 	}
-	// customLimit returns a zero target while the agent has stale settings.
+	// Rewriting a target the agent has already loaded would not make it
+	// register the target any sooner.
+	if state.pending == limit {
+		return pendingError(limit)
+	}
+	// customState reports no target while the agent has stale settings.
 	// That needs another preference notification, not an enable call.
 	_, agentEnabled, err := c.api.Limit()
 	if err != nil {
@@ -179,12 +205,12 @@ func (c *Client) SetLimit(limit int) error {
 	if err := c.api.WritePreferences(limit); err != nil {
 		return fmt.Errorf("write native charge target: %w", err)
 	}
-	current, enabled, err = c.api.Preferences()
+	saved, savedEnabled, err := c.api.Preferences()
 	if err != nil {
 		return fmt.Errorf("verify native charge target: %w", err)
 	}
-	if !enabled || current != limit {
-		return fmt.Errorf("native target did not retain %d%% (read %d%%, enabled=%t)", limit, current, enabled)
+	if !savedEnabled || saved != limit {
+		return fmt.Errorf("native target did not retain %d%% (read %d%%, enabled=%t)", limit, saved, savedEnabled)
 	}
 	// Allow the reload notification to reach the agent before confirming
 	// registration. This checks policy, not the battery's physical response.
@@ -192,15 +218,22 @@ func (c *Client) SetLimit(limit int) error {
 		if attempt > 0 {
 			c.wait(registrationCheckInterval)
 		}
-		current, enabled, err = c.customLimit()
+		state, err = c.customState()
 		if err != nil {
 			return fmt.Errorf("verify native charge registration: %w", err)
 		}
-		if enabled && current == limit {
+		if state.enabled && state.limit == limit {
 			return nil
 		}
 	}
+	if state.pending == limit {
+		return pendingError(limit)
+	}
 	return fmt.Errorf("native charge target %d%% registration is not confirmed; batt will retry", limit)
+}
+
+func pendingError(limit int) error {
+	return fmt.Errorf("native charge target %d%%: %w", limit, ErrRegistrationPending)
 }
 
 func (c *Client) disable() error {
