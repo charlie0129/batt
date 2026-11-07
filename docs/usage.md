@@ -37,21 +37,6 @@ Native mode does not support `batt charge now`, because macOS controls when char
 
 The GUI exposes the same actions in the menubar as **Charge to 70% Now** and **Charge to Full Once**, with the current progress and a **Cancel One-Time Charge** item while one is running.
 
-### No-drain above the native limit (experimental)
-
-On macOS 27 native mode, macOS normally drains the battery toward the limit when the current charge is above it. If you want to keep that charge while plugged in, enable the opt-in no-drain policy:
-
-```bash
-sudo batt no-drain enable
-```
-
-Disable it with `sudo batt no-drain disable`. The GUI exposes the same setting under **Advanced → No-drain Above Native Limit (Experimental)**. It is not available in firmware-managed or adapter mode, and it still has only an upper limit.
-
-!!! warning
-    Changing this policy requires restarting `powerd`, which drops sleep assertions owned by other applications (for example, `caffeinate`). `batt` checks for those assertions immediately before every restart and waits until they are gone. While it waits, the regular native limit remains in effect; `batt status` shows **waiting for other apps' sleep prevention**. An unreadable assertion list also delays the restart. Do not use this option if an interrupted power assertion would be harmful.
-
-The setting applies when you enable it, change the limit, disable it, start or finish `batt charge full`, or restart the daemon. It does not restart `powerd` on routine maintenance passes. macOS may still charge to 100% for battery maintenance; after that override, the no-drain ceiling is restored rather than forcing a drain back down.
-
 ### Enable/disable power adapter
 
 Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in.
@@ -112,6 +97,21 @@ Calibration status:
 ```
 
 ## Advanced
+
+### No-drain above the native limit (experimental)
+
+On macOS 27 native mode, macOS normally drains the battery toward the limit when the current charge is above it. If you want to keep that charge while plugged in, enable the opt-in no-drain policy:
+
+```bash
+sudo batt no-drain enable
+```
+
+Disable it with `sudo batt no-drain disable`. The GUI exposes the same setting under **Advanced → No-drain Above Native Limit (Experimental)**. It is not available in firmware-managed or adapter mode, and it still has only an upper limit.
+
+!!! warning
+    Changing this policy requires restarting `powerd`, which drops sleep assertions owned by other applications (for example, `caffeinate`). `batt` checks for those assertions immediately before every restart and waits until they are gone. While it waits, the regular native limit remains in effect; `batt status` shows **waiting for other apps' sleep prevention**. An unreadable assertion list also delays the restart. Do not use this option if an interrupted power assertion would be harmful.
+
+The setting applies when you enable it, change the limit, disable it, start or finish `batt charge full`, or restart the daemon. It does not restart `powerd` on routine maintenance passes. macOS may still charge to 100% for battery maintenance; after that override, the no-drain ceiling is restored rather than forcing a drain back down.
 
 These advanced features are not for most users. Using the default setting for these options should work the best.
 
