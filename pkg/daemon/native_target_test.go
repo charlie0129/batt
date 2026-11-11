@@ -195,12 +195,14 @@ func TestNativeLowerLimitDeltaIsAccepted(t *testing.T) {
 }
 
 func TestNativeBandHoldsTheChargeBetweenTheLimits(t *testing.T) {
-	f := newExactNativeFixture(t, withCharge(70))
+	f := newExactNativeFixture(t, withCharge(80))
 	f.file.SetUpperLimit(80)
 	f.file.SetLowerLimit(55)
+	f.d.maintainLoopForced()
 
 	// Between the limits the target is the current charge, so macOS stops
 	// charging and runs from wall power.
+	f.smc.setCharge(t, 70)
 	if !f.d.maintainLoopForced() || !f.native.enabled || f.native.limit != 70 {
 		t.Fatalf("native target = %+v, want a hold at 70", f.native)
 	}
@@ -244,6 +246,29 @@ func TestNativeBandResumesAChargeInProgress(t *testing.T) {
 	}
 }
 
+func TestNativeBandResumesChargingAfterTheLimitWasReleased(t *testing.T) {
+	// The daemon releases the native limit on exit, so after a restart macOS
+	// has been charging freely. Finish the charge to the upper limit.
+	f := newExactNativeFixture(t, withCharge(70))
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(55)
+	f.native.limit, f.native.enabled = 100, false
+	if !f.d.maintainLoopForced() || f.native.limit != 80 {
+		t.Fatalf("native target = %d after a restart, want 80", f.native.limit)
+	}
+}
+
+func TestNativeBandHoldsBelowAStaleHoldPointAfterARestart(t *testing.T) {
+	// The daemon was killed while holding at 70; the battery has not moved.
+	f := newExactNativeFixture(t, withCharge(70))
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(55)
+	f.native.limit, f.native.enabled = 70, true
+	if !f.d.maintainLoopForced() || f.native.limit != 70 || len(f.native.setCalls) != 0 {
+		t.Fatalf("native target = %+v, want the hold at 70 kept", f.native)
+	}
+}
+
 func TestNativeBandHoldPointNeverExceedsTheUpperLimit(t *testing.T) {
 	// After Apple's periodic full charge the battery is above the limit.
 	f := newExactNativeFixture(t, withCharge(100))
@@ -280,9 +305,11 @@ func TestNativeBandIsOffWithNoDrain(t *testing.T) {
 }
 
 func TestNativeBandCatchesUpAfterReconnecting(t *testing.T) {
-	f := newExactNativeFixture(t, withCharge(70))
+	f := newExactNativeFixture(t, withCharge(80))
 	f.file.SetUpperLimit(80)
 	f.file.SetLowerLimit(55)
+	f.d.maintainLoopForced()
+	f.smc.setCharge(t, 70)
 	if !f.d.maintainLoopForced() || f.native.limit != 70 {
 		t.Fatalf("native target = %d, want a hold at 70", f.native.limit)
 	}

@@ -144,11 +144,12 @@ func (d *Daemon) nativeBandTarget(lower, upper int) int {
 	}
 
 	if !band.known {
-		// Resume a charge that was in progress when the band was activated
-		// (e.g. after a daemon restart): the target is still the upper limit
-		// and the battery has not reached it.
+		// Resume a charge that was in progress when the band was activated,
+		// as the legacy backend does: macOS was charging toward the upper
+		// limit, or freely because no limit was set. The latter is the usual
+		// case after a restart, since the daemon releases the limit on exit.
 		current, enabled, err := d.native.Limit()
-		band.charging = charge < lower || (err == nil && enabled && current >= upper && charge < upper)
+		band.charging = charge < lower || (err == nil && (!enabled || current >= upper) && charge < upper)
 		band.known = true
 	}
 
