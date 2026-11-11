@@ -104,6 +104,15 @@ func (d *Daemon) setLimit(w http.ResponseWriter, r *http.Request) {
 	var msg string
 	charge, err := d.smc.GetBatteryCharge()
 	switch {
+	case d.usesNativeBand(conf.LowerLimit(), l):
+		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", l, conf.LowerLimit())
+		if err == nil {
+			msg += fmt.Sprintf(", current charge: %d%%", charge)
+		}
+		msg += ". Between the limits the Mac runs from wall power without charging; it charges to the upper limit once the battery drops below the lower limit."
+		if err == nil && charge > l {
+			msg += " Current charge is above the limit; macOS may use battery power to discharge toward the target."
+		}
 	case caps.ChargeControlMode == compatibility.ChargeControlNative:
 		msg = fmt.Sprintf("set charging limit to %d%%", l)
 		if err == nil {

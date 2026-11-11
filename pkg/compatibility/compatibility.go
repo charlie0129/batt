@@ -74,7 +74,9 @@ func (c Capabilities) Supports(feature Feature) bool {
 	case FeatureChargingControl:
 		return c.ChargingControl
 	case FeatureLowerLimit:
-		return c.ChargingControl && c.ChargeControlMode != ChargeControlNative
+		// Native control only offers a single target. batt can build the band
+		// on top of it when macOS accepts exact targets.
+		return c.ChargingControl && (c.ChargeControlMode != ChargeControlNative || c.NativeExactTargets)
 	case FeatureSleepHooks:
 		return c.SleepHooks
 	case FeatureMagSafeLED:
@@ -88,6 +90,20 @@ func (c Capabilities) Supports(feature Feature) bool {
 	default:
 		return true
 	}
+}
+
+// NativeResumeBand is how far below its target the native macOS limit lets
+// the battery fall before it charges again.
+const NativeResumeBand = 5
+
+// UsesNativeBand reports whether batt enforces the lower limit on top of the
+// native macOS limit, by moving the target to hold the charge. That needs
+// exact targets. A band no wider than macOS's own would only make the battery
+// top up more often, so macOS keeps the lower limit then. No-drain keeps its
+// single powerd ceiling, because moving it would restart powerd every percent.
+func (c Capabilities) UsesNativeBand(lower, upper int, noDrain bool) bool {
+	return c.ChargeControlMode == ChargeControlNative && c.NativeExactTargets && !noDrain &&
+		upper < 100 && upper-lower > NativeResumeBand
 }
 
 // SupportsLimit reports whether the backend accepts the given upper limit.

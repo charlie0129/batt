@@ -89,7 +89,7 @@ func TestNativeFeatureCompatibility(t *testing.T) {
 		NativeExactTargets: true, AdapterControl: true, Calibration: true,
 	}
 	for feature, want := range map[compatibility.Feature]bool{
-		compatibility.FeatureChargingControl: true, compatibility.FeatureLowerLimit: false,
+		compatibility.FeatureChargingControl: true, compatibility.FeatureLowerLimit: true,
 		compatibility.FeatureAdapterControl: true, compatibility.FeatureCalibration: true,
 		compatibility.FeatureSleepHooks: false, compatibility.FeatureMagSafeLED: false,
 	} {
