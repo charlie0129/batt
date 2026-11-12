@@ -101,6 +101,28 @@ func (d *Daemon) setLimit(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info(fmt.Sprintf("set charging limit to %d", l))
 
+	msg := d.limitResponseMessage(caps, l)
+
+	if l >= 100 {
+		msg = "set charging limit to 100%. batt will not control charging anymore."
+	}
+
+	// Immediate single maintain loop, to avoid waiting for the next loop
+	if applied := d.maintainLoopForced(); !applied && caps.NativeExactTargets {
+		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
+		d.fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	if notice := d.pendingNativeLimitNotice(l); notice != "" {
+		msg += " " + notice
+	}
+
+	writeJSON(w, http.StatusCreated, msg)
+}
+
+// limitResponseMessage describes the configured limit for the active backend.
+func (d *Daemon) limitResponseMessage(caps compatibility.Capabilities, l int) string {
+	conf := d.conf
 	var msg string
 	charge, err := d.smc.GetBatteryCharge()
 	switch {
@@ -138,21 +160,7 @@ func (d *Daemon) setLimit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if l >= 100 {
-		msg = "set charging limit to 100%. batt will not control charging anymore."
-	}
-
-	// Immediate single maintain loop, to avoid waiting for the next loop
-	if applied := d.maintainLoopForced(); !applied && caps.NativeExactTargets {
-		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
-		d.fail(w, http.StatusInternalServerError, err)
-		return
-	}
-	if notice := d.pendingNativeLimitNotice(l); notice != "" {
-		msg += " " + notice
-	}
-
-	writeJSON(w, http.StatusCreated, msg)
+	return msg
 }
 
 // resolveDisableLimit returns the limit to restore once a temporary disable

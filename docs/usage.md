@@ -239,7 +239,7 @@ The GUI also exposes this setting under **Advanced → Prevent Sleep when Adapte
 
 When you set a charge limit, for example, on a Lenovo ThinkPad, you can set two percentages. The first one is the upper limit, and the second one is the lower limit. When the battery charge is above the upper limit, the computer will stop charging. When the battery charge is below the lower limit, the computer will start charging. If the battery charge is between the two limits, the computer will keep whatever charging state it is in.
 
-Native mode uses only the upper target and ignores any saved lower-limit delta. The following applies to legacy, firmware-managed and adapter modes.
+On exact-target native backends (macOS 27), a lower-limit delta wider than 5% enables a charging band: while holding, batt moves the native target to the current charge; below the lower limit, it restores the upper target until charging completes. Smaller deltas, older native backends, and no-drain mode keep the single upper target and macOS controls when to resume charging. The last target persists during sleep; crossing the lower threshold may only be handled after wake.
 
 `batt` has similar features built-in. The charge limit you have set (using `batt limit`) will be used as the upper limit. By default, the lower limit will be set to 2% less than the upper limit. To customize the lower limit, use `batt lower-limit-delta`.
 
