@@ -299,7 +299,15 @@ func NewStatusCommand() *cobra.Command {
 			cmd.Println(bold("Battery configuration:"))
 			if cfg.UpperLimit() < 100 {
 				cmd.Printf("  Upper limit: %s\n", bold("%d%%", cfg.UpperLimit()))
-				if data.capabilities.Supports(compatibility.FeatureLowerLimit) {
+				switch caps := data.capabilities; {
+				case caps.ChargeControlMode == compatibility.ChargeControlNative:
+					// Only shown while batt enforces it; otherwise macOS resumes
+					// charging about 5% below the limit on its own.
+					noDrain := data.noDrain != nil && data.noDrain.Enabled
+					if caps.UsesNativeBand(cfg.LowerLimit(), cfg.UpperLimit(), noDrain) {
+						cmd.Printf("  Lower limit: %s\n", bold("%d%%", cfg.LowerLimit()))
+					}
+				case caps.Supports(compatibility.FeatureLowerLimit):
 					cmd.Printf("  Lower limit: %s\n", bold("%d%%", cfg.LowerLimit()))
 				}
 			} else {

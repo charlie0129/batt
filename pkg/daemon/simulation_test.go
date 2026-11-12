@@ -154,6 +154,37 @@ func TestNativeMacKeepsTheLimitInSync(t *testing.T) {
 	}
 }
 
+func TestNativeMacHoldsTheChargeWithinTheBand(t *testing.T) {
+	f := newExactNativeFixture(t, withCharge(30))
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(55)
+
+	// Model macOS: it stops at its target and only resumes charging about 5%
+	// below it. The model drains whenever the battery is not charging, which
+	// is harsher than reality, where a resting battery barely moves.
+	charging := true
+	lo, hi := simulateBattery(t, f, 400, func() bool {
+		charge, _ := f.smc.AppleSMC.GetBatteryCharge()
+		switch {
+		case !f.native.enabled:
+			charging = charge < 100
+		case charge >= f.native.limit:
+			charging = false
+		case charge < f.native.limit-5:
+			charging = true
+		}
+		return charging
+	})
+	if hi > 80 || lo < 54 {
+		t.Fatalf("steady-state charge ranged %d..%d, want within the 55/80 band", lo, hi)
+	}
+	// Without the band, macOS would top up from 75. With it, the battery must
+	// use the whole band before charging again.
+	if lo > 56 {
+		t.Fatalf("steady-state minimum = %d, want the battery to rest down to the lower limit", lo)
+	}
+}
+
 func TestLegacyMacTemporaryDisableRoundTrip(t *testing.T) {
 	// "batt disable --for": the limit goes to 100, the battery charges past
 	// the old limit, and the limit comes back when the timer elapses.

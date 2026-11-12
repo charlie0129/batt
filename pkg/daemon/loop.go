@@ -473,6 +473,7 @@ func (d *Daemon) maintainManagedChargeLimit() bool {
 	mode := d.getCapabilities().ChargeControlMode
 	upper := d.conf.UpperLimit()
 	if upper >= 100 {
+		d.nativeBand.known = false
 		changed, err := d.ensureManagedChargeLimitDisabled()
 		if handled, ok := d.noDrainMaintenanceResult(err, upper, previousNoDrain); handled {
 			d.maintainedChargingInProgress = false
@@ -490,31 +491,45 @@ func (d *Daemon) maintainManagedChargeLimit() bool {
 	}
 
 	lower := d.conf.LowerLimit()
-	changed, err := d.ensureManagedChargeLimit(lower, upper)
+	// target is what the backend is asked to stop at. It is the upper limit,
+	// except while the native band holds the battery below it.
+	target := upper
+	if d.usesNativeBand(lower, upper) {
+		target = d.nativeBandTarget(lower, upper)
+	} else {
+		d.nativeBand.known = false
+	}
+	var changed bool
+	var err error
+	if target == upper {
+		changed, err = d.ensureManagedChargeLimit(lower, upper)
+	} else {
+		changed, err = d.ensureNativeChargeLimit(target)
+	}
 	if handled, ok := d.noDrainMaintenanceResult(err, upper, previousNoDrain); handled {
 		d.maintainedChargingInProgress = false
 		return ok
 	}
 	switch {
 	case errors.Is(err, powerui.ErrRegistrationPending):
-		d.pendingNativeLimit.Store(int32(upper))
+		d.pendingNativeLimit.Store(int32(target))
 		switch {
-		case wasPending == upper:
-			logging.Trace("native charge limit is waiting for macOS to apply it", "limit", upper)
+		case wasPending == target:
+			logging.Trace("native charge limit is waiting for macOS to apply it", "limit", target)
 		case d.onBattery():
-			slog.Info("macOS applies the native charge limit once the Mac is connected to power", "limit", upper)
+			slog.Info("macOS applies the native charge limit once the Mac is connected to power", "limit", target)
 		default:
-			slog.Info("macOS has not applied the native charge limit yet; it does so once the battery level changes or charging stops", "limit", upper)
+			slog.Info("macOS has not applied the native charge limit yet; it does so once the battery level changes or charging stops", "limit", target)
 		}
 	case err != nil:
 		slog.Error(fmt.Sprintf("failed to reconcile %s charge limit: %v", mode, err))
 		return false
 	case changed:
-		slog.Info(fmt.Sprintf("reconciled %s charge limit", mode), "lower", lower, "upper", upper)
-	case wasPending == upper:
-		slog.Info("macOS applied the native charge limit", "limit", upper)
+		slog.Info(fmt.Sprintf("reconciled %s charge limit", mode), "lower", lower, "upper", upper, "target", target)
+	case wasPending == target:
+		slog.Info("macOS applied the native charge limit", "limit", target)
 	default:
-		logging.Trace(fmt.Sprintf("%s charge limit is correct", mode), "lower", lower, "upper", upper)
+		logging.Trace(fmt.Sprintf("%s charge limit is correct", mode), "lower", lower, "upper", upper, "target", target)
 	}
 	d.maintainedChargingInProgress = false
 	return true

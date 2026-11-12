@@ -135,7 +135,7 @@ batt help
 ### Special Notes
 
 - macOS 27 Beta 1–3: Firmware-managed charge limits. Limits remain active during sleep.
-- macOS 27 Beta 4+: Native macOS charge limits from 10% to 99% by default. Upper limit only; macOS may drain the battery toward the limit while plugged in. Opt-in adapter mode adds a lower limit.
+- macOS 27 Beta 4+: Native macOS charge limits from 10% to 99% by default. Lower-limit bands wider than 5% are supported when no-drain is disabled; macOS may drain the battery toward the limit while plugged in. Opt-in adapter mode controls wall power directly.
 
 ### Adapter Mode
 
@@ -148,7 +148,7 @@ sudo batt adapter-mode enable
 - Supports charge limits from 10% to 100%.
 - Works only while `batt` is awake.
 - Disables Force Discharge and auto-calibration.
-- Supports the lower limit, which native mode does not.
+- Supports lower-limit bands, including narrow bands that native mode leaves to macOS.
 
 For release compatibility, see the [release page](https://github.com/charlie0129/batt/releases).
 
