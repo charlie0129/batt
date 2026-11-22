@@ -2,6 +2,9 @@ package daemon
 
 import (
 	"log/slog"
+	"math"
+
+	"github.com/charlie0129/gosmc"
 
 	"github.com/charlie0129/batt/pkg/powerui"
 	"github.com/charlie0129/batt/pkg/smc"
@@ -16,21 +19,52 @@ func darwinSystem(conn *smc.AppleSMC) System {
 		Sleep:       iokitSleepSetting{},
 		Assertions:  &iokitAssertions{},
 		Notifier:    iokitSleepNotifier{},
-		Battery:     darwinBatteryInfo{},
+		Battery:     darwinBatteryInfo{readSMC: conn.Read},
 	}
 }
 
 // darwinBatteryInfo reads battery telemetry from the AppleSmartBattery
 // IORegistry entry and the native charge-limit override through PowerUI.
-type darwinBatteryInfo struct{}
+type darwinBatteryInfo struct {
+	// readSMC reads the adapter input when the AppleSmartBattery entry does
+	// not report it. Nil skips that fallback.
+	readSMC func(key string) (gosmc.Value, error)
+}
 
-func (darwinBatteryInfo) Snapshot() (BatterySnapshot, error) {
+func (i darwinBatteryInfo) Snapshot() (BatterySnapshot, error) {
 	b, err := readSmartBattery()
 	if err != nil {
 		return BatterySnapshot{}, err
 	}
 	fillMissingCapacities(&b, readBatteryDataCapacities)
+	if i.readSMC != nil {
+		fillMissingAdapterInput(&b, i.readSMC)
+	}
 	return b.snapshot(), nil
+}
+
+// fillMissingAdapterInput fills in the adapter input from the SMC when the
+// AppleSmartBattery entry has no PowerTelemetryData, as on 16-inch M4 Pro
+// MacBook Pros running macOS 15.
+func fillMissingAdapterInput(b *smartBattery, read func(key string) (gosmc.Value, error)) {
+	if b.SystemVoltageIn > 0 || b.SystemCurrentIn > 0 {
+		return
+	}
+	var milli [2]int
+	for i, key := range []string{smc.DCInVoltageKey, smc.DCInCurrentKey} {
+		v, err := read(key)
+		if err != nil {
+			slog.Debug("adapter input unavailable from SMC", "key", key, "error", err)
+			return
+		}
+		f, err := v.Float64()
+		if err != nil {
+			slog.Debug("adapter input unavailable from SMC", "key", key, "error", err)
+			return
+		}
+		milli[i] = int(math.Round(f * 1000))
+	}
+	b.SystemVoltageIn, b.SystemCurrentIn = milli[0], milli[1]
 }
 
 func (darwinBatteryInfo) FullChargeOverride() (bool, error) {

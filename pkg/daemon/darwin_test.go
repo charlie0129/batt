@@ -3,6 +3,8 @@ package daemon
 import (
 	"errors"
 	"testing"
+
+	"github.com/charlie0129/gosmc"
 )
 
 func TestFillMissingCapacities(t *testing.T) {
@@ -98,6 +100,57 @@ func TestSmartBatterySnapshot(t *testing.T) {
 	got = smartBattery{IsCharging: true, SystemVoltageIn: -1, SystemCurrentIn: -24}.snapshot()
 	if !got.Charging || got.InputVoltage != 0 || got.InputAmperage != 0 {
 		t.Fatalf("snapshot() = %+v, want charging with negative adapter readings ignored", got)
+	}
+}
+
+func TestFillMissingAdapterInput(t *testing.T) {
+	// The SMC of a 16-inch M4 Pro MacBook Pro on macOS 15.7 on a 70 W adapter,
+	// whose AppleSmartBattery has no PowerTelemetryData.
+	values := map[string][]byte{
+		"VD0R": {0xd6, 0xb3, 0xa0, 0x41}, // 20.0878 V
+		"ID0R": {0xae, 0x59, 0xe6, 0x3f}, // 1.7996 A
+	}
+	read := func(key string) (gosmc.Value, error) {
+		data, ok := values[key]
+		if !ok {
+			return gosmc.Value{}, errors.New("no such key")
+		}
+		return gosmc.NewValue(key, gosmc.DataType("flt "), data)
+	}
+	failing := func(string) (gosmc.Value, error) { return gosmc.Value{}, errors.New("SMC unavailable") }
+
+	tests := []struct {
+		name        string
+		top         smartBattery
+		read        func(string) (gosmc.Value, error)
+		wantVoltage int
+		wantCurrent int
+	}{
+		{
+			name:        "PowerTelemetryData missing",
+			read:        read,
+			wantVoltage: 20088, wantCurrent: 1800,
+		},
+		{
+			name:        "PowerTelemetryData present",
+			top:         smartBattery{SystemVoltageIn: 20152, SystemCurrentIn: 30},
+			read:        failing,
+			wantVoltage: 20152, wantCurrent: 30,
+		},
+		{
+			name: "SMC unavailable",
+			read: failing,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := tt.top
+			fillMissingAdapterInput(&b, tt.read)
+			if b.SystemVoltageIn != tt.wantVoltage || b.SystemCurrentIn != tt.wantCurrent {
+				t.Errorf("adapter input = %d mV %d mA, want %d mV %d mA",
+					b.SystemVoltageIn, b.SystemCurrentIn, tt.wantVoltage, tt.wantCurrent)
+			}
+		})
 	}
 }
 
