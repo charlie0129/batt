@@ -83,6 +83,8 @@ def badge_to_button(match: re.Match) -> str:
         return match.group(0)
     if label == "Build Test Binary":
         return match.group(0)
+    if label == "GitHub Downloads":
+        return match.group(0)
 
     icon = BUTTON_ICONS.get(label)
     text = f":{icon}: {label}" if icon else label
