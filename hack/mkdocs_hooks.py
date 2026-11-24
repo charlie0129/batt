@@ -77,6 +77,15 @@ def convert_tabs(match: re.Match) -> str:
 
 def badge_to_button(match: re.Match) -> str:
     label = match.group(1).replace("-", " ")
+
+    # Keep GitHub Actions status badges as normal badges.
+    if label == "Go Checks":
+        return match.group(0)
+    if label == "Build Test Binary":
+        return match.group(0)
+    if label == "GitHub Downloads":
+        return match.group(0)
+
     icon = BUTTON_ICONS.get(label)
     text = f":{icon}: {label}" if icon else label
     return f"[{text}]({match.group(2)}){{ .md-button .md-button--primary }}"

@@ -6,9 +6,9 @@
 
 # Batt
 
-[![Go Checks](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml)
-[![Build Test Binary](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml/badge.svg)](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml)
-![GitHub Downloads](https://img.shields.io/github/downloads/charlie0129/batt/total?style=flat&logo=github&logoColor=99A0A8&labelColor=373F46&label=Downloads&color=32CA55)
+[![Go Checks](https://img.shields.io/github/actions/workflow/status/charlie0129/batt/gochecks.yml?style=for-the-badge&logo=github&logoColor=99A0A8&labelColor=373F46&label=Go%20Checks&color=32CA55)](https://github.com/charlie0129/batt/actions/workflows/gochecks.yml)
+[![Build Test Binary](https://img.shields.io/github/actions/workflow/status/charlie0129/batt/build-test-binary.yml?style=for-the-badge&logo=github&logoColor=99A0A8&labelColor=373F46&label=Build%20Test%20Binary&color=32CA55)](https://github.com/charlie0129/batt/actions/workflows/build-test-binary.yml)
+![GitHub Downloads](https://img.shields.io/github/downloads/charlie0129/batt/total?style=for-the-badge&logo=github&logoColor=99A0A8&labelColor=373F46&label=Downloads&color=32CA55)
 
 <span style="font-size: 20px;">`batt` is a tool to control battery charging on Apple Silicon MacBooks.</span>
 
@@ -216,4 +216,10 @@ I want a _simple_ tool that does just one thing, and **does it well** -- limitin
 
 ## Star History
 
-[![Star History Chart](https://star-history.dera.page/svg?repos=charlie0129/batt&type=Date)](https://star-history.dera.page/#charlie0129/batt&Date)
+<a href="https://simrepo.dera.page/?repos=622494594">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://simrepo.dera.page/svg?repos=622494594&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://simrepo.dera.page/svg?repos=622494594" />
+   <img alt="Star History Chart" src="https://simrepo.dera.page/svg?repos=622494594" />
+ </picture>
+</a>
