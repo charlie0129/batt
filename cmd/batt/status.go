@@ -174,6 +174,7 @@ func NewStatusCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "status",
+		Aliases: []string{"st"},
 		GroupID: gBasic,
 		Short:   "Get the current status of batt",
 		Long:    `Get batt status, battery info, and configuration.`,
