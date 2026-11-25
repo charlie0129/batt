@@ -20,6 +20,8 @@ type statusData struct {
 	adapter       bool
 	currentCharge int
 	batteryInfo   *powerinfo.Battery
+	cycleCount    *int
+	calibration   *calibration.Status
 	config        *config.RawFileConfig
 	capabilities  compatibility.Capabilities
 	noDrain       *client.NoDrainStatus
@@ -156,7 +158,7 @@ func fetchStatusData() (*statusData, error) {
 		}
 	}
 
-	return &statusData{
+	data := &statusData{
 		charging:      charging,
 		pluggedIn:     pluggedIn,
 		adapter:       adapter,
@@ -165,7 +167,14 @@ func fetchStatusData() (*statusData, error) {
 		config:        conf,
 		capabilities:  capabilities,
 		noDrain:       noDrain,
-	}, nil
+	}
+	if tr, err := apiClient.GetTelemetry(true, capabilities.Calibration); err == nil {
+		if tr.Power != nil {
+			data.cycleCount = &tr.Power.Battery.CycleCount
+		}
+		data.calibration = tr.Calibration
+	}
+	return data, nil
 }
 
 //nolint:gocyclo
@@ -279,6 +288,9 @@ func NewStatusCommand() *cobra.Command {
 				data.batteryInfo.DesignCapacity,
 				int(batteryHealth),
 			)
+			if data.cycleCount != nil {
+				cmd.Printf("  Cycle count: %s\n", bold("%d", *data.cycleCount))
+			}
 			// Show charge rate in Watts with sign (+ charging, - discharging) and bright color (bold)
 			watts := float64(data.batteryInfo.ChargeRate) / 1e3
 			var rateStr string
@@ -367,19 +379,18 @@ func NewStatusCommand() *cobra.Command {
 
 			cmd.Println()
 
-			tr, err := apiClient.GetTelemetry(false, true)
-			if data.capabilities.Calibration && err == nil && tr.Calibration != nil {
+			if cal := data.calibration; cal != nil {
 				cmd.Println(bold("Calibration status:"))
-				cmd.Printf("  Phase: %s\n", bold("%s", string(tr.Calibration.Phase)))
-				if tr.Calibration.Phase != calibration.PhaseIdle {
-					cmd.Printf("  Start: %s\n", bold("%s", tr.Calibration.StartedAt.Format(time.DateTime)))
+				cmd.Printf("  Phase: %s\n", bold("%s", string(cal.Phase)))
+				if cal.Phase != calibration.PhaseIdle {
+					cmd.Printf("  Start: %s\n", bold("%s", cal.StartedAt.Format(time.DateTime)))
 				}
 
 				cron := cfg.Cron()
 				if cron == "" {
 					cmd.Printf("  Schedule: %s\n", bold("disabled"))
 				} else {
-					cmd.Printf("  Schedule: %s (%s)\n", bold("%s", tr.Calibration.ScheduledAt.Format(time.DateTime)), cfg.Cron())
+					cmd.Printf("  Schedule: %s (%s)\n", bold("%s", cal.ScheduledAt.Format(time.DateTime)), cfg.Cron())
 				}
 			}
 

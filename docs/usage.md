@@ -71,6 +71,7 @@ Battery status:
   Current charge: 65%
   State: not charging
   Full capacity: 8648 mAh / 8694 mAh (99%)
+  Cycle count: 86
   Charge rate: +0.0 W
   Voltage: 11.89 V
 
