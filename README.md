@@ -77,6 +77,15 @@ However, if you are nerdy and want to dive into the details, it does have some a
 > To do so, open `System Settings` -> `Battery` -> `Battery Health` -> `i` -> Turn OFF `Optimized Battery Charging`. <br>
 > Disable the built-in charge limit when using direct SMC control. In native mode, `batt` manages that setting itself.
 
+To install the menu bar app with Homebrew:
+
+```bash
+brew tap charlie0129/batt https://github.com/charlie0129/batt
+brew install --cask charlie0129/batt/batt
+```
+
+Open `batt.app` from Applications. The cask uses the same release as the manual installation below.
+
 * Download `.dmg` file from [Releases](https://github.com/charlie0129/batt/releases) and open it (right-click open if macOS says it's damaged)
 * Drag `batt.app` to `Applications`
 * macOS may say it's damaged when you try to run it. To fix it, run this in your Terminal: <br>

@@ -2,6 +2,17 @@
 
 GUI version is a native macOS menubar app. It's not as feature-complete as the command-line version, but it is a good choice if you are not comfortable with the command-line. The command-line version is also included if you have the GUI version.
 
+### Install with Homebrew
+
+```bash
+brew tap charlie0129/batt https://github.com/charlie0129/batt
+brew install --cask charlie0129/batt/batt
+```
+
+Open `batt.app` from Applications. If you already run the daemon with Homebrew Services, the app can connect to that daemon. The cask installs the published app, so the same Gatekeeper warning described below can appear on first launch.
+
+### Install from the DMG
+
 1. Download `.dmg` file from [Releases](https://github.com/charlie0129/batt/releases) and open it (right-click open if macOS says it's damaged)
 2. Drag `batt.app` to `Applications`
 3. macOS may say it's damaged when you try to run it (it's NOT) and wants you to move it to trash. To fix it, run this in Terminal: `sudo xattr -r -d com.apple.quarantine /Applications/batt.app`.
