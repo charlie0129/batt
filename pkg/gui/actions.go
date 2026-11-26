@@ -20,11 +20,11 @@ func (c *menuController) handleAction(item menuItem, checked bool) {
 	case itemLimit50, itemLimit60, itemLimit70, itemLimit80, itemLimit90:
 		c.setLimit(quickLimitForItem(item))
 	case itemChargeOnceLimit:
-		c.callChargeOnce(c.api.ChargeOnceToLimit, "Failed to start charging to the limit")
+		c.callChargeOnce(c.api.ChargeOnceToLimit, tr("Failed to start charging to the limit"))
 	case itemChargeOnceFull:
-		c.callChargeOnce(c.api.ChargeOnceToFull, "Failed to start charging to 100%")
+		c.callChargeOnce(c.api.ChargeOnceToFull, tr("Failed to start charging to 100%"))
 	case itemChargeOnceCancel:
-		c.callChargeOnce(c.api.CancelChargeOnce, "Failed to cancel the one-time charge")
+		c.callChargeOnce(c.api.CancelChargeOnce, tr("Failed to cancel the one-time charge"))
 	case itemMagSafeEnabled:
 		c.setMagSafeMode(config.ControlMagSafeModeEnabled)
 	case itemMagSafeDisabled:
@@ -81,17 +81,17 @@ func (c *menuController) installOrUpgrade() {
 	executable, err := os.Executable()
 	if err != nil {
 		slog.Error("Failed to get executable path", "error", err)
-		showAlert("Failed to get executable path", err.Error())
+		showAlert(tr("Failed to get executable path"), err.Error())
 		return
 	}
 	if err := installDaemon(executable); err != nil {
 		slog.Error("Failed to install daemon", "error", err)
-		showAlert("Installation failed", err.Error())
+		showAlert(tr("Installation failed"), err.Error())
 		return
 	}
 	if err := startAppAtBoot(); err != nil {
 		slog.Error("Failed to start app at boot", "error", err)
-		showAlert("Failed to start app at boot", err.Error())
+		showAlert(tr("Failed to start app at boot"), err.Error())
 		return
 	}
 	c.menu.setStatusIcon(true, true, false)
@@ -101,7 +101,7 @@ func (c *menuController) setLimit(limit int) {
 	response, err := c.api.SetLimit(limit)
 	if err != nil {
 		slog.Error("Failed to set limit", "error", err)
-		showAlert("Failed to set limit", response+err.Error())
+		showAlert(tr("Failed to set limit"), response+err.Error())
 	}
 }
 
@@ -117,43 +117,43 @@ func (c *menuController) callChargeOnce(call func() (string, error), failure str
 // right away.
 func chargeOnceLimitTitle(limit int) string {
 	if limit <= 0 || limit >= 100 {
-		return "Charge to Limit Now"
+		return tr("Charge to Limit Now")
 	}
-	return fmt.Sprintf("Charge to %d%% Now", limit)
+	return fmt.Sprintf(tr("Charge to %d%% Now"), limit)
 }
 
 // chargeOnceStatusTitle shows what a running one-time charge is doing.
 func chargeOnceStatusTitle(target, currentCharge int) string {
 	if currentCharge <= 0 {
-		return fmt.Sprintf("Charging to %d%%…", target)
+		return fmt.Sprintf(tr("Charging to %d%%…"), target)
 	}
-	return fmt.Sprintf("Charging to %d%%, now %d%%", target, currentCharge)
+	return fmt.Sprintf(tr("Charging to %d%%, now %d%%"), target, currentCharge)
 }
 
 func (c *menuController) setMagSafeMode(mode config.ControlMagSafeMode) {
 	if _, err := c.api.SetControlMagSafeLED(mode); err != nil {
 		slog.Error("Failed to set control mag safe LED", "error", err)
-		showAlert("Failed to set MagSafe LED control", err.Error())
+		showAlert(tr("Failed to set MagSafe LED control"), err.Error())
 	}
 }
 
 func (c *menuController) setPreventIdleSleep(checked bool) {
 	if _, err := c.api.SetPreventIdleSleep(checked); err != nil {
 		slog.Error("Failed to set prevent idle sleep", "error", err)
-		showAlert("Failed to set prevent idle sleep", err.Error())
+		showAlert(tr("Failed to set prevent idle sleep"), err.Error())
 	}
 }
 
 func (c *menuController) setDisableChargingPreSleep(checked bool) {
 	if _, err := c.api.SetDisableChargingPreSleep(checked); err != nil {
 		slog.Error("Failed to set disable charging pre sleep", "error", err)
-		showAlert("Failed to set prevent idle sleep", err.Error())
+		showAlert(tr("Failed to set prevent idle sleep"), err.Error())
 	}
 }
 
 func (c *menuController) setPreventSystemSleep(checked bool) {
 	if _, err := c.api.SetPreventSystemSleep(checked); err != nil {
-		showAlert("Failed to set prevent system sleep", err.Error())
+		showAlert(tr("Failed to set prevent system sleep"), err.Error())
 	}
 }
 
@@ -167,7 +167,7 @@ func (c *menuController) setPreventSleepOnAdapterDisable(checked bool) {
 	}
 	if _, err := c.api.SetPreventSleepOnAdapterDisable(checked); err != nil {
 		c.menu.setChecked(itemPreventSleepOnAdapterDisable, !checked)
-		showAlert("Failed to set prevent sleep on adapter disable", err.Error())
+		showAlert(tr("Failed to set prevent sleep on adapter disable"), err.Error())
 	}
 }
 
@@ -179,7 +179,7 @@ func (c *menuController) setNoDrain(checked bool) {
 	response, err := c.api.SetNoDrain(checked)
 	if err != nil {
 		c.menu.setChecked(itemNoDrain, !checked)
-		showAlert("Failed to set no-drain", err.Error())
+		showAlert(tr("Failed to set no-drain"), err.Error())
 		return
 	}
 	// A deferred restart or a fallback is useful information, but a normal
@@ -189,7 +189,7 @@ func (c *menuController) setNoDrain(checked bool) {
 		c.menu.setChecked(itemNoDrain, false)
 	}
 	if checked && (strings.Contains(response, "deferred") || strings.Contains(response, "could not")) {
-		showAlert("No-drain", response)
+		showAlert(tr("No-drain"), response)
 	}
 }
 
@@ -209,13 +209,13 @@ func (c *menuController) startForceDischarge(duration time.Duration) {
 		_, err = c.api.DisableAdapterFor(duration)
 	}
 	if err != nil {
-		showAlert("Failed to set force discharge", err.Error())
+		showAlert(tr("Failed to set force discharge"), err.Error())
 	}
 }
 
 func (c *menuController) stopForceDischarge() {
 	if _, err := c.api.SetAdapter(true); err != nil {
-		showAlert("Failed to stop force discharge", err.Error())
+		showAlert(tr("Failed to stop force discharge"), err.Error())
 	}
 }
 
@@ -225,47 +225,47 @@ func (c *menuController) startCalibration() {
 		return
 	}
 	if _, err := c.api.StartCalibration(); err != nil {
-		showAlert("Failed to start calibration", err.Error())
+		showAlert(tr("Failed to start calibration"), err.Error())
 		return
 	}
-	c.menu.setTitle(itemCalibrationStatus, "Status: In Progress")
+	c.menu.setTitle(itemCalibrationStatus, tr("Status: In Progress"))
 }
 
 func (c *menuController) pauseCalibration() {
 	if _, err := c.api.PauseCalibration(); err != nil {
-		showAlert("Failed to pause calibration", err.Error())
+		showAlert(tr("Failed to pause calibration"), err.Error())
 	}
 }
 
 func (c *menuController) resumeCalibration() {
 	if _, err := c.api.ResumeCalibration(); err != nil {
-		showAlert("Failed to resume calibration", err.Error())
+		showAlert(tr("Failed to resume calibration"), err.Error())
 	}
 }
 
 func (c *menuController) cancelCalibration() {
 	if _, err := c.api.CancelCalibration(); err != nil {
-		showAlert("Failed to cancel calibration", err.Error())
+		showAlert(tr("Failed to cancel calibration"), err.Error())
 		return
 	}
-	c.menu.setTitle(itemCalibrationStatus, "Status: Idle")
+	c.menu.setTitle(itemCalibrationStatus, tr("Status: Idle"))
 }
 
 func (c *menuController) uninstall() {
 	executable, err := os.Executable()
 	if err != nil {
 		slog.Error("Failed to get executable path", "error", err)
-		showAlert("Failed to get executable path", err.Error())
+		showAlert(tr("Failed to get executable path"), err.Error())
 		return
 	}
 	if err := uninstallDaemon(executable); err != nil {
 		slog.Error("Failed to uninstall daemon", "error", err)
-		showAlert("Failed to uninstall daemon", err.Error())
+		showAlert(tr("Failed to uninstall daemon"), err.Error())
 		return
 	}
 	if err := UnregisterLoginItem(); err != nil {
 		slog.Error("Failed to unregister login item", "error", err)
-		showAlert("Failed to unregister login item", err.Error())
+		showAlert(tr("Failed to unregister login item"), err.Error())
 		return
 	}
 	c.menu.setStatusIcon(false, true, false)
@@ -274,14 +274,14 @@ func (c *menuController) uninstall() {
 func (c *menuController) disableLimit() {
 	response, err := c.api.SetLimit(100)
 	if err != nil && !pkgerrors.Is(err, client.ErrDaemonNotRunning) {
-		showAlert("Failed to disable charge limit", response+err.Error())
+		showAlert(tr("Failed to disable charge limit"), response+err.Error())
 	}
 }
 
 func (c *menuController) disableLimitFor(duration time.Duration) {
 	response, err := c.api.DisableFor(duration)
 	if err != nil && !pkgerrors.Is(err, client.ErrDaemonNotRunning) {
-		showAlert("Failed to disable charge limit", response+err.Error())
+		showAlert(tr("Failed to disable charge limit"), response+err.Error())
 	}
 }
 
@@ -320,17 +320,17 @@ func temporaryDisableDuration(item menuItem) time.Duration {
 
 func temporaryAdapterDisableCountdownTitle(remaining time.Duration) string {
 	if remaining <= 0 {
-		return "Restoring power adapter…"
+		return tr("Restoring power adapter…")
 	}
-	return "Restores power adapter in " + formatTemporaryDisableRemaining(remaining)
+	return fmt.Sprintf(tr("Restores power adapter in %s"), formatTemporaryDisableRemaining(remaining))
 }
 
 func temporaryDisableCountdownTitle(limit int, remaining time.Duration) string {
 	if remaining <= 0 {
-		return fmt.Sprintf("Restoring %d%% limit…", limit)
+		return fmt.Sprintf(tr("Restoring %d%% limit…"), limit)
 	}
 
-	return fmt.Sprintf("Restores to %d%% in %s", limit, formatTemporaryDisableRemaining(remaining))
+	return fmt.Sprintf(tr("Restores to %d%% in %s"), limit, formatTemporaryDisableRemaining(remaining))
 }
 
 func formatTemporaryDisableRemaining(remaining time.Duration) string {
@@ -344,13 +344,13 @@ func formatTemporaryDisableRemaining(remaining time.Duration) string {
 	minutes := totalMinutes % 60
 	parts := make([]string, 0, 3)
 	if days > 0 {
-		parts = append(parts, fmt.Sprintf("%dd", days))
+		parts = append(parts, fmt.Sprintf(tr("%dd"), days))
 	}
 	if hours > 0 {
-		parts = append(parts, fmt.Sprintf("%dh", hours))
+		parts = append(parts, fmt.Sprintf(tr("%dh"), hours))
 	}
 	if minutes > 0 {
-		parts = append(parts, fmt.Sprintf("%dm", minutes))
+		parts = append(parts, fmt.Sprintf(tr("%dm"), minutes))
 	}
 
 	return strings.Join(parts, " ")

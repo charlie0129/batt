@@ -92,6 +92,7 @@ void batt_menu_set_power(BattMenuRef menu, int item, const char *label, double v
 void batt_show_alert(const char *message, const char *body);
 bool batt_show_confirmation(int confirmation);
 void batt_show_notification(const char *title, const char *body);
+const char *batt_localized_string(const char *key);
 
 bool batt_register_login_item(void);
 bool batt_unregister_login_item(void);

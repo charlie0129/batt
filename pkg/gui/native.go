@@ -239,6 +239,15 @@ func withCString(value string, call func(*C.char)) {
 	call(cValue)
 }
 
+// tr returns the localized string for key, falling back to key (English).
+func tr(key string) string {
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	cVal := C.batt_localized_string(cKey)
+	defer C.free(unsafe.Pointer(cVal))
+	return C.GoString(cVal)
+}
+
 func withTwoCStrings(first, second string, call func(*C.char, *C.char)) {
 	cFirst := C.CString(first)
 	cSecond := C.CString(second)

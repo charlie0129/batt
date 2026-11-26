@@ -40,6 +40,8 @@ app: build
 	export version=$$(echo "$(VERSION)" | sed 's/v//g') && sed -i '' "s|BATT_VERSION|$$version|g" bin/batt.app/Contents/Info.plist
 	mkdir -p bin/batt.app/Contents/MacOS
 	cp bin/batt bin/batt.app/Contents/MacOS/batt
+	mkdir -p bin/batt.app/Contents/Resources/vi.lproj
+	cp pkg/gui/vi.lproj/Localizable.strings bin/batt.app/Contents/Resources/vi.lproj/Localizable.strings
 
 dmg: app
 	cd bin && create-dmg --volname batt --app-drop-link 360 130 --icon batt 130 130 --format ULMO "batt-$(VERSION).dmg" batt.app

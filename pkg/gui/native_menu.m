@@ -141,16 +141,16 @@ static NSMenu *AddSubmenu(BattMenuController *controller,
                        capable:(BOOL)capable
                   needsUpgrade:(BOOL)needsUpgrade {
     NSString *symbol = @"minus.plus.batteryblock";
-    NSString *description = @"batt icon";
+    NSString *description = NSLocalizedString(@"batt icon", nil);
     if (!installed) {
         symbol = @"batteryblock.slash";
-        description = @"batt daemon not installed";
+        description = NSLocalizedString(@"batt daemon not installed", nil);
     } else if (!capable) {
         symbol = @"minus.plus.batteryblock.exclamationmark";
-        description = @"Your machine cannot run batt";
+        description = NSLocalizedString(@"Your machine cannot run batt", nil);
     } else if (needsUpgrade) {
         symbol = @"fluid.batteryblock";
-        description = @"batt needs upgrade";
+        description = NSLocalizedString(@"batt needs upgrade", nil);
     }
     self.statusItem.button.image = [NSImage imageWithSystemSymbolName:symbol
                                             accessibilityDescription:description];
@@ -159,7 +159,8 @@ static NSMenu *AddSubmenu(BattMenuController *controller,
 - (void)setPowerItem:(BattMenuItem)item label:(NSString *)label value:(double)value {
     NSColor *color = NSColor.labelColor;
     char sign = ' ';
-    if (![label isEqualToString:@"System"]) {
+    // Compare by enum instead of label string so localization does not break color styling.
+    if (item != BattItemPowerSystem) {
         if (value > 0) {
             color = NSColor.systemGreenColor;
             sign = '+';
@@ -190,23 +191,23 @@ static NSMenu *AddSubmenu(BattMenuController *controller,
 
 void BattBuildMenu(BattMenuController *controller, NSString *version) {
     NSMenu *root = controller.menu;
-    NSMenu *power = AddSubmenu(controller, root, @"Power Flow", BattItemPowerFlow);
+    NSMenu *power = AddSubmenu(controller, root, NSLocalizedString(@"Power Flow", nil), BattItemPowerFlow);
     [power addItem:DisplayItem(controller, @"", BattItemPowerSystem, YES)];
     [power addItem:DisplayItem(controller, @"", BattItemPowerAdapter, YES)];
     [power addItem:DisplayItem(controller, @"", BattItemPowerBattery, YES)];
-    [controller setPowerItem:BattItemPowerSystem label:@"System" value:0];
-    [controller setPowerItem:BattItemPowerAdapter label:@"Adapter" value:0];
-    [controller setPowerItem:BattItemPowerBattery label:@"Battery" value:0];
+    [controller setPowerItem:BattItemPowerSystem label:NSLocalizedString(@"System", nil) value:0];
+    [controller setPowerItem:BattItemPowerAdapter label:NSLocalizedString(@"Adapter", nil) value:0];
+    [controller setPowerItem:BattItemPowerBattery label:NSLocalizedString(@"Battery", nil) value:0];
 
-    [root addItem:ActionItem(controller, @"Upgrade Daemon...", @"u", BattItemUpgrade)];
-    [root addItem:ActionItem(controller, @"Install Daemon...", @"i", BattItemInstall)];
-    [root addItem:DisplayItem(controller, @"Loading...", BattItemState, NO)];
-    [root addItem:DisplayItem(controller, @"Loading...", BattItemCurrentLimit, NO)];
+    [root addItem:ActionItem(controller, NSLocalizedString(@"Upgrade Daemon...", nil), @"u", BattItemUpgrade)];
+    [root addItem:ActionItem(controller, NSLocalizedString(@"Install Daemon...", nil), @"i", BattItemInstall)];
+    [root addItem:DisplayItem(controller, NSLocalizedString(@"Loading...", nil), BattItemState, NO)];
+    [root addItem:DisplayItem(controller, NSLocalizedString(@"Loading...", nil), BattItemCurrentLimit, NO)];
     NSMenuItem *nativeLimitNotice = DisplayItem(controller, @"", BattItemNativeLimitNotice, NO);
     nativeLimitNotice.hidden = YES;
     [root addItem:nativeLimitNotice];
     [root addItem:[NSMenuItem separatorItem]];
-    [root addItem:DisplayItem(controller, @"Quick Limits", BattItemQuickLimits, NO)];
+    [root addItem:DisplayItem(controller, NSLocalizedString(@"Quick Limits", nil), BattItemQuickLimits, NO)];
 
     const NSInteger limits[] = {50, 60, 70, 80, 90};
     const BattMenuItem limitItems[] = {
@@ -214,107 +215,108 @@ void BattBuildMenu(BattMenuController *controller, NSString *version) {
     };
     for (NSUInteger index = 0; index < 5; index++) {
         NSInteger limit = limits[index];
-        NSString *title = [NSString stringWithFormat:@"Set %ld%% Limit", (long)limit];
+        NSString *title = [NSString stringWithFormat:NSLocalizedString(@"Set %ld%% Limit", nil), (long)limit];
         NSString *key = [NSString stringWithFormat:@"%ld", (long)limit];
         [root addItem:ActionItem(controller, title, key, limitItems[index])];
     }
 
     [root addItem:[NSMenuItem separatorItem]];
-    [root addItem:DisplayItem(controller, @"One-Time Charge", BattItemChargeOnce, NO)];
-    [root addItem:ActionItem(controller, @"Charge to Limit Now", @"",
+    [root addItem:DisplayItem(controller, NSLocalizedString(@"One-Time Charge", nil), BattItemChargeOnce, NO)];
+    [root addItem:ActionItem(controller, NSLocalizedString(@"Charge to Limit Now", nil), @"",
                               BattItemChargeOnceLimit)];
-    [root addItem:ActionItem(controller, @"Charge to Full Once", @"",
+    [root addItem:ActionItem(controller, NSLocalizedString(@"Charge to Full Once", nil), @"",
                               BattItemChargeOnceFull)];
     NSMenuItem *chargeOnceStatus = DisplayItem(controller, @"", BattItemChargeOnceStatus, NO);
     chargeOnceStatus.hidden = YES;
     [root addItem:chargeOnceStatus];
-    NSMenuItem *chargeOnceCancel = ActionItem(controller, @"Cancel One-Time Charge", @"",
+    NSMenuItem *chargeOnceCancel = ActionItem(controller, NSLocalizedString(@"Cancel One-Time Charge", nil), @"",
                                               BattItemChargeOnceCancel);
     chargeOnceCancel.hidden = YES;
     [root addItem:chargeOnceCancel];
 
     [root addItem:[NSMenuItem separatorItem]];
-    NSMenu *advanced = AddSubmenu(controller, root, @"Advanced", BattItemAdvanced);
-    NSMenu *magSafe = AddSubmenu(controller, advanced, @"Control MagSafe LED", BattItemMagSafe);
-    [magSafe addItem:ActionItem(controller, @"Enable", @"", BattItemMagSafeEnabled)];
-    [magSafe addItem:ActionItem(controller, @"Disable", @"", BattItemMagSafeDisabled)];
-    [magSafe addItem:ActionItem(controller, @"Always-off", @"", BattItemMagSafeAlwaysOff)];
+    NSMenu *advanced = AddSubmenu(controller, root, NSLocalizedString(@"Advanced", nil), BattItemAdvanced);
+    NSMenu *magSafe = AddSubmenu(controller, advanced, NSLocalizedString(@"Control MagSafe LED", nil), BattItemMagSafe);
+    [magSafe addItem:ActionItem(controller, NSLocalizedString(@"Enable", nil), @"", BattItemMagSafeEnabled)];
+    [magSafe addItem:ActionItem(controller, NSLocalizedString(@"Disable", nil), @"", BattItemMagSafeDisabled)];
+    [magSafe addItem:ActionItem(controller, NSLocalizedString(@"Always-off", nil), @"", BattItemMagSafeAlwaysOff)];
 
-    [advanced addItem:ActionItem(controller, @"Prevent Idle Sleep when Charging", @"",
+    [advanced addItem:ActionItem(controller, NSLocalizedString(@"Prevent Idle Sleep when Charging", nil), @"",
                                   BattItemPreventIdleSleep)];
-    [advanced addItem:ActionItem(controller, @"Disable Charging before Sleep", @"",
+    [advanced addItem:ActionItem(controller, NSLocalizedString(@"Disable Charging before Sleep", nil), @"",
                                   BattItemDisableChargingPreSleep)];
     [advanced addItem:ActionItem(controller,
-                                  @"Prevent System Sleep when Charging (Experimental)", @"",
+                                  NSLocalizedString(@"Prevent System Sleep when Charging (Experimental)", nil), @"",
                                   BattItemPreventSystemSleep)];
     [advanced addItem:ActionItem(controller,
-                                  @"Prevent Sleep when Adapter is Disabled", @"",
+                                  NSLocalizedString(@"Prevent Sleep when Adapter is Disabled", nil), @"",
                                   BattItemPreventSleepOnAdapterDisable)];
     [advanced addItem:ActionItem(controller,
-                                  @"No-drain Above Native Limit (Experimental)", @"",
+                                  NSLocalizedString(@"No-drain Above Native Limit (Experimental)", nil), @"",
                                   BattItemNoDrain)];
-    NSMenu *forceDischarge = AddSubmenu(controller, advanced, @"Force Discharge...",
+    NSMenu *forceDischarge = AddSubmenu(controller, advanced, NSLocalizedString(@"Force Discharge...", nil),
                                         BattItemForceDischarge);
     NSMenuItem *forceDischargeCountdown = DisplayItem(controller, @"",
                                                        BattItemForceDischargeCountdown, NO);
     forceDischargeCountdown.hidden = YES;
     [forceDischarge addItem:forceDischargeCountdown];
-    [forceDischarge addItem:ActionItem(controller, @"Stop Force Discharge", @"",
+    [forceDischarge addItem:ActionItem(controller, NSLocalizedString(@"Stop Force Discharge", nil), @"",
                                         BattItemForceDischargeStop)];
-    [forceDischarge addItem:ActionItem(controller, @"Indefinitely", @"",
+    [forceDischarge addItem:ActionItem(controller, NSLocalizedString(@"Indefinitely", nil), @"",
                                         BattItemForceDischargeIndefinitely)];
     [forceDischarge addItem:[NSMenuItem separatorItem]];
-    [forceDischarge addItem:ActionItem(controller, @"1 Hour", @"",
+    [forceDischarge addItem:ActionItem(controller, NSLocalizedString(@"1 Hour", nil), @"",
                                         BattItemForceDischarge1Hour)];
-    [forceDischarge addItem:ActionItem(controller, @"2 Hours", @"",
+    [forceDischarge addItem:ActionItem(controller, NSLocalizedString(@"2 Hours", nil), @"",
                                         BattItemForceDischarge2Hours)];
-    [forceDischarge addItem:ActionItem(controller, @"4 Hours", @"",
+    [forceDischarge addItem:ActionItem(controller, NSLocalizedString(@"4 Hours", nil), @"",
                                         BattItemForceDischarge4Hours)];
-    [forceDischarge addItem:ActionItem(controller, @"8 Hours", @"",
+    [forceDischarge addItem:ActionItem(controller, NSLocalizedString(@"8 Hours", nil), @"",
                                         BattItemForceDischarge8Hours)];
 
     NSMenu *calibration = AddSubmenu(controller, advanced,
-                                     @"Auto Calibration (Experimental)...",
+                                     NSLocalizedString(@"Auto Calibration (Experimental)...", nil),
                                      BattItemAutoCalibration);
-    [calibration addItem:DisplayItem(controller, @"Status: Idle",
+    [calibration addItem:DisplayItem(controller, NSLocalizedString(@"Status: Idle", nil),
                                       BattItemCalibrationStatus, NO)];
-    [calibration addItem:ActionItem(controller, @"Start", @"", BattItemCalibrationStart)];
-    [calibration addItem:ActionItem(controller, @"Pause", @"", BattItemCalibrationPause)];
-    [calibration addItem:ActionItem(controller, @"Resume", @"", BattItemCalibrationResume)];
-    [calibration addItem:ActionItem(controller, @"Cancel", @"", BattItemCalibrationCancel)];
+    [calibration addItem:ActionItem(controller, NSLocalizedString(@"Start", nil), @"", BattItemCalibrationStart)];
+    [calibration addItem:ActionItem(controller, NSLocalizedString(@"Pause", nil), @"", BattItemCalibrationPause)];
+    [calibration addItem:ActionItem(controller, NSLocalizedString(@"Resume", nil), @"", BattItemCalibrationResume)];
+    [calibration addItem:ActionItem(controller, NSLocalizedString(@"Cancel", nil), @"", BattItemCalibrationCancel)];
 
     [advanced addItem:[NSMenuItem separatorItem]];
-    NSString *versionTitle = [@"Version: " stringByAppendingString:version ?: @""];
+    NSString *versionTitle = [NSString stringWithFormat:@"%@ %@",
+                              NSLocalizedString(@"Version:", nil), version ?: @""];
     [advanced addItem:DisplayItem(controller, versionTitle, BattItemVersion, NO)];
-    [advanced addItem:ActionItem(controller, @"Uninstall Daemon...", @"", BattItemUninstall)];
+    [advanced addItem:ActionItem(controller, NSLocalizedString(@"Uninstall Daemon...", nil), @"", BattItemUninstall)];
 
     [root addItem:[NSMenuItem separatorItem]];
-    NSMenu *disableLimit = AddSubmenu(controller, root, @"Disable Charge Limit",
+    NSMenu *disableLimit = AddSubmenu(controller, root, NSLocalizedString(@"Disable Charge Limit", nil),
                                       BattItemDisableLimit);
     NSMenuItem *disableCountdown = DisplayItem(controller, @"",
                                                 BattItemDisableLimitCountdown, NO);
     disableCountdown.hidden = YES;
     [disableLimit addItem:disableCountdown];
-    [disableLimit addItem:ActionItem(controller, @"Indefinitely", @"d",
+    [disableLimit addItem:ActionItem(controller, NSLocalizedString(@"Indefinitely", nil), @"d",
                                       BattItemDisableLimitIndefinitely)];
     [disableLimit addItem:[NSMenuItem separatorItem]];
-    [disableLimit addItem:ActionItem(controller, @"1 Hour", @"",
+    [disableLimit addItem:ActionItem(controller, NSLocalizedString(@"1 Hour", nil), @"",
                                       BattItemDisableLimit1Hour)];
-    [disableLimit addItem:ActionItem(controller, @"2 Hours", @"",
+    [disableLimit addItem:ActionItem(controller, NSLocalizedString(@"2 Hours", nil), @"",
                                       BattItemDisableLimit2Hours)];
-    [disableLimit addItem:ActionItem(controller, @"4 Hours", @"",
+    [disableLimit addItem:ActionItem(controller, NSLocalizedString(@"4 Hours", nil), @"",
                                       BattItemDisableLimit4Hours)];
-    [disableLimit addItem:ActionItem(controller, @"8 Hours", @"",
+    [disableLimit addItem:ActionItem(controller, NSLocalizedString(@"8 Hours", nil), @"",
                                       BattItemDisableLimit8Hours)];
-    [disableLimit addItem:ActionItem(controller, @"12 Hours", @"",
+    [disableLimit addItem:ActionItem(controller, NSLocalizedString(@"12 Hours", nil), @"",
                                       BattItemDisableLimit12Hours)];
-    [disableLimit addItem:ActionItem(controller, @"24 Hours", @"",
+    [disableLimit addItem:ActionItem(controller, NSLocalizedString(@"24 Hours", nil), @"",
                                       BattItemDisableLimit24Hours)];
-    [disableLimit addItem:ActionItem(controller, @"2 Days", @"",
+    [disableLimit addItem:ActionItem(controller, NSLocalizedString(@"2 Days", nil), @"",
                                       BattItemDisableLimit2Days)];
-    [disableLimit addItem:ActionItem(controller, @"3 Days", @"",
+    [disableLimit addItem:ActionItem(controller, NSLocalizedString(@"3 Days", nil), @"",
                                       BattItemDisableLimit3Days)];
-    [disableLimit addItem:ActionItem(controller, @"7 Days", @"",
+    [disableLimit addItem:ActionItem(controller, NSLocalizedString(@"7 Days", nil), @"",
                                       BattItemDisableLimit7Days)];
-    [root addItem:ActionItem(controller, @"Quit Menubar App", @"q", BattItemQuit)];
+    [root addItem:ActionItem(controller, NSLocalizedString(@"Quit Menubar App", nil), @"q", BattItemQuit)];
 }
