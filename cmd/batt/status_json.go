@@ -36,6 +36,7 @@ type statusBatteryJSON struct {
 	State                string  `json:"state"`
 	TimeToLimitMinutes   *int    `json:"timeToLimitMinutes"`
 	FullCapacityMah      int     `json:"fullCapacityMah"`
+	CycleCount           *int    `json:"cycleCount,omitempty"`
 	ChargeRateWatts      float64 `json:"chargeRateWatts"`
 	VoltageVolts         float64 `json:"voltageVolts"`
 }
@@ -138,6 +139,7 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 			State:                batteryStateString(data.batteryInfo.State, data.batteryInfo.ChargeRate),
 			TimeToLimitMinutes:   computeTimeToLimit(data, cfg),
 			FullCapacityMah:      data.batteryInfo.DesignCapacity,
+			CycleCount:           data.cycleCount,
 			ChargeRateWatts:      math.Round(float64(data.batteryInfo.ChargeRate)/1e3*10) / 10,
 			VoltageVolts:         math.Round(data.batteryInfo.DesignVoltage*100) / 100,
 		},
@@ -160,34 +162,29 @@ func printStatusJSON(cmd *cobra.Command, data *statusData, cfg *config.File) err
 		Compatibility: data.capabilities,
 	}
 
-	if apiClient != nil && data.capabilities.Calibration {
-		tr, err := apiClient.GetTelemetry(false, true)
-		if err == nil && tr.Calibration != nil {
-			cal := tr.Calibration
+	if cal := data.calibration; cal != nil {
+		var startedAt *time.Time
+		if cal.Phase != calibration.PhaseIdle && !cal.StartedAt.IsZero() {
+			startedAt = &cal.StartedAt
+		}
 
-			var startedAt *time.Time
-			if cal.Phase != calibration.PhaseIdle && !cal.StartedAt.IsZero() {
-				startedAt = &cal.StartedAt
-			}
+		cron := cfg.Cron()
+		sched := statusCalibrationSchedJSON{
+			Enabled: cron != "",
+			Cron:    cron,
+		}
+		if cron != "" && !cal.ScheduledAt.IsZero() {
+			sched.ScheduledAt = &cal.ScheduledAt
+		}
 
-			cron := cfg.Cron()
-			sched := statusCalibrationSchedJSON{
-				Enabled: cron != "",
-				Cron:    cron,
-			}
-			if cron != "" && !cal.ScheduledAt.IsZero() {
-				sched.ScheduledAt = &cal.ScheduledAt
-			}
-
-			out.Calibration = &statusCalibrationJSON{
-				Phase:     string(cal.Phase),
-				StartedAt: startedAt,
-				Paused:    cal.Paused,
-				CanPause:  cal.CanPause,
-				CanCancel: cal.CanCancel,
-				Message:   cal.Message,
-				Schedule:  sched,
-			}
+		out.Calibration = &statusCalibrationJSON{
+			Phase:     string(cal.Phase),
+			StartedAt: startedAt,
+			Paused:    cal.Paused,
+			CanPause:  cal.CanPause,
+			CanCancel: cal.CanCancel,
+			Message:   cal.Message,
+			Schedule:  sched,
 		}
 	}
 
