@@ -40,6 +40,7 @@ func NewVersionCommand() *cobra.Command {
 func NewLimitCommand() *cobra.Command {
 	return annotateCapability(&cobra.Command{
 		Use:     "limit [percentage]",
+		Aliases: []string{"lim"},
 		Short:   "Set upper charge limit",
 		GroupID: gBasic,
 		Long: `Set upper charge limit.
@@ -135,6 +136,7 @@ Use --for to disable batt temporarily. The current charge limit is restored auto
 func NewAdapterCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "adapter",
+		Aliases: []string{"adp"},
 		Short:   "Enable or disable power input",
 		GroupID: gBasic,
 		Long: `Cut or restore power from the wall. This has the same effect as unplugging/plugging the power adapter, even if the adapter is physically plugged in.

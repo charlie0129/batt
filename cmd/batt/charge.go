@@ -15,6 +15,7 @@ import (
 func NewChargeCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "charge",
+		Aliases: []string{"chg"},
 		Short:   "Charge once without changing the charge limit",
 		GroupID: gBasic,
 		Long: `Charge the battery once, then let the configured charge limit apply again.
