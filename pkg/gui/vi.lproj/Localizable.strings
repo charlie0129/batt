@@ -1,0 +1,160 @@
+/* Vietnamese localization for batt menubar GUI */
+
+/* Menu items (native_menu.m) */
+"Power Flow" = "Luồng điện";
+"System" = "Hệ thống";
+"Adapter" = "Củ sạc";
+"Battery" = "Pin";
+"Upgrade Daemon..." = "Nâng cấp daemon…";
+"Install Daemon..." = "Cài đặt daemon…";
+"Loading..." = "Đang tải…";
+"Quick Limits" = "Giới hạn nhanh";
+"Set %ld%% Limit" = "Đặt giới hạn %ld%%";
+"One-Time Charge" = "Sạc một lần";
+"Charge to Limit Now" = "Sạc tới giới hạn ngay";
+"Charge to Full Once" = "Sạc đầy một lần";
+"Cancel One-Time Charge" = "Hủy sạc một lần";
+"Advanced" = "Nâng cao";
+"Control MagSafe LED" = "Đèn LED MagSafe";
+"Enable" = "Bật";
+"Disable" = "Tắt";
+"Always-off" = "Luôn tắt";
+"Prevent Idle Sleep when Charging" = "Ngăn ngủ chờ khi đang sạc";
+"Disable Charging before Sleep" = "Tắt sạc trước khi ngủ";
+"Prevent System Sleep when Charging (Experimental)" = "Ngăn máy ngủ khi đang sạc (Thử nghiệm)";
+"Prevent Sleep when Adapter is Disabled" = "Ngăn máy ngủ khi đã tắt củ sạc";
+"No-drain Above Native Limit (Experimental)" = "Không xả pin trên giới hạn gốc (Thử nghiệm)";
+"Force Discharge..." = "Buộc xả pin…";
+"Stop Force Discharge" = "Dừng buộc xả pin";
+"Indefinitely" = "Vô thời hạn";
+"1 Hour" = "1 giờ";
+"2 Hours" = "2 giờ";
+"4 Hours" = "4 giờ";
+"8 Hours" = "8 giờ";
+"Auto Calibration (Experimental)..." = "Hiệu chuẩn pin tự động (Thử nghiệm)…";
+"Status: Idle" = "Trạng thái: Chờ";
+"Start" = "Bắt đầu";
+"Pause" = "Tạm dừng";
+"Resume" = "Tiếp tục";
+"Cancel" = "Hủy";
+"Version:" = "Phiên bản:";
+"Uninstall Daemon..." = "Gỡ daemon…";
+"Disable Charge Limit" = "Tắt giới hạn sạc";
+"12 Hours" = "12 giờ";
+"24 Hours" = "24 giờ";
+"2 Days" = "2 ngày";
+"3 Days" = "3 ngày";
+"7 Days" = "7 ngày";
+"Quit Menubar App" = "Thoát ứng dụng Menu Bar";
+
+/* Status icon accessibility descriptions (native_menu.m) */
+"batt icon" = "biểu tượng batt";
+"batt daemon not installed" = "chưa cài đặt daemon batt";
+"Your machine cannot run batt" = "Máy này không chạy được batt";
+"batt needs upgrade" = "batt cần nâng cấp";
+
+/* Dynamic status strings (controller.go) */
+"Current Limit: %d%%" = "Giới hạn hiện tại: %d%%";
+"Not Charging" = "Không sạc";
+"Charging" = "Đang sạc";
+"Discharging" = "Đang xả pin";
+"Full" = "Đầy";
+"Will Charge Soon" = "Sắp sạc";
+"State: %s" = "Trạng thái: %s";
+"State: Error" = "Trạng thái: Lỗi";
+"Battery full; waiting for macOS" = "Pin đã đầy; đang chờ macOS";
+"Limit paused by macOS" = "Giới hạn tạm dừng bởi macOS";
+"Waiting for macOS to apply limit" = "Đang chờ macOS áp dụng giới hạn";
+"Auto Calibration (Experimental) Paused..." = "Hiệu chuẩn pin tự động (Thử nghiệm) đã tạm dừng…";
+"Auto Calibration (Experimental) In Progress..." = "Hiệu chuẩn pin tự động (Thử nghiệm) đang chạy…";
+"Status: Discharging (%d%% → %d%%)" = "Trạng thái: Đang xả pin (%d%% → %d%%)";
+"Status: Charging (%d%% → 100%%)" = "Trạng thái: Đang sạc (%d%% → 100%%)";
+"Status: Holding (%02d:%02d:%02d left)" = "Trạng thái: Đang giữ (%02d:%02d:%02d còn lại)";
+"Status: Discharging to previous limit..." = "Trạng thái: Đang xả về giới hạn trước…";
+"Status: Restoring settings..." = "Trạng thái: Đang khôi phục cài đặt…";
+"Status: Error -" = "Trạng thái: Lỗi -";
+"Status: Error" = "Trạng thái: Lỗi";
+
+/* Native limit notice tooltips (pkg/powerinfo/types.go) */
+"Battery full; charge limit paused until macOS clears the override." = "Pin đã đầy; giới hạn sạc tạm dừng cho tới khi macOS gỡ trạng thái ghi đè.";
+"macOS has not applied the limit yet and will do so once the battery level changes or charging stops, usually within a few minutes." = "macOS chưa áp dụng giới hạn; giới hạn sẽ được áp dụng khi mức pin thay đổi hoặc khi ngừng sạc, thường trong vài phút.";
+
+/* Alert titles, one-time charge, countdowns (actions.go) */
+"Failed to start charging to the limit" = "Không bắt đầu sạc tới giới hạn được";
+"Failed to start charging to 100%" = "Không bắt đầu sạc tới 100% được";
+"Failed to cancel the one-time charge" = "Không hủy sạc một lần được";
+"Failed to get executable path" = "Không lấy được đường dẫn file thực thi";
+"Installation failed" = "Cài đặt thất bại";
+"Failed to start app at boot" = "Không bật được khởi động cùng máy";
+"Failed to set limit" = "Không đặt được giới hạn";
+"Charge to %d%% Now" = "Sạc tới %d%% ngay";
+"Charging to %d%%…" = "Đang sạc tới %d%%…";
+"Charging to %d%%, now %d%%" = "Đang sạc tới %d%%, hiện tại %d%%";
+"Failed to set MagSafe LED control" = "Không đặt được điều khiển đèn LED MagSafe";
+"Failed to set prevent idle sleep" = "Không đặt được ngăn ngủ chờ";
+"Failed to set prevent system sleep" = "Không đặt được ngăn máy ngủ";
+"Failed to set prevent sleep on adapter disable" = "Không đặt được ngăn máy ngủ khi tắt củ sạc";
+"Failed to set no-drain" = "Không đặt được chế độ không xả pin";
+"No-drain" = "Không xả pin";
+"Failed to set force discharge" = "Không bật được buộc xả pin";
+"Failed to stop force discharge" = "Không dừng được buộc xả pin";
+"Failed to start calibration" = "Không bắt đầu hiệu chuẩn được";
+"Status: In Progress" = "Trạng thái: Đang chạy";
+"Failed to pause calibration" = "Không tạm dừng hiệu chuẩn được";
+"Failed to resume calibration" = "Không tiếp tục hiệu chuẩn được";
+"Failed to cancel calibration" = "Không hủy hiệu chuẩn được";
+"Failed to uninstall daemon" = "Không gỡ được daemon";
+"Failed to unregister login item" = "Không gỡ được mục khởi động cùng máy";
+"Failed to disable charge limit" = "Không tắt được giới hạn sạc";
+"Restoring power adapter…" = "Đang khôi phục củ sạc…";
+"Restores power adapter in %s" = "Khôi phục củ sạc sau %s";
+"Restoring %d%% limit…" = "Đang khôi phục giới hạn %d%%…";
+"Restores to %d%% in %s" = "Khôi phục về %d%% sau %s";
+"%dd" = "%dn";
+"%dh" = "%dg";
+"%dm" = "%dp";
+
+/* Notification titles (events.go) */
+"Calibration" = "Hiệu chuẩn pin";
+
+/* Short tooltips (strings.go) */
+"macOS may charge to 100% for battery maintenance." = "macOS có thể sạc tới 100% để bảo trì pin.";
+"Disable the battery charge limit and let your Mac charge to 100%, either indefinitely or for a selected duration. After a temporary disable, batt automatically restores your current limit." = "Tắt giới hạn sạc pin và để máy Mac sạc tới 100%, vô thời hạn hoặc trong khoảng thời gian đã chọn. Sau khi tạm tắt, batt tự động khôi phục lại giới hạn hiện tại của bạn.";
+"A temporary charge-limit disable is in progress. To cancel the schedule, set a charge limit." = "Đang tạm tắt giới hạn sạc. Để hủy lịch, hãy đặt một giới hạn sạc.";
+"Cut power from the wall and run from the battery, either indefinitely or for a selected duration. After a temporary force discharge, batt automatically restores the power adapter." = "Ngắt điện từ củ sạc và chạy bằng pin, vô thời hạn hoặc trong khoảng thời gian đã chọn. Sau khi buộc xả pin tạm thời, batt tự động khôi phục lại củ sạc.";
+"A temporary force discharge is in progress. To cancel the schedule and restore wall power, choose \"Stop Force Discharge\"." = "Đang buộc xả pin tạm thời. Để hủy lịch và khôi phục điện từ củ sạc, chọn \"Dừng buộc xả pin\".";
+"Quit the batt menubar app, but keep the batt daemon running.\n\nSince the batt daemon is still running, batt can continue to control charging. This is useful if you don't want the menubar icon to show up, but still want to use batt. When the client is not running, you can change batt settings using the command line interface (batt). To prevent the menubar app from starting at login, you can remove it in System Settings -> General -> Login Items & Extensions -> remove batt.app from the list (do NOT remove the batt daemon).\n\nIf you want batt to stop controlling charging, you can use the \"Disable Charge Limit\" command. To uninstall, you can use the \"Uninstall Daemon\" command in the Advanced menu." = "Thoát ứng dụng batt trên Menu Bar, nhưng vẫn giữ daemon batt chạy.\n\nVì daemon batt vẫn đang chạy, batt vẫn tiếp tục điều khiển sạc. Tính năng này hữu ích khi bạn không muốn biểu tượng Menu Bar hiển thị, nhưng vẫn muốn dùng batt. Khi ứng dụng không chạy, bạn có thể đổi cài đặt batt bằng giao diện dòng lệnh (batt). Để ứng dụng Menu Bar không khởi động khi đăng nhập, bạn có thể gỡ nó trong Cài đặt hệ thống -> Cài đặt chung -> Mục đăng nhập & Tiện ích mở rộng -> gỡ batt.app khỏi danh sách (KHÔNG gỡ daemon batt).\n\nNếu bạn muốn batt ngừng điều khiển sạc, bạn có thể dùng lệnh \"Tắt giới hạn sạc\". Để gỡ cài đặt, bạn có thể dùng lệnh \"Gỡ daemon…\" trong menu Nâng cao.";
+"Quit the batt menubar app." = "Thoát ứng dụng batt trên Menu Bar.";
+
+/* Long tooltips (native_tooltips.m) */
+"Power flow data is updated every 60 seconds." = "Dữ liệu luồng điện được cập nhật mỗi 60 giây.";
+"Your batt daemon is not compatible with this client version and needs to be upgraded. This is usually caused by a new client version that requires a new daemon version. You can upgrade the batt daemon by running this command." = "Daemon batt của bạn không tương thích với phiên bản ứng dụng này và cần được nâng cấp. Nguyên nhân thường là phiên bản ứng dụng mới yêu cầu phiên bản daemon mới. Bạn có thể nâng cấp daemon batt bằng lệnh này.";
+"Install the batt daemon. batt daemon is a component that controls charging. You must enter your password to install it because controlling charging is a privileged action." = "Cài đặt daemon batt. Daemon batt là thành phần điều khiển sạc. Bạn phải nhập mật khẩu để cài đặt vì điều khiển sạc là hành động cần quyền quản trị.";
+"Charge the battery once without changing your charge limit.\n\n\"Charge to <limit>% Now\" starts charging right away, even when the charge sits between the lower and the upper limit, and stops at the limit.\n\n\"Charge to Full Once\" charges to 100% and then restores your limit automatically.\n\nA one-time charge survives a restart. Cancel it here, or set a charge limit to cancel it." = "Sạc pin một lần mà không đổi giới hạn sạc của bạn.\n\n\"Sạc tới <giới hạn>% ngay\" bắt đầu sạc ngay lập tức, ngay cả khi mức pin đang nằm giữa ngưỡng dưới và ngưỡng trên, và dừng lại ở giới hạn.\n\n\"Sạc đầy một lần\" sạc tới 100% rồi tự động khôi phục lại giới hạn của bạn.\n\nMột lần sạc vẫn được giữ sau khi khởi động lại máy. Hủy nó tại đây, hoặc đặt một giới hạn sạc để hủy.";
+"Let batt control MagSafe LED to reflect the charging state of your MacBook (or force it off).\n\nNote that you must have a MagSafe LED on your MacBook to use this feature." = "Để batt điều khiển đèn LED MagSafe nhằm phản ánh trạng thái sạc của MacBook (hoặc ép tắt đèn).\n\nLưu ý bạn phải có đèn LED MagSafe trên MacBook mới dùng được tính năng này.";
+"Enable MagSafe LED control. The LED will reflect charging status:\n\n- Green: Charging is stopped.\n- Orange: Charging is in progress.\n- Off: Forced off, or temporarily after wake with active charging control." = "Bật điều khiển đèn LED MagSafe. Đèn sẽ phản ánh trạng thái sạc:\n\n- Xanh lá: Đã dừng sạc.\n- Cam: Đang sạc.\n- Tắt: Bị ép tắt, hoặc tạm tắt sau khi máy thức dậy khi đang điều khiển sạc.";
+"Disable MagSafe LED control. The LED will stay in its default state (mostly orange)." = "Tắt điều khiển đèn LED MagSafe. Đèn sẽ ở trạng thái mặc định (thường là màu cam).";
+"Force the MagSafe LED to stay off regardless of charging state." = "Ép đèn LED MagSafe luôn tắt bất kể trạng thái sạc.";
+"Set whether to prevent idle sleep during a charging session.\n\nDue to macOS limitations, batt will be paused when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, there is no way for batt to stop charging (since batt is paused by macOS) and the battery will charge to 100%. This option, together with \"Disable Charging before Sleep\", will prevent this from happening.\n\nThis option tells macOS NOT to go to sleep when the computer is in a charging session, so batt can continue to work until charging is finished. Note that it will only prevent **idle** sleep, when 1) charging is active 2) battery charge limit is enabled. So your computer can go to sleep as soon as a charging session is completed.\n\nHowever, this options does not prevent manual sleep (limitation of macOS). For example, if you manually put your computer to sleep (by choosing the Sleep option in the top-left Apple menu) or close the lid, batt will still be paused and the issue mentioned above will still happen. This is where \"Disable Charging before Sleep\" comes in." = "Chọn có ngăn ngủ chờ trong lúc đang sạc hay không.\n\nDo giới hạn của macOS, batt sẽ bị tạm dừng khi máy tính đi ngủ. Vì vậy, khi bạn đang sạc mà máy tính đi ngủ, batt không còn cách nào để dừng sạc (vì batt đã bị macOS tạm dừng) và pin sẽ sạc tới 100%. Tùy chọn này, cùng với \"Tắt sạc trước khi ngủ\", sẽ ngăn điều đó xảy ra.\n\nTùy chọn này bảo macOS KHÔNG đi ngủ khi máy tính đang sạc, để batt tiếp tục hoạt động cho tới khi sạc xong. Lưu ý nó chỉ ngăn ngủ **chờ**, khi 1) đang sạc 2) giới hạn sạc pin đang bật. Nhờ vậy máy tính có thể đi ngủ ngay khi sạc xong.\n\nTuy nhiên, tùy chọn này không ngăn được ngủ thủ công (giới hạn của macOS). Ví dụ, nếu bạn tự cho máy ngủ (bằng cách chọn Ngủ trong menu Apple ở góc trái trên cùng) hoặc gập nắp máy, batt vẫn sẽ bị tạm dừng và vấn đề trên vẫn xảy ra. Đó là lúc \"Tắt sạc trước khi ngủ\" phát huy tác dụng.";
+"Set whether to disable charging before sleep if charge limit is enabled.\n\nAs described in \"Prevent Idle Sleep when Charging\", batt will be paused by macOS when your computer goes to sleep, and there is no way for batt to continue controlling battery charging. This option will disable charging just before sleep, so your computer will not overcharge during sleep, even if the battery charge is below the limit." = "Chọn có tắt sạc trước khi ngủ hay không nếu giới hạn sạc đang bật.\n\nNhư đã mô tả trong \"Ngăn ngủ chờ khi đang sạc\", batt sẽ bị macOS tạm dừng khi máy tính đi ngủ, và không còn cách nào để batt tiếp tục điều khiển sạc pin. Tùy chọn này sẽ tắt sạc ngay trước khi ngủ, để máy tính không bị sạc quá mức trong lúc ngủ, ngay cả khi mức pin đang dưới giới hạn.";
+"Set whether to prevent system sleep during a charging session (experimental).\n\nThis option tells macOS to create power assertion, which prevents sleep, when all conditions are met:\n\n1) charging is active\n2) battery charge limit is enabled\n3) computer is connected to charger.\nSo your computer can go to sleep as soon as a charging session is completed / charger disconnected.\n\nDoes similar thing to prevent-idle-sleep, but works for manual sleep too.\n\nNote: please disable disable-charging-pre-sleep and prevent-idle-sleep, while this feature is in use" = "Chọn có ngăn máy ngủ trong lúc đang sạc hay không (thử nghiệm).\n\nTùy chọn này bảo macOS tạo một power assertion (yêu cầu giữ máy thức) để ngăn ngủ, khi đủ các điều kiện:\n\n1) đang sạc\n2) giới hạn sạc pin đang bật\n3) máy tính đang cắm sạc.\nNhờ vậy máy tính có thể đi ngủ ngay khi sạc xong / rút sạc.\n\nTác dụng tương tự ngăn ngủ chờ, nhưng còn hiệu quả với cả ngủ thủ công.\n\nLưu ý: hãy tắt \"Tắt sạc trước khi ngủ\" và \"Ngăn ngủ chờ khi đang sạc\" khi đang dùng tính năng này";
+"Set whether to keep Clamshell mode alive while adapter input is disabled by temporarily disabling system sleep.\n\nThis prevents all sleep—not just idle sleep—while adapter input is disabled, allowing Force Discharge and Auto Calibration to continue with the lid closed. When adapter input returns, batt automatically restores the prior sleep setting.\n\nWARNING: Your Mac may remain awake with the lid closed, overheat in a bag, or drain its battery to 0% if unplugged and left unattended." = "Chọn có giữ chế độ Clamshell hoạt động khi đầu vào củ sạc bị tắt hay không, bằng cách tạm thời tắt ngủ hệ thống.\n\nTùy chọn này ngăn mọi kiểu ngủ — không chỉ ngủ chờ — trong khi đầu vào củ sạc bị tắt, giúp Buộc xả pin và Hiệu chuẩn pin tự động tiếp tục chạy khi gập nắp. Khi có điện từ củ sạc trở lại, batt tự động khôi phục lại cài đặt ngủ trước đó.\n\nCẢNH BÁO: Máy Mac của bạn có thể vẫn thức khi gập nắp, quá nóng trong túi, hoặc cạn pin tới 0% nếu rút sạc và để không có người trông.";
+"Experimental macOS 27 native-mode option. Hold wall power above the limit instead of draining the battery.\n\nChanging this policy restarts powerd. batt waits for other applications' sleep assertions to end first and uses the regular native limit meanwhile." = "Tùy chọn thử nghiệm ở chế độ giới hạn gốc trên macOS 27. Giữ điện từ củ sạc trên giới hạn thay vì xả pin.\n\nĐổi chính sách này sẽ khởi động lại powerd. batt chờ các yêu cầu giữ máy thức của ứng dụng khác kết thúc trước rồi mới dùng giới hạn gốc thông thường trong lúc chờ.";
+"Cut power from the wall and run from the battery, either indefinitely or for a selected duration. After a temporary force discharge, batt automatically restores the power adapter.\n\nNOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep* unless \"Prevent Sleep when Adapter is Disabled\" is enabled. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users." = "Ngắt điện từ củ sạc và chạy bằng pin, vô thời hạn hoặc trong khoảng thời gian đã chọn. Sau khi buộc xả pin tạm thời, batt tự động khôi phục lại củ sạc.\n\nLƯU Ý: nếu bạn đang dùng chế độ Clamshell (dùng MacBook với màn hình ngoài và gập nắp), *ngắt điện sẽ khiến máy Mac đi ngủ* trừ khi \"Ngăn máy ngủ khi đã tắt củ sạc\" đang bật. Đây là giới hạn của macOS. Có cách để ngăn điều này, nhưng không khuyến nghị cho đa số người dùng.";
+"Calibration helps you calibrate your battery by automatically discharging and charging it according to best practices.\n\nbatt prevents idle sleep for the entire calibration session. Closing the lid or explicitly choosing Sleep can still force sleep.\n\nIt's recommended to run the calibration process every few months." = "Hiệu chuẩn giúp bạn hiệu chuẩn pin bằng cách tự động xả và sạc pin theo cách tốt nhất.\n\nbatt ngăn ngủ chờ trong toàn bộ phiên hiệu chuẩn. Gập nắp hoặc chọn Ngủ một cách chủ động vẫn có thể ép máy ngủ.\n\nBạn nên chạy quy trình hiệu chuẩn vài tháng một lần.";
+"Uninstall the batt daemon. This will remove the batt daemon from your system. You must enter your password to uninstall it.\n\nAfter uninstalling the batt daemon, no charging control will be present on your system and your Mac will charge to 100% as normal. The menubar app will still be present, but all options will be disabled. You can remove the menubar app by moving it to the trash." = "Gỡ daemon batt. Thao tác này sẽ gỡ daemon batt khỏi hệ thống của bạn. Bạn phải nhập mật khẩu để gỡ.\n\nSau khi gỡ daemon batt, hệ thống sẽ không còn điều khiển sạc nữa và máy Mac sẽ sạc tới 100% như bình thường. Ứng dụng Menu Bar vẫn còn đó, nhưng mọi tùy chọn sẽ bị tắt. Bạn có thể gỡ ứng dụng Menu Bar bằng cách kéo nó vào thùng rác.";
+
+/* Confirmation alerts (native_alerts.m) */
+"Continue" = "Tiếp tục";
+"Warning" = "Cảnh báo";
+"notes" = "ghi chú";
+"calibration" = "hiệu chuẩn";
+"Precautions" = "Lưu ý quan trọng";
+"1. Keep the lid open unless \"Prevent Sleep when Adapter is Disabled\" is enabled. When using that option with the lid closed, keep your Mac monitored and never place it in a bag.\n2. Force Discharge cuts wall power, making your Mac run on battery power just as if it were unplugged. If the battery charge is exhausted, your Mac will shut down." = "1. Mở nắp máy trừ khi \"Ngăn máy ngủ khi đã tắt củ sạc\" đang bật. Khi dùng tùy chọn này với nắp gập, hãy để mắt tới máy Mac và không bao giờ bỏ máy vào túi.\n2. Buộc xả pin sẽ ngắt điện từ củ sạc, khiến máy Mac chạy bằng pin giống như khi rút sạc. Nếu pin cạn, máy Mac sẽ tắt nguồn.";
+"\n3. An indefinite force discharge will continue until you stop it. Prefer a timed duration unless you specifically need indefinite discharge." = "\n3. Buộc xả pin vô thời hạn sẽ tiếp tục cho tới khi bạn dừng nó. Hãy chọn khoảng thời gian cụ thể trừ khi bạn thật sự cần xả vô thời hạn.";
+"Start Auto Calibration?" = "Bắt đầu hiệu chuẩn pin tự động?";
+"This will:\n1. Discharge to 15% by default.\n2. Charge to 100%.\n3. Hold at full charge (for 2 hours by default).\n4. Discharge back to previous charge limit.\n\nNOTES:\n• batt will prevent idle sleep until calibration finishes, is cancelled, or fails.\n• You can pause or cancel anytime from the menu.\n• Highly recommend keeping your Mac connected to power throughout the process to prevent the battery level from dropping below the threshold without timely charging.\n• Closing the lid or explicitly choosing Sleep can still force sleep unless \"Prevent Sleep when Adapter is Disabled\" is enabled. When using that option with the lid closed, keep your Mac monitored and never place it in a bag." = "Quá trình này sẽ:\n1. Xả xuống 15% theo mặc định.\n2. Sạc tới 100%.\n3. Giữ ở mức đầy (2 giờ theo mặc định).\n4. Xả trở về giới hạn sạc trước đó.\n\nLƯU Ý:\n• batt sẽ ngăn ngủ chờ cho tới khi hiệu chuẩn xong, bị hủy, hoặc thất bại.\n• Bạn có thể tạm dừng hoặc hủy bất cứ lúc nào từ menu.\n• Rất nên giữ máy Mac cắm sạc trong suốt quá trình để pin không tụt dưới ngưỡng mà không được sạc kịp.\n• Gập nắp hoặc chọn Ngủ một cách chủ động vẫn có thể ép máy ngủ, trừ khi \"Ngăn máy ngủ khi đã tắt củ sạc\" đang bật. Khi dùng tùy chọn này với nắp gập, hãy để mắt tới máy Mac và không bao giờ bỏ máy vào túi.";
+"Prevent Sleep when Adapter is Disabled?" = "Bật \"Ngăn máy ngủ khi đã tắt củ sạc\"?";
+"This enables macOS’s global no-sleep setting while adapter input is disabled. Your Mac may remain awake with the lid closed, overheat in a bag, or drain its battery. Use this only when the Mac is monitored. Continue?" = "Tùy chọn này bật cài đặt không-ngủ toàn cục của macOS trong khi đầu vào củ sạc bị tắt. Máy Mac của bạn có thể vẫn thức khi gập nắp, quá nóng trong túi, hoặc cạn pin. Chỉ dùng khi có người trông máy. Tiếp tục?";
+"Enable No-drain?" = "Bật \"Không xả pin\"?";
+"batt must restart powerd when this policy changes. batt waits until other applications stop preventing sleep before restarting, but a restart can still interrupt power-related activity. The regular native limit is used until the policy can be applied. Continue?" = "batt phải khởi động lại powerd khi đổi chính sách này. batt chờ các ứng dụng khác ngừng giữ máy thức rồi mới khởi động lại, nhưng việc khởi động lại vẫn có thể làm gián đoạn hoạt động liên quan tới nguồn điện. Giới hạn gốc thông thường sẽ được dùng cho tới khi áp dụng được chính sách mới. Tiếp tục?";

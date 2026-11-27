@@ -22,7 +22,7 @@ func (c *menuController) subscribeEvents(ctx context.Context) {
 				slog.Error("failed to decode calibration.action event", "error", err)
 				continue
 			}
-			showNotification("Calibration", payload.Message)
+			showNotification(tr("Calibration"), payload.Message)
 		case events.CalibrationPhase:
 			payload, err := events.DecodeAs[events.CalibrationPhaseEvent](event)
 			if err != nil {
@@ -30,7 +30,7 @@ func (c *menuController) subscribeEvents(ctx context.Context) {
 				continue
 			}
 			if calibrationPhaseNotifies(calibration.Phase(payload.To)) {
-				showNotification("Calibration", payload.Message)
+				showNotification(tr("Calibration"), payload.Message)
 			}
 		case events.ChargeOnceAction:
 			payload, err := events.DecodeAs[events.ChargeOnceActionEvent](event)
@@ -38,7 +38,7 @@ func (c *menuController) subscribeEvents(ctx context.Context) {
 				slog.Error("failed to decode charge-once.action event", "error", err)
 				continue
 			}
-			showNotification("One-Time Charge", payload.Message)
+			showNotification(tr("One-Time Charge"), payload.Message)
 		}
 	}
 }

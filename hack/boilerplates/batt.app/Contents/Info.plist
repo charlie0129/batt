@@ -14,6 +14,11 @@
         <string>BATT_VERSION</string>
         <key>CFBundleDevelopmentRegion</key>
         <string>en</string>
+        <key>CFBundleLocalizations</key>
+        <array>
+            <string>en</string>
+            <string>vi</string>
+        </array>
         <key>LSMinimumSystemVersion</key>
         <string>13.0</string>
         <key>CFBundleInfoDictionaryVersion</key>

@@ -137,7 +137,7 @@ func (c *menuController) refreshOnOpen() {
 	c.calibrationThreshold = conf.CalibrationDischargeThreshold()
 	c.updateChargeOnce(conf, currentCharge)
 	c.updateNativeLimitNotice(batteryInfo)
-	c.menu.setTitle(itemCurrentLimit, fmt.Sprintf("Current Limit: %d%%", conf.UpperLimit()))
+	c.menu.setTitle(itemCurrentLimit, fmt.Sprintf(tr("Current Limit: %d%%"), conf.UpperLimit()))
 	for _, item := range quickLimitItems {
 		c.menu.setChecked(item, quickLimitForItem(item) == conf.UpperLimit())
 	}
@@ -156,7 +156,7 @@ func (c *menuController) refreshOnOpen() {
 	if capabilities.ChargeControlMode == compatibility.ChargeControlLegacy && !allowsCharging && isPluggedIn && conf.UpperLimit() < 100 && currentCharge < conf.LowerLimit() {
 		state = "Will Charge Soon"
 	}
-	c.menu.setTitle(itemState, "State: "+state)
+	c.menu.setTitle(itemState, fmt.Sprintf(tr("State: %s"), tr(state)))
 
 	c.updateMagSafeChecks(conf.ControlMagSafeLED())
 	c.menu.setChecked(itemPreventIdleSleep, conf.PreventIdleSleep())
@@ -228,7 +228,7 @@ func (c *menuController) updateDisableSchedule(conf config.Config) {
 	c.menu.setHidden(itemDisableLimitCountdown, !scheduled)
 
 	if !scheduled {
-		c.menu.setTooltip(itemDisableLimit, disableLimitTooltip)
+		c.menu.setTooltip(itemDisableLimit, tr(disableLimitTooltip))
 		c.updateChargeOnceControls()
 		return
 	}
@@ -239,8 +239,8 @@ func (c *menuController) updateDisableSchedule(conf config.Config) {
 		itemDisableLimitCountdown,
 		temporaryDisableCountdownTitle(conf.PreDisableLimit(), time.Until(until)),
 	)
-	c.menu.setTooltip(itemDisableLimit, disableLimitScheduledTooltip)
-	c.menu.setTooltip(itemDisableLimitCountdown, disableLimitScheduledTooltip)
+	c.menu.setTooltip(itemDisableLimit, tr(disableLimitScheduledTooltip))
+	c.menu.setTooltip(itemDisableLimitCountdown, tr(disableLimitScheduledTooltip))
 	c.updateChargeOnceControls()
 }
 
@@ -250,7 +250,7 @@ func (c *menuController) updateAdapterDisableSchedule(conf config.Config) {
 	c.menu.setHidden(itemForceDischargeCountdown, !c.adapterDisableScheduled)
 
 	if !c.adapterDisableScheduled {
-		c.menu.setTooltip(itemForceDischarge, forceDischargeTooltip)
+		c.menu.setTooltip(itemForceDischarge, tr(forceDischargeTooltip))
 		c.updateForceDischargeControls()
 		c.updateChargeOnceControls()
 		return
@@ -258,8 +258,8 @@ func (c *menuController) updateAdapterDisableSchedule(conf config.Config) {
 
 	c.menu.setEnabled(itemCalibrationStart, false)
 	c.menu.setTitle(itemForceDischargeCountdown, temporaryAdapterDisableCountdownTitle(time.Until(until)))
-	c.menu.setTooltip(itemForceDischarge, forceDischargeScheduledTooltip)
-	c.menu.setTooltip(itemForceDischargeCountdown, forceDischargeScheduledTooltip)
+	c.menu.setTooltip(itemForceDischarge, tr(forceDischargeScheduledTooltip))
+	c.menu.setTooltip(itemForceDischargeCountdown, tr(forceDischargeScheduledTooltip))
 	c.updateForceDischargeControls()
 	c.updateChargeOnceControls()
 }
@@ -314,7 +314,7 @@ func (c *menuController) updateForceDischargeControls() {
 
 func (c *menuController) setStateError(message string, err error) {
 	slog.Error(message, "error", err)
-	c.menu.setTitle(itemState, "State: Error")
+	c.menu.setTitle(itemState, tr("State: Error"))
 	c.menu.setHidden(itemNativeLimitNotice, true)
 }
 
@@ -335,11 +335,11 @@ func nativeLimitNotice(mode compatibility.ChargeControlMode, upperLimit, current
 	}
 	switch {
 	case batteryInfo.FullChargeOverrideAtFull(currentCharge):
-		return "Battery full; waiting for macOS", powerinfo.FullChargeOverrideAtFullNotice, true
+		return tr("Battery full; waiting for macOS"), tr(powerinfo.FullChargeOverrideAtFullNotice), true
 	case batteryInfo.FullChargeOverrideActive():
-		return "Limit paused by macOS", fullChargeOverrideTooltip, true
+		return tr("Limit paused by macOS"), tr(fullChargeOverrideTooltip), true
 	case batteryInfo.ChargeLimitPendingActive():
-		return "Waiting for macOS to apply limit", powerinfo.ChargeLimitPendingNotice, true
+		return tr("Waiting for macOS to apply limit"), tr(powerinfo.ChargeLimitPendingNotice), true
 	default:
 		return "", "", false
 	}
@@ -389,9 +389,9 @@ func (c *menuController) setCompatibility(installed bool, capabilities compatibi
 	c.menu.setHidden(itemUninstall, !installed)
 	c.menu.setHidden(itemDisableLimit, !usable)
 	if installed {
-		c.menu.setTooltip(itemQuit, quitTooltipInstalled)
+		c.menu.setTooltip(itemQuit, tr(quitTooltipInstalled))
 	} else {
-		c.menu.setTooltip(itemQuit, quitTooltipNotInstalled)
+		c.menu.setTooltip(itemQuit, tr(quitTooltipNotInstalled))
 	}
 }
 
@@ -405,9 +405,9 @@ func (c *menuController) updateTelemetry() {
 	}
 	if telemetry.Power != nil {
 		calculations := telemetry.Power.Calculations
-		c.menu.setPower(itemPowerSystem, "System", calculations.SystemPower)
-		c.menu.setPower(itemPowerAdapter, "Adapter", calculations.ACPower)
-		c.menu.setPower(itemPowerBattery, "Battery", calculations.BatteryPower)
+		c.menu.setPower(itemPowerSystem, tr("System"), calculations.SystemPower)
+		c.menu.setPower(itemPowerAdapter, tr("Adapter"), calculations.ACPower)
+		c.menu.setPower(itemPowerBattery, tr("Battery"), calculations.BatteryPower)
 	}
 	if telemetry.Calibration != nil {
 		c.updateCalibration(telemetry.Calibration)
@@ -419,11 +419,11 @@ func (c *menuController) updateCalibration(status *calibration.Status) {
 	isIdle := status.Phase == calibration.PhaseIdle
 	switch {
 	case isIdle:
-		c.menu.setTitle(itemAutoCalibration, "Auto Calibration (Experimental)...")
+		c.menu.setTitle(itemAutoCalibration, tr("Auto Calibration (Experimental)..."))
 	case status.Paused:
-		c.menu.setTitle(itemAutoCalibration, "Auto Calibration (Experimental) Paused...")
+		c.menu.setTitle(itemAutoCalibration, tr("Auto Calibration (Experimental) Paused..."))
 	default:
-		c.menu.setTitle(itemAutoCalibration, "Auto Calibration (Experimental) In Progress...")
+		c.menu.setTitle(itemAutoCalibration, tr("Auto Calibration (Experimental) In Progress..."))
 	}
 
 	c.menu.setEnabled(itemCalibrationStart, canStartCalibration(status.Phase, c.disableScheduled, c.adapterDisableScheduled))
@@ -527,28 +527,28 @@ func canStartForceDischarge(phase calibration.Phase, adapterDisableScheduled boo
 func (c *menuController) calibrationStatusTitle(status *calibration.Status) (string, bool) {
 	switch status.Phase {
 	case calibration.PhaseIdle:
-		return "Status: Idle", true
+		return tr("Status: Idle"), true
 	case calibration.PhaseDischarge:
-		return fmt.Sprintf("Status: Discharging (%d%% → %d%%)", status.ChargePercent, c.calibrationThreshold), true
+		return fmt.Sprintf(tr("Status: Discharging (%d%% → %d%%)"), status.ChargePercent, c.calibrationThreshold), true
 	case calibration.PhaseCharge:
-		return fmt.Sprintf("Status: Charging (%d%% → 100%%)", status.ChargePercent), true
+		return fmt.Sprintf(tr("Status: Charging (%d%% → 100%%)"), status.ChargePercent), true
 	case calibration.PhaseHold:
 		hours := status.RemainingHoldSecs / 3600
 		minutes := (status.RemainingHoldSecs % 3600) / 60
 		seconds := status.RemainingHoldSecs % 60
-		return fmt.Sprintf("Status: Holding (%02d:%02d:%02d left)", hours, minutes, seconds), true
+		return fmt.Sprintf(tr("Status: Holding (%02d:%02d:%02d left)"), hours, minutes, seconds), true
 	case calibration.PhasePostHold:
 		if status.TargetPercent > 0 {
-			return fmt.Sprintf("Status: Discharging (%d%% → %d%%)", status.ChargePercent, status.TargetPercent), true
+			return fmt.Sprintf(tr("Status: Discharging (%d%% → %d%%)"), status.ChargePercent, status.TargetPercent), true
 		}
-		return "Status: Discharging to previous limit...", true
+		return tr("Status: Discharging to previous limit..."), true
 	case calibration.PhaseRestore:
-		return "Status: Restoring settings...", true
+		return tr("Status: Restoring settings..."), true
 	case calibration.PhaseError:
 		if status.Message != "" {
-			return "Status: Error - " + status.Message, true
+			return tr("Status: Error -") + " " + status.Message, true
 		}
-		return "Status: Error", true
+		return tr("Status: Error"), true
 	default:
 		return "", false
 	}

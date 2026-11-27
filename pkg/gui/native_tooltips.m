@@ -6,66 +6,66 @@ static void SetTooltip(BattMenuController *controller, BattMenuItem item, NSStri
 
 void BattApplyTooltips(BattMenuController *controller) {
     SetTooltip(controller, BattItemPowerFlow,
-        @"Power flow data is updated every 60 seconds.");
+        NSLocalizedString(@"Power flow data is updated every 60 seconds.", nil));
     SetTooltip(controller, BattItemUpgrade,
-        @"Your batt daemon is not compatible with this client version and needs to be upgraded. This is usually caused by a new client version that requires a new daemon version. You can upgrade the batt daemon by running this command.");
+        NSLocalizedString(@"Your batt daemon is not compatible with this client version and needs to be upgraded. This is usually caused by a new client version that requires a new daemon version. You can upgrade the batt daemon by running this command.", nil));
     SetTooltip(controller, BattItemInstall,
-        @"Install the batt daemon. batt daemon is a component that controls charging. You must enter your password to install it because controlling charging is a privileged action.");
+        NSLocalizedString(@"Install the batt daemon. batt daemon is a component that controls charging. You must enter your password to install it because controlling charging is a privileged action.", nil));
     SetTooltip(controller, BattItemChargeOnce,
-        @"Charge the battery once without changing your charge limit.\n\n"
+        NSLocalizedString(@"Charge the battery once without changing your charge limit.\n\n"
          "\"Charge to <limit>% Now\" starts charging right away, even when the charge sits between the lower and the upper limit, and stops at the limit.\n\n"
          "\"Charge to Full Once\" charges to 100% and then restores your limit automatically.\n\n"
-         "A one-time charge survives a restart. Cancel it here, or set a charge limit to cancel it.");
+         "A one-time charge survives a restart. Cancel it here, or set a charge limit to cancel it.", nil));
     SetTooltip(controller, BattItemMagSafe,
-        @"Let batt control MagSafe LED to reflect the charging state of your MacBook (or force it off).\n\n"
-         "Note that you must have a MagSafe LED on your MacBook to use this feature.");
+        NSLocalizedString(@"Let batt control MagSafe LED to reflect the charging state of your MacBook (or force it off).\n\n"
+         "Note that you must have a MagSafe LED on your MacBook to use this feature.", nil));
     SetTooltip(controller, BattItemMagSafeEnabled,
-        @"Enable MagSafe LED control. The LED will reflect charging status:\n\n"
+        NSLocalizedString(@"Enable MagSafe LED control. The LED will reflect charging status:\n\n"
          "- Green: Charging is stopped.\n"
          "- Orange: Charging is in progress.\n"
-         "- Off: Forced off, or temporarily after wake with active charging control.");
+         "- Off: Forced off, or temporarily after wake with active charging control.", nil));
     SetTooltip(controller, BattItemMagSafeDisabled,
-        @"Disable MagSafe LED control. The LED will stay in its default state (mostly orange).");
+        NSLocalizedString(@"Disable MagSafe LED control. The LED will stay in its default state (mostly orange).", nil));
     SetTooltip(controller, BattItemMagSafeAlwaysOff,
-        @"Force the MagSafe LED to stay off regardless of charging state.");
+        NSLocalizedString(@"Force the MagSafe LED to stay off regardless of charging state.", nil));
     SetTooltip(controller, BattItemPreventIdleSleep,
-        @"Set whether to prevent idle sleep during a charging session.\n\n"
+        NSLocalizedString(@"Set whether to prevent idle sleep during a charging session.\n\n"
          "Due to macOS limitations, batt will be paused when your computer goes to sleep. As a result, when you are in a charging session and your computer goes to sleep, there is no way for batt to stop charging (since batt is paused by macOS) and the battery will charge to 100%. This option, together with \"Disable Charging before Sleep\", will prevent this from happening.\n\n"
          "This option tells macOS NOT to go to sleep when the computer is in a charging session, so batt can continue to work until charging is finished. Note that it will only prevent **idle** sleep, when 1) charging is active 2) battery charge limit is enabled. So your computer can go to sleep as soon as a charging session is completed.\n\n"
-         "However, this options does not prevent manual sleep (limitation of macOS). For example, if you manually put your computer to sleep (by choosing the Sleep option in the top-left Apple menu) or close the lid, batt will still be paused and the issue mentioned above will still happen. This is where \"Disable Charging before Sleep\" comes in.");
+         "However, this options does not prevent manual sleep (limitation of macOS). For example, if you manually put your computer to sleep (by choosing the Sleep option in the top-left Apple menu) or close the lid, batt will still be paused and the issue mentioned above will still happen. This is where \"Disable Charging before Sleep\" comes in.", nil));
     SetTooltip(controller, BattItemDisableChargingPreSleep,
-        @"Set whether to disable charging before sleep if charge limit is enabled.\n\n"
-         "As described in \"Prevent Idle Sleep when Charging\", batt will be paused by macOS when your computer goes to sleep, and there is no way for batt to continue controlling battery charging. This option will disable charging just before sleep, so your computer will not overcharge during sleep, even if the battery charge is below the limit.");
+        NSLocalizedString(@"Set whether to disable charging before sleep if charge limit is enabled.\n\n"
+         "As described in \"Prevent Idle Sleep when Charging\", batt will be paused by macOS when your computer goes to sleep, and there is no way for batt to continue controlling battery charging. This option will disable charging just before sleep, so your computer will not overcharge during sleep, even if the battery charge is below the limit.", nil));
     SetTooltip(controller, BattItemPreventSystemSleep,
-        @"Set whether to prevent system sleep during a charging session (experimental).\n\n"
+        NSLocalizedString(@"Set whether to prevent system sleep during a charging session (experimental).\n\n"
          "This option tells macOS to create power assertion, which prevents sleep, when all conditions are met:\n\n"
          "1) charging is active\n"
          "2) battery charge limit is enabled\n"
          "3) computer is connected to charger.\n"
          "So your computer can go to sleep as soon as a charging session is completed / charger disconnected.\n\n"
          "Does similar thing to prevent-idle-sleep, but works for manual sleep too.\n\n"
-         "Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while this feature is in use");
+         "Note: please disable disable-charging-pre-sleep and prevent-idle-sleep, while this feature is in use", nil));
     SetTooltip(controller, BattItemPreventSleepOnAdapterDisable,
-        @"Set whether to keep Clamshell mode alive while adapter input is disabled by temporarily disabling system sleep.\n\n"
+        NSLocalizedString(@"Set whether to keep Clamshell mode alive while adapter input is disabled by temporarily disabling system sleep.\n\n"
          "This prevents all sleep—not just idle sleep—while adapter input is disabled, allowing Force Discharge and Auto Calibration to continue with the lid closed. When adapter input returns, batt automatically restores the prior sleep setting.\n\n"
-         "WARNING: Your Mac may remain awake with the lid closed, overheat in a bag, or drain its battery to 0% if unplugged and left unattended.");
+         "WARNING: Your Mac may remain awake with the lid closed, overheat in a bag, or drain its battery to 0% if unplugged and left unattended.", nil));
     SetTooltip(controller, BattItemNoDrain,
-        @"Experimental macOS 27 native-mode option. Hold wall power above the limit instead of draining the battery.\n\n"
-         "Changing this policy restarts powerd. batt waits for other applications' sleep assertions to end first and uses the regular native limit meanwhile.");
+        NSLocalizedString(@"Experimental macOS 27 native-mode option. Hold wall power above the limit instead of draining the battery.\n\n"
+         "Changing this policy restarts powerd. batt waits for other applications' sleep assertions to end first and uses the regular native limit meanwhile.", nil));
     SetTooltip(controller, BattItemForceDischarge,
-        @"Cut power from the wall and run from the battery, either indefinitely or for a selected duration. After a temporary force discharge, batt automatically restores the power adapter.\n\n"
-         "NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep* unless \"Prevent Sleep when Adapter is Disabled\" is enabled. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.");
+        NSLocalizedString(@"Cut power from the wall and run from the battery, either indefinitely or for a selected duration. After a temporary force discharge, batt automatically restores the power adapter.\n\n"
+         "NOTE: if you are using Clamshell mode (using a Mac laptop with an external monitor and the lid closed), *cutting power will cause your Mac to go to sleep* unless \"Prevent Sleep when Adapter is Disabled\" is enabled. This is a limitation of macOS. There are ways to prevent this, but it is not recommended for most users.", nil));
     SetTooltip(controller, BattItemAutoCalibration,
-        @"Calibration helps you calibrate your battery by automatically discharging and charging it according to best practices.\n\n"
+        NSLocalizedString(@"Calibration helps you calibrate your battery by automatically discharging and charging it according to best practices.\n\n"
          "batt prevents idle sleep for the entire calibration session. Closing the lid or explicitly choosing Sleep can still force sleep.\n\n"
-         "It's recommended to run the calibration process every few months.");
+         "It's recommended to run the calibration process every few months.", nil));
     SetTooltip(controller, BattItemUninstall,
-        @"Uninstall the batt daemon. This will remove the batt daemon from your system. You must enter your password to uninstall it.\n\n"
-         "After uninstalling the batt daemon, no charging control will be present on your system and your Mac will charge to 100% as normal. The menubar app will still be present, but all options will be disabled. You can remove the menubar app by moving it to the trash.");
+        NSLocalizedString(@"Uninstall the batt daemon. This will remove the batt daemon from your system. You must enter your password to uninstall it.\n\n"
+         "After uninstalling the batt daemon, no charging control will be present on your system and your Mac will charge to 100% as normal. The menubar app will still be present, but all options will be disabled. You can remove the menubar app by moving it to the trash.", nil));
     SetTooltip(controller, BattItemDisableLimit,
-        @"Disable the battery charge limit and let your Mac charge to 100%, either indefinitely or for a selected duration. After a temporary disable, batt automatically restores your current limit.");
+        NSLocalizedString(@"Disable the battery charge limit and let your Mac charge to 100%, either indefinitely or for a selected duration. After a temporary disable, batt automatically restores your current limit.", nil));
     SetTooltip(controller, BattItemQuit,
-        @"Quit the batt menubar app, but keep the batt daemon running.\n\n"
+        NSLocalizedString(@"Quit the batt menubar app, but keep the batt daemon running.\n\n"
          "Since the batt daemon is still running, batt can continue to control charging. This is useful if you don't want the menubar icon to show up, but still want to use batt. When the client is not running, you can change batt settings using the command line interface (batt). To prevent the menubar app from starting at login, you can remove it in System Settings -> General -> Login Items & Extensions -> remove batt.app from the list (do NOT remove the batt daemon).\n\n"
-         "If you want batt to stop controlling charging, you can use the \"Disable Charge Limit\" command. To uninstall, you can use the \"Uninstall Daemon\" command in the Advanced menu.");
+         "If you want batt to stop controlling charging, you can use the \"Disable Charge Limit\" command. To uninstall, you can use the \"Uninstall Daemon\" command in the Advanced menu.", nil));
 }

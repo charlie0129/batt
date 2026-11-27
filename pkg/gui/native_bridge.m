@@ -1,4 +1,15 @@
 #import "native_internal.h"
+#include <string.h>
+
+const char *batt_localized_string(const char *key) {
+    @autoreleasepool {
+        if (key == NULL) {
+            return strdup("");
+        }
+        NSString *value = NSLocalizedString([NSString stringWithUTF8String:key], nil);
+        return strdup(value.UTF8String);
+    }
+}
 
 static NSString *BattString(const char *value) {
     return value == NULL ? @"" : [NSString stringWithUTF8String:value];
