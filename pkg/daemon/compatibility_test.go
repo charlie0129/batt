@@ -104,7 +104,7 @@ func TestDetectCapabilitiesMatrix(t *testing.T) {
 			name:   "gated, exact native targets",
 			fw:     firmwareGated,
 			native: exactNative(),
-			want:   expectation{mode: compatibility.ChargeControlNative, adapter: true, calibration: true, exact: true, supportedLimits: 91},
+			want:   expectation{mode: compatibility.ChargeControlNative, adapter: true, calibration: true, exact: true, supportedLimits: 91, lowerLimit: true},
 		},
 		{
 			name:        "gated, adapter mode opted in",

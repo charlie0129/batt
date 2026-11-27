@@ -180,13 +180,157 @@ func TestNativeTargetDoesNotFollowUnpluggedBattery(t *testing.T) {
 	}
 }
 
-func TestNativeLowerLimitIsUnsupported(t *testing.T) {
-	f := newExactNativeFixture(t)
+func TestNativeLowerLimitDeltaIsAccepted(t *testing.T) {
+	f := newExactNativeFixture(t, withCharge(30))
 	f.file.SetUpperLimit(55)
 	f.file.SetLowerLimit(50)
 	r := f.put("/lower-limit-delta", "10")
-	if r.Code != http.StatusConflict || f.file.LowerLimit() != 50 || len(f.native.setCalls) != 0 {
-		t.Fatalf("native lower limit accepted: %d %s", r.Code, r.Body.String())
+	if r.Code != http.StatusCreated || f.file.LowerLimit() != 45 {
+		t.Fatalf("native lower limit rejected: %d %s", r.Code, r.Body.String())
+	}
+	// Below the lower limit the battery charges to the upper limit.
+	if !f.native.enabled || f.native.limit != 55 {
+		t.Fatalf("native target = %+v, want 55", f.native)
+	}
+}
+
+func TestNativeBandHoldsTheChargeBetweenTheLimits(t *testing.T) {
+	f := newExactNativeFixture(t, withCharge(80))
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(55)
+	f.d.maintainLoopForced()
+
+	// Between the limits the target is the current charge, so macOS stops
+	// charging and runs from wall power.
+	f.smc.setCharge(t, 70)
+	if !f.d.maintainLoopForced() || !f.native.enabled || f.native.limit != 70 {
+		t.Fatalf("native target = %+v, want a hold at 70", f.native)
+	}
+
+	// The hold point follows the charge down, never up.
+	f.smc.setCharge(t, 69)
+	if !f.d.maintainLoopForced() || f.native.limit != 69 {
+		t.Fatalf("native target = %d, want 69", f.native.limit)
+	}
+	f.smc.setCharge(t, 55)
+	if !f.d.maintainLoopForced() || f.native.limit != 55 {
+		t.Fatalf("native target = %d at the lower limit, want 55", f.native.limit)
+	}
+
+	// Below the lower limit macOS charges to the upper limit, and keeps doing
+	// so while the battery passes back through the band.
+	for _, charge := range []int{54, 60, 79} {
+		f.smc.setCharge(t, charge)
+		if !f.d.maintainLoopForced() || f.native.limit != 80 {
+			t.Fatalf("native target = %d at %d%% while charging, want 80", f.native.limit, charge)
+		}
+	}
+
+	// At the upper limit the band holds again.
+	f.smc.setCharge(t, 80)
+	f.d.maintainLoopForced()
+	f.smc.setCharge(t, 79)
+	if !f.d.maintainLoopForced() || f.native.limit != 79 {
+		t.Fatalf("native target = %d after reaching the limit, want a hold at 79", f.native.limit)
+	}
+}
+
+func TestNativeBandResumesAChargeInProgress(t *testing.T) {
+	// The daemon restarts while macOS charges toward the upper limit.
+	f := newExactNativeFixture(t, withCharge(60))
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(55)
+	f.native.limit, f.native.enabled = 80, true
+	if !f.d.maintainLoopForced() || f.native.limit != 80 || len(f.native.setCalls) != 0 {
+		t.Fatalf("restart interrupted the charge: %+v", f.native)
+	}
+}
+
+func TestNativeBandResumesChargingAfterTheLimitWasReleased(t *testing.T) {
+	// The daemon releases the native limit on exit, so after a restart macOS
+	// has been charging freely. Finish the charge to the upper limit.
+	f := newExactNativeFixture(t, withCharge(70))
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(55)
+	f.native.limit, f.native.enabled = 100, false
+	if !f.d.maintainLoopForced() || f.native.limit != 80 {
+		t.Fatalf("native target = %d after a restart, want 80", f.native.limit)
+	}
+}
+
+func TestNativeBandHoldsBelowAStaleHoldPointAfterARestart(t *testing.T) {
+	// The daemon was killed while holding at 70; the battery has not moved.
+	f := newExactNativeFixture(t, withCharge(70))
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(55)
+	f.native.limit, f.native.enabled = 70, true
+	if !f.d.maintainLoopForced() || f.native.limit != 70 || len(f.native.setCalls) != 0 {
+		t.Fatalf("native target = %+v, want the hold at 70 kept", f.native)
+	}
+}
+
+func TestNativeBandHoldPointNeverExceedsTheUpperLimit(t *testing.T) {
+	// After Apple's periodic full charge the battery is above the limit.
+	f := newExactNativeFixture(t, withCharge(100))
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(55)
+	if !f.d.maintainLoopForced() || f.native.limit != 80 {
+		t.Fatalf("native target = %d above the limit, want 80", f.native.limit)
+	}
+}
+
+func TestNativeBandIsOffForNarrowDeltas(t *testing.T) {
+	// macOS already resumes charging about 5% below its target. A narrower
+	// band would top up more often, so the single native target is kept.
+	for _, lower := range []int{78, 75} {
+		f := newExactNativeFixture(t, withCharge(77))
+		f.file.SetUpperLimit(80)
+		f.file.SetLowerLimit(lower)
+		if !f.d.maintainLoopForced() || f.native.limit != 80 {
+			t.Fatalf("lower %d: native target = %d, want 80", lower, f.native.limit)
+		}
+	}
+}
+
+func TestNativeBandIsOffWithNoDrain(t *testing.T) {
+	// No-drain keeps one powerd ceiling; moving it would restart powerd on
+	// every percent.
+	f := newExactNativeFixture(t, withCharge(70))
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(55)
+	f.file.SetNoDrain(true)
+	if f.d.usesNativeBand(f.file.LowerLimit(), f.file.UpperLimit()) {
+		t.Fatal("the band must stay off while no-drain is enabled")
+	}
+}
+
+func TestNativeBandCatchesUpAfterReconnecting(t *testing.T) {
+	f := newExactNativeFixture(t, withCharge(80))
+	f.file.SetUpperLimit(80)
+	f.file.SetLowerLimit(55)
+	f.d.maintainLoopForced()
+	f.smc.setCharge(t, 70)
+	if !f.d.maintainLoopForced() || f.native.limit != 70 {
+		t.Fatalf("native target = %d, want a hold at 70", f.native.limit)
+	}
+
+	// On battery power the target is left alone.
+	f.smc.setPluggedIn(t, false)
+	f.smc.setAdapter(t, false)
+	writes := len(f.native.setCalls)
+	for _, charge := range []int{68, 62} {
+		f.smc.setCharge(t, charge)
+		if !f.d.maintainLoopForced() || len(f.native.setCalls) != writes {
+			t.Fatalf("unplugged battery at %d%% rewrote the target: %v", charge, f.native.setCalls)
+		}
+	}
+
+	// Reconnected inside the band: hold where the battery is, rather than
+	// topping it back up.
+	f.smc.setPluggedIn(t, true)
+	f.smc.setAdapter(t, true)
+	if !f.d.maintainLoopForced() || f.native.limit != 62 {
+		t.Fatalf("native target = %d after reconnecting at 62%%, want 62", f.native.limit)
 	}
 }
 

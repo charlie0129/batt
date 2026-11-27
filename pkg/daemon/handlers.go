@@ -101,9 +101,40 @@ func (d *Daemon) setLimit(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info(fmt.Sprintf("set charging limit to %d", l))
 
+	msg := d.limitResponseMessage(caps, l)
+
+	if l >= 100 {
+		msg = "set charging limit to 100%. batt will not control charging anymore."
+	}
+
+	// Immediate single maintain loop, to avoid waiting for the next loop
+	if applied := d.maintainLoopForced(); !applied && caps.NativeExactTargets {
+		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
+		d.fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	if notice := d.pendingNativeLimitNotice(l); notice != "" {
+		msg += " " + notice
+	}
+
+	writeJSON(w, http.StatusCreated, msg)
+}
+
+// limitResponseMessage describes the configured limit for the active backend.
+func (d *Daemon) limitResponseMessage(caps compatibility.Capabilities, l int) string {
+	conf := d.conf
 	var msg string
 	charge, err := d.smc.GetBatteryCharge()
 	switch {
+	case d.usesNativeBand(conf.LowerLimit(), l):
+		msg = fmt.Sprintf("set upper/lower charging limit to %d%%/%d%%", l, conf.LowerLimit())
+		if err == nil {
+			msg += fmt.Sprintf(", current charge: %d%%", charge)
+		}
+		msg += ". Between the limits the Mac runs from wall power without charging; it charges to the upper limit once the battery drops below the lower limit."
+		if err == nil && charge > l {
+			msg += " Current charge is above the limit; macOS may use battery power to discharge toward the target."
+		}
 	case caps.ChargeControlMode == compatibility.ChargeControlNative:
 		msg = fmt.Sprintf("set charging limit to %d%%", l)
 		if err == nil {
@@ -129,21 +160,7 @@ func (d *Daemon) setLimit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if l >= 100 {
-		msg = "set charging limit to 100%. batt will not control charging anymore."
-	}
-
-	// Immediate single maintain loop, to avoid waiting for the next loop
-	if applied := d.maintainLoopForced(); !applied && caps.NativeExactTargets {
-		err := fmt.Errorf("limit %d%% was saved, but applying it failed; inspect the daemon log and battery status", l)
-		d.fail(w, http.StatusInternalServerError, err)
-		return
-	}
-	if notice := d.pendingNativeLimitNotice(l); notice != "" {
-		msg += " " + notice
-	}
-
-	writeJSON(w, http.StatusCreated, msg)
+	return msg
 }
 
 // resolveDisableLimit returns the limit to restore once a temporary disable

@@ -97,6 +97,82 @@ func (d *Daemon) ensureNativeChargeLimit(upper int) (bool, error) {
 	return true, noDrainFallbackError(policyErr)
 }
 
+// nativeBandState tracks whether the native hysteresis band is charging the
+// battery toward the upper limit or holding it where it is. known is false
+// until the first pass after the band is (re)activated.
+type nativeBandState struct {
+	known    bool
+	charging bool
+	// target is the last target the band chose.
+	target int
+}
+
+// usesNativeBand reports whether batt enforces the lower limit on top of the
+// native macOS limit. See compatibility.Capabilities.UsesNativeBand.
+func (d *Daemon) usesNativeBand(lower, upper int) bool {
+	return d.getCapabilities().UsesNativeBand(lower, upper, d.conf.NoDrain())
+}
+
+// nativeBandTarget returns the native target that enforces the lower limit.
+// macOS only resumes charging about 5% below its target, so on its own the
+// native limit would top the battery up from upper-5 to upper over and over.
+// Instead, while the battery is between the limits, batt sets the target to
+// the current charge: macOS keeps running from wall power and the battery
+// rests. Below the lower limit the target goes back to the upper limit and
+// macOS charges to it. Because macOS retains the target, this also holds
+// during sleep.
+//
+// On battery power macOS ignores the target, so it is left where it was
+// rather than rewritten on every percent. The band catches up once the Mac
+// is connected to power again.
+func (d *Daemon) nativeBandTarget(lower, upper int) int {
+	band := &d.nativeBand
+	if d.onBattery() {
+		if band.known {
+			return band.target
+		}
+		return upper
+	}
+
+	charge, err := d.smc.GetBatteryCharge()
+	if err != nil {
+		// Without the charge batt cannot place the hold point. The upper
+		// limit is always safe.
+		slog.Error("GetBatteryCharge failed, using the upper limit as native target", "error", err)
+		band.known = false
+		return upper
+	}
+
+	if !band.known {
+		// Resume a charge that was in progress when the band was activated,
+		// as the legacy backend does: macOS was charging toward the upper
+		// limit, or freely because no limit was set. The latter is the usual
+		// case after a restart, since the daemon releases the limit on exit.
+		current, enabled, err := d.native.Limit()
+		band.charging = charge < lower || (err == nil && (!enabled || current >= upper) && charge < upper)
+		band.known = true
+	}
+
+	switch {
+	case charge < lower && !band.charging:
+		slog.Info("battery charge is below the lower limit, charging to the upper limit", "batteryCharge", charge, "lower", lower, "upper", upper)
+		band.charging = true
+	case charge >= upper && band.charging:
+		slog.Info("battery charge reached the upper limit, holding it", "batteryCharge", charge, "lower", lower, "upper", upper)
+		band.charging = false
+	}
+
+	if band.charging {
+		band.target = upper
+	} else {
+		// The hold point never rises above the upper limit, so a battery above
+		// it (e.g. after Apple's periodic full charge) still drains toward the
+		// limit.
+		band.target = min(max(charge, lower, 10), upper)
+	}
+	return band.target
+}
+
 // nativeLimitOnBatteryNotice explains a native limit that macOS has accepted
 // while the Mac runs on battery power, where macOS registers no charge limit.
 const nativeLimitOnBatteryNotice = "macOS applies the limit once the Mac is connected to power."

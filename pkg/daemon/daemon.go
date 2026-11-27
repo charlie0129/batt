@@ -72,6 +72,9 @@ type Daemon struct {
 	// noDrainReloadPending records a saved policy whose powerd reload has not
 	// completed. Saved policy absence alone must not mark a release complete.
 	noDrainReloadPending atomic.Bool
+	// nativeBand is the hysteresis state batt keeps on top of exact native
+	// targets. See nativeBandTarget.
+	nativeBand nativeBandState
 
 	// loopDelay holds the maintain loop back around sleep and wake. See
 	// holdMaintainLoop.

@@ -116,7 +116,7 @@ func TestDetectCapabilitiesOffersExactNativeTargets(t *testing.T) {
 	f := newFixture(t, firmwareGatedNoAdapter, withFileConfig(),
 		withNative(&fakeNativeLimit{supported: true, exact: true, limits: []int{50, 55, 100}}))
 	got := f.d.detectCapabilities()
-	if !got.NativeExactTargets || got.Supports(compatibility.FeatureLowerLimit) || got.SleepHooks {
+	if !got.NativeExactTargets || !got.Supports(compatibility.FeatureLowerLimit) || got.SleepHooks {
 		t.Fatalf("incorrect exact-native capabilities: %+v", got)
 	}
 }
